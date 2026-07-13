@@ -45,6 +45,14 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
   Tombol **Salin** menyalin log satu hari sebagai teks siap tempel ke
   worklog Jira, laporan harian, atau standup. Log bersifat riwayat
   tersendiri: membersihkan bagian "Selesai" di papan tidak menghapusnya.
+- **Integrasi Jira ringan** — kode tiket (mis. `ERA-1234`) di teks tugas,
+  kartu fokus, dan log kerja otomatis jadi link ke Jira (alamat situs bisa
+  diatur di panel impor). Section **"Tiket Jira — belum diambil"** menampung
+  tiket hasil impor (tempel daftar dari Claude, atau baris `KODE-123
+  ringkasan`); tombol **＋ Ambil** memindahkan tiket ke papan utama sebagai
+  tugas biasa yang bisa diprioritaskan dan difokuskan. Catatan: Jira Cloud
+  memblokir akses API langsung dari browser (CORS), jadi impor tempel-manual
+  ini adalah jalur tanpa-backend yang paling aman.
 - Tema terang & gelap mengikuti pengaturan sistem.
 
 ## Cara pakai
