@@ -1,0 +1,613 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catet — catatan cepat berprioritas</title>
+<style>
+  :root {
+    --bg: #eef1f4;
+    --surface: #ffffff;
+    --surface-2: #f5f7f9;
+    --ink: #1b2530;
+    --ink-muted: #5c6b7a;
+    --ink-faint: #8b98a5;
+    --line: #d8dee5;
+    --accent: #0e7a6f;
+    --accent-soft: #e0f0ee;
+    --accent-ink: #ffffff;
+    --focus-ring: #0e7a6f;
+    --p-urgent: #c2362b;
+    --p-urgent-soft: #f9e9e7;
+    --p-tinggi: #c07514;
+    --p-tinggi-soft: #f8efe0;
+    --p-sedang: #2563a8;
+    --p-sedang-soft: #e6eef7;
+    --p-rendah: #6b7885;
+    --p-rendah-soft: #edf0f3;
+    --late: #c2362b;
+    --shadow: 0 1px 2px rgba(27,37,48,.06), 0 4px 16px rgba(27,37,48,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #10161c;
+      --surface: #1a222b;
+      --surface-2: #212b35;
+      --ink: #e5eaf0;
+      --ink-muted: #9aa8b5;
+      --ink-faint: #6b7885;
+      --line: #2d3944;
+      --accent: #3ab5a6;
+      --accent-soft: #16332f;
+      --accent-ink: #08211d;
+      --focus-ring: #3ab5a6;
+      --p-urgent: #e05d51;
+      --p-urgent-soft: #3a1f1c;
+      --p-tinggi: #dd9a3e;
+      --p-tinggi-soft: #362a17;
+      --p-sedang: #5d93cf;
+      --p-sedang-soft: #1c2a3a;
+      --p-rendah: #8b98a5;
+      --p-rendah-soft: #262f38;
+      --late: #e05d51;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #eef1f4; --surface: #ffffff; --surface-2: #f5f7f9;
+    --ink: #1b2530; --ink-muted: #5c6b7a; --ink-faint: #8b98a5; --line: #d8dee5;
+    --accent: #0e7a6f; --accent-soft: #e0f0ee; --accent-ink: #ffffff; --focus-ring: #0e7a6f;
+    --p-urgent: #c2362b; --p-urgent-soft: #f9e9e7;
+    --p-tinggi: #c07514; --p-tinggi-soft: #f8efe0;
+    --p-sedang: #2563a8; --p-sedang-soft: #e6eef7;
+    --p-rendah: #6b7885; --p-rendah-soft: #edf0f3;
+    --late: #c2362b;
+    --shadow: 0 1px 2px rgba(27,37,48,.06), 0 4px 16px rgba(27,37,48,.06);
+  }
+  :root[data-theme="dark"] {
+    --bg: #10161c; --surface: #1a222b; --surface-2: #212b35;
+    --ink: #e5eaf0; --ink-muted: #9aa8b5; --ink-faint: #6b7885; --line: #2d3944;
+    --accent: #3ab5a6; --accent-soft: #16332f; --accent-ink: #08211d; --focus-ring: #3ab5a6;
+    --p-urgent: #e05d51; --p-urgent-soft: #3a1f1c;
+    --p-tinggi: #dd9a3e; --p-tinggi-soft: #362a17;
+    --p-sedang: #5d93cf; --p-sedang-soft: #1c2a3a;
+    --p-rendah: #8b98a5; --p-rendah-soft: #262f38;
+    --late: #e05d51;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Ubuntu", "Cantarell", sans-serif;
+    padding: 24px 16px 80px;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", "Cascadia Mono", "Ubuntu Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+
+  .app { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+
+  header.top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; margin: 0; }
+  .brand .tag { font-size: 12.5px; color: var(--ink-muted); }
+  .top-actions { display: flex; gap: 8px; }
+
+  button { font: inherit; color: inherit; cursor: pointer; border: none; background: none; }
+  button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid var(--focus-ring); outline-offset: 2px;
+  }
+  .btn-ghost {
+    font-size: 12.5px; color: var(--ink-muted);
+    padding: 5px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface);
+  }
+  .btn-ghost:hover { color: var(--ink); border-color: var(--ink-faint); }
+
+  /* ---- Focus card ---- */
+  .focus-card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-left: 4px solid var(--accent);
+    border-radius: 10px; box-shadow: var(--shadow);
+    padding: 14px 16px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .focus-card .eyebrow {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--accent);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .focus-card .eyebrow .dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .focus-card .eyebrow .dot { animation: none; } }
+  .focus-card .focus-text { font-size: 17px; font-weight: 600; text-wrap: balance; }
+  .focus-card .focus-meta { font-size: 12.5px; color: var(--ink-muted); }
+  .focus-card .focus-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+  .focus-card.empty { border-left-color: var(--line); }
+  .focus-card.empty .eyebrow { color: var(--ink-faint); }
+  .focus-card.empty .focus-text { color: var(--ink-faint); font-weight: 500; font-size: 14.5px; }
+
+  .btn-solid {
+    background: var(--accent); color: var(--accent-ink);
+    font-size: 13px; font-weight: 600; padding: 7px 14px; border-radius: 7px;
+  }
+  .btn-solid:hover { filter: brightness(1.08); }
+  .btn-line {
+    font-size: 13px; font-weight: 500; padding: 6px 13px;
+    border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); color: var(--ink);
+  }
+  .btn-line:hover { border-color: var(--ink-faint); }
+
+  /* ---- Capture bar ---- */
+  .capture {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: var(--shadow); padding: 12px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .capture-row1 { display: flex; gap: 8px; }
+  .capture input[type="text"] {
+    flex: 1; font: inherit; color: var(--ink); background: var(--surface-2);
+    border: 1px solid var(--line); border-radius: 7px; padding: 9px 12px; min-width: 0;
+  }
+  .capture input[type="text"]::placeholder { color: var(--ink-faint); }
+  .capture-row2 { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  .cap-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .cap-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); margin-right: 2px; }
+  .chip {
+    font-size: 12.5px; font-weight: 500; padding: 4px 11px;
+    border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-muted);
+  }
+  .chip:hover { border-color: var(--ink-faint); color: var(--ink); }
+  .chip[aria-pressed="true"] { font-weight: 600; }
+  .chip.pr-urgent[aria-pressed="true"] { background: var(--p-urgent-soft); border-color: var(--p-urgent); color: var(--p-urgent); }
+  .chip.pr-tinggi[aria-pressed="true"] { background: var(--p-tinggi-soft); border-color: var(--p-tinggi); color: var(--p-tinggi); }
+  .chip.pr-sedang[aria-pressed="true"] { background: var(--p-sedang-soft); border-color: var(--p-sedang); color: var(--p-sedang); }
+  .chip.pr-rendah[aria-pressed="true"] { background: var(--p-rendah-soft); border-color: var(--p-rendah); color: var(--p-rendah); }
+  .chip.time[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .capture input[type="datetime-local"] {
+    font: inherit; font-size: 12.5px; color: var(--ink-muted);
+    background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px;
+  }
+  .cap-hint { font-size: 11.5px; color: var(--ink-faint); margin-left: auto; }
+  .cap-hint kbd {
+    font-family: inherit; font-size: 10.5px; border: 1px solid var(--line); border-bottom-width: 2px;
+    border-radius: 4px; padding: 0 5px; background: var(--surface-2);
+  }
+
+  /* ---- Sections ---- */
+  .section { display: flex; flex-direction: column; gap: 8px; }
+  .section-head { display: flex; align-items: baseline; gap: 8px; }
+  .section-head h2 {
+    font-size: 11.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin: 0;
+  }
+  .section-head .count { font-size: 11.5px; color: var(--ink-faint); }
+  .section.s-urgent h2 { color: var(--p-urgent); }
+  .section.s-tinggi h2 { color: var(--p-tinggi); }
+  .section.s-sedang h2 { color: var(--p-sedang); }
+  .section.s-rendah h2 { color: var(--p-rendah); }
+  .section.s-selesai h2 { color: var(--ink-faint); }
+
+  ul.tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  li.task {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+    display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px 10px 9px;
+    border-left-width: 4px;
+  }
+  li.task.p-urgent { border-left-color: var(--p-urgent); }
+  li.task.p-tinggi { border-left-color: var(--p-tinggi); }
+  li.task.p-sedang { border-left-color: var(--p-sedang); }
+  li.task.p-rendah { border-left-color: var(--p-rendah); }
+  li.task.done { opacity: .6; border-left-color: var(--line); }
+  li.task.done .task-text { text-decoration: line-through; }
+
+  .check {
+    width: 19px; height: 19px; flex: none; margin-top: 2px;
+    border: 1.5px solid var(--ink-faint); border-radius: 5px; background: var(--surface);
+    display: grid; place-items: center; font-size: 12px; line-height: 1; color: transparent;
+  }
+  .check:hover { border-color: var(--accent); color: var(--accent); }
+  li.task.done .check { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+  .task-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .task-text { overflow-wrap: break-word; }
+  .task-text[contenteditable="true"] { outline: 1px dashed var(--accent); border-radius: 3px; padding: 0 3px; }
+  .task-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: 11.5px; color: var(--ink-faint); }
+  .due-badge {
+    font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent);
+  }
+  .due-badge.late { background: var(--p-urgent-soft); color: var(--late); }
+
+  .task-actions { display: flex; gap: 2px; flex: none; }
+  .icon-btn {
+    width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center;
+    color: var(--ink-faint); font-size: 14px;
+  }
+  .icon-btn:hover { background: var(--surface-2); color: var(--ink); }
+  .icon-btn.danger:hover { color: var(--late); }
+
+  .empty-note {
+    font-size: 13px; color: var(--ink-faint); background: var(--surface-2);
+    border: 1px dashed var(--line); border-radius: 8px; padding: 10px 14px;
+  }
+
+  details.done-wrap summary {
+    cursor: pointer; font-size: 11.5px; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--ink-faint); user-select: none;
+    display: flex; align-items: baseline; gap: 8px; list-style: none;
+  }
+  details.done-wrap summary::before { content: "▸"; font-size: 10px; }
+  details.done-wrap[open] summary::before { content: "▾"; }
+  details.done-wrap summary::-webkit-details-marker { display: none; }
+  details.done-wrap ul.tasks { margin-top: 8px; }
+  .clear-done { font-size: 11.5px; color: var(--ink-faint); text-decoration: underline; text-underline-offset: 2px; }
+  .clear-done:hover { color: var(--late); }
+
+  footer.foot { text-align: center; font-size: 11.5px; color: var(--ink-faint); }
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <h1>Catet</h1>
+      <span class="tag">catatan cepat berprioritas</span>
+    </div>
+    <div class="top-actions">
+      <button class="btn-ghost" id="notif-btn" title="Aktifkan notifikasi browser untuk pengingat waktu">🔔 Pengingat</button>
+    </div>
+  </header>
+
+  <section class="focus-card" id="focus-card" aria-live="polite"></section>
+
+  <section class="capture" aria-label="Tambah catatan">
+    <div class="capture-row1">
+      <input type="text" id="cap-text" placeholder="Catat cepat… mis. “kabari mas Budi soal deploy” lalu Enter" autofocus>
+      <button class="btn-solid" id="cap-save">Simpan</button>
+    </div>
+    <div class="capture-row2">
+      <div class="cap-group" role="group" aria-label="Prioritas">
+        <span class="cap-label">Prioritas</span>
+        <button class="chip pr-urgent" data-pr="urgent" aria-pressed="false">Urgent</button>
+        <button class="chip pr-tinggi" data-pr="tinggi" aria-pressed="false">Tinggi</button>
+        <button class="chip pr-sedang" data-pr="sedang" aria-pressed="true">Sedang</button>
+        <button class="chip pr-rendah" data-pr="rendah" aria-pressed="false">Rendah</button>
+      </div>
+      <div class="cap-group" role="group" aria-label="Waktu">
+        <span class="cap-label">Kapan</span>
+        <button class="chip time" data-due="none" aria-pressed="true">Bebas</button>
+        <button class="chip time" data-due="today">Hari ini</button>
+        <button class="chip time" data-due="tomorrow-am">Besok pagi</button>
+        <input type="datetime-local" id="cap-due-custom" aria-label="Pilih waktu sendiri">
+      </div>
+      <span class="cap-hint"><kbd>Enter</kbd> simpan · <kbd>Alt</kbd>+<kbd>1–4</kbd> prioritas</span>
+    </div>
+  </section>
+
+  <div id="sections"></div>
+
+  <footer class="foot">Data tersimpan lokal di browser ini (localStorage) — tidak dikirim ke mana pun.</footer>
+</div>
+
+<script>
+"use strict";
+
+const STORE_KEY = "catet.tasks.v1";
+const PRIORITIES = [
+  { id: "urgent", label: "Urgent — kerjakan sekarang" },
+  { id: "tinggi", label: "Tinggi" },
+  { id: "sedang", label: "Sedang" },
+  { id: "rendah", label: "Rendah — kalau sempat" },
+];
+const PR_ORDER = { urgent: 0, tinggi: 1, sedang: 2, rendah: 3 };
+
+let tasks = load();
+let capPriority = "sedang";
+let capDue = { kind: "none" }; // none | today | tomorrow-am | custom(value)
+
+function load() {
+  try { return JSON.parse(localStorage.getItem(STORE_KEY)) || []; }
+  catch { return []; }
+}
+function save() {
+  localStorage.setItem(STORE_KEY, JSON.stringify(tasks));
+}
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+function resolveDue() {
+  const now = new Date();
+  if (capDue.kind === "today") {
+    const d = new Date(now); d.setHours(17, 0, 0, 0);
+    if (d <= now) d.setTime(now.getTime() + 60 * 60 * 1000);
+    return d.toISOString();
+  }
+  if (capDue.kind === "tomorrow-am") {
+    const d = new Date(now); d.setDate(d.getDate() + 1); d.setHours(8, 0, 0, 0);
+    return d.toISOString();
+  }
+  if (capDue.kind === "custom" && capDue.value) return new Date(capDue.value).toISOString();
+  return null;
+}
+
+function addTask(text) {
+  text = text.trim();
+  if (!text) return;
+  tasks.push({
+    id: uid(), text, priority: capPriority, due: resolveDue(),
+    createdAt: new Date().toISOString(),
+    status: "aktif", doneAt: null, focusedAt: null, notified: false,
+  });
+  save(); render();
+}
+
+/* ---------- time formatting ---------- */
+const HARI = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
+function fmtClock(d) {
+  return String(d.getHours()).padStart(2, "0") + "." + String(d.getMinutes()).padStart(2, "0");
+}
+function sameDay(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+function fmtDue(iso) {
+  const d = new Date(iso), now = new Date();
+  const tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
+  if (d < now) {
+    const mins = Math.round((now - d) / 60000);
+    if (mins < 60) return "terlambat " + mins + " mnt";
+    if (mins < 60 * 24) return "terlambat " + Math.round(mins / 60) + " jam";
+    return "terlambat " + Math.round(mins / 1440) + " hari";
+  }
+  if (sameDay(d, now)) return "hari ini " + fmtClock(d);
+  if (sameDay(d, tomorrow)) return "besok " + fmtClock(d);
+  return HARI[d.getDay()] + " " + d.getDate() + "/" + (d.getMonth() + 1) + " " + fmtClock(d);
+}
+function fmtAgo(iso) {
+  const mins = Math.round((Date.now() - new Date(iso)) / 60000);
+  if (mins < 1) return "baru saja";
+  if (mins < 60) return mins + " mnt lalu";
+  const h = Math.floor(mins / 60);
+  if (h < 24) return h + " jam " + (mins % 60) + " mnt";
+  return Math.floor(h / 24) + " hari lalu";
+}
+
+/* ---------- rendering ---------- */
+const $ = (sel) => document.querySelector(sel);
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+function renderFocus() {
+  const card = $("#focus-card");
+  card.innerHTML = "";
+  const t = tasks.find((x) => x.status === "fokus");
+  const eyebrow = el("div", "eyebrow");
+  if (t) {
+    card.classList.remove("empty");
+    const dot = el("span", "dot"); dot.setAttribute("aria-hidden", "true");
+    eyebrow.append(dot, "Sedang dikerjakan");
+    card.append(eyebrow);
+    card.append(el("div", "focus-text", t.text));
+    const meta = el("div", "focus-meta mono");
+    meta.textContent = "fokus sejak " + fmtAgo(t.focusedAt) +
+      (t.due ? " · tenggat: " + fmtDue(t.due) : "");
+    card.append(meta);
+    const actions = el("div", "focus-actions");
+    const doneBtn = el("button", "btn-solid", "✓ Selesai");
+    doneBtn.onclick = () => { t.status = "selesai"; t.doneAt = new Date().toISOString(); save(); render(); };
+    const pauseBtn = el("button", "btn-line", "Tunda — balikin ke daftar");
+    pauseBtn.onclick = () => { t.status = "aktif"; save(); render(); };
+    const intBtn = el("button", "btn-line", "⚡ Ada interupsi? Catat dulu");
+    intBtn.title = "Fokus tetap di tugas ini; catat interupsinya di kolom bawah";
+    intBtn.onclick = () => { $("#cap-text").focus(); };
+    actions.append(doneBtn, pauseBtn, intBtn);
+    card.append(actions);
+  } else {
+    card.classList.add("empty");
+    eyebrow.textContent = "Sedang dikerjakan";
+    card.append(eyebrow);
+    card.append(el("div", "focus-text",
+      "Belum ada tugas yang difokuskan. Tekan ▶ pada tugas di daftar supaya tidak hilang saat kamu diinterupsi."));
+  }
+}
+
+function taskRow(t) {
+  const li = el("li", "task p-" + t.priority + (t.status === "selesai" ? " done" : ""));
+
+  const check = el("button", "check", "✓");
+  check.title = t.status === "selesai" ? "Tandai belum selesai" : "Tandai selesai";
+  check.setAttribute("aria-label", check.title);
+  check.onclick = () => {
+    if (t.status === "selesai") { t.status = "aktif"; t.doneAt = null; }
+    else { t.status = "selesai"; t.doneAt = new Date().toISOString(); }
+    save(); render();
+  };
+
+  const body = el("div", "task-body");
+  const text = el("div", "task-text", t.text);
+  text.title = "Klik dua kali untuk mengedit";
+  text.ondblclick = () => {
+    text.contentEditable = "true"; text.focus();
+    const range = document.createRange(); range.selectNodeContents(text);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+  };
+  const commit = () => {
+    text.contentEditable = "false";
+    const v = text.textContent.trim();
+    if (v && v !== t.text) { t.text = v; save(); }
+    render();
+  };
+  text.onblur = commit;
+  text.onkeydown = (e) => {
+    if (e.key === "Enter") { e.preventDefault(); text.blur(); }
+    if (e.key === "Escape") { text.textContent = t.text; text.blur(); }
+  };
+  body.append(text);
+
+  const meta = el("div", "task-meta");
+  if (t.due && t.status !== "selesai") {
+    const late = new Date(t.due) < new Date();
+    meta.append(el("span", "due-badge mono" + (late ? " late" : ""), (late ? "⚠ " : "🕑 ") + fmtDue(t.due)));
+  }
+  meta.append(el("span", "mono", "dicatat " + fmtAgo(t.createdAt)));
+  if (t.status === "selesai" && t.doneAt) meta.append(el("span", "mono", "selesai " + fmtAgo(t.doneAt)));
+  body.append(meta);
+
+  const actions = el("div", "task-actions");
+  if (t.status !== "selesai") {
+    const focusBtn = el("button", "icon-btn", "▶");
+    focusBtn.title = "Kerjakan sekarang (jadikan fokus)";
+    focusBtn.setAttribute("aria-label", focusBtn.title);
+    focusBtn.onclick = () => {
+      const cur = tasks.find((x) => x.status === "fokus");
+      if (cur && cur !== t) cur.status = "aktif";
+      t.status = "fokus"; t.focusedAt = new Date().toISOString();
+      save(); render();
+    };
+    actions.append(focusBtn);
+  }
+  const delBtn = el("button", "icon-btn danger", "✕");
+  delBtn.title = "Hapus"; delBtn.setAttribute("aria-label", "Hapus");
+  delBtn.onclick = () => {
+    if (confirm("Hapus catatan ini?\n\n“" + t.text + "”")) {
+      tasks = tasks.filter((x) => x.id !== t.id); save(); render();
+    }
+  };
+  actions.append(delBtn);
+
+  li.append(check, body, actions);
+  return li;
+}
+
+function renderSections() {
+  const wrap = $("#sections");
+  wrap.innerHTML = "";
+  const active = tasks.filter((t) => t.status === "aktif");
+  active.sort((a, b) => {
+    if (PR_ORDER[a.priority] !== PR_ORDER[b.priority]) return PR_ORDER[a.priority] - PR_ORDER[b.priority];
+    if (a.due && b.due) return new Date(a.due) - new Date(b.due);
+    if (a.due) return -1;
+    if (b.due) return 1;
+    return new Date(a.createdAt) - new Date(b.createdAt);
+  });
+
+  const frag = document.createDocumentFragment();
+  let any = false;
+  for (const p of PRIORITIES) {
+    const items = active.filter((t) => t.priority === p.id);
+    if (!items.length) continue;
+    any = true;
+    const sec = el("section", "section s-" + p.id);
+    const head = el("div", "section-head");
+    head.append(el("h2", null, p.label), el("span", "count mono", String(items.length)));
+    sec.append(head);
+    const ul = el("ul", "tasks");
+    items.forEach((t) => ul.append(taskRow(t)));
+    sec.append(ul);
+    frag.append(sec);
+    sec.style.marginBottom = "18px";
+  }
+  if (!any) {
+    frag.append(el("div", "empty-note",
+      "Daftar kosong. Semua yang mampir ke kepala — tiket baru, permintaan teman, follow-up meeting — catat di atas biar tidak lupa."));
+  }
+
+  const done = tasks.filter((t) => t.status === "selesai")
+    .sort((a, b) => new Date(b.doneAt || 0) - new Date(a.doneAt || 0));
+  if (done.length) {
+    const det = document.createElement("details");
+    det.className = "done-wrap section s-selesai";
+    det.style.marginTop = "6px";
+    const sum = document.createElement("summary");
+    sum.append("Selesai ", el("span", "count mono", String(done.length)));
+    const clear = el("button", "clear-done", "bersihkan");
+    clear.onclick = (e) => {
+      e.preventDefault();
+      if (confirm("Hapus semua " + done.length + " catatan yang sudah selesai?")) {
+        tasks = tasks.filter((t) => t.status !== "selesai"); save(); render();
+      }
+    };
+    sum.append(clear);
+    det.append(sum);
+    const ul = el("ul", "tasks");
+    done.forEach((t) => ul.append(taskRow(t)));
+    det.append(ul);
+    frag.append(det);
+  }
+  wrap.append(frag);
+}
+
+function renderTitle() {
+  const urgent = tasks.filter((t) => t.status !== "selesai" &&
+    (t.priority === "urgent" || (t.due && new Date(t.due) < new Date()))).length;
+  document.title = (urgent ? "(" + urgent + ") " : "") + "Catet — catatan cepat berprioritas";
+}
+
+function render() { renderFocus(); renderSections(); renderTitle(); }
+
+/* ---------- capture interactions ---------- */
+$("#cap-save").onclick = () => { addTask($("#cap-text").value); $("#cap-text").value = ""; $("#cap-text").focus(); };
+$("#cap-text").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { addTask(e.target.value); e.target.value = ""; }
+});
+
+document.querySelectorAll(".chip[data-pr]").forEach((btn) => {
+  btn.onclick = () => setPriority(btn.dataset.pr);
+});
+function setPriority(pr) {
+  capPriority = pr;
+  document.querySelectorAll(".chip[data-pr]").forEach((b) =>
+    b.setAttribute("aria-pressed", String(b.dataset.pr === pr)));
+}
+
+document.querySelectorAll(".chip[data-due]").forEach((btn) => {
+  btn.onclick = () => {
+    capDue = { kind: btn.dataset.due === "none" ? "none" : btn.dataset.due };
+    $("#cap-due-custom").value = "";
+    syncDueChips(btn.dataset.due);
+  };
+});
+$("#cap-due-custom").onchange = (e) => {
+  if (e.target.value) { capDue = { kind: "custom", value: e.target.value }; syncDueChips(null); }
+};
+function syncDueChips(activeKind) {
+  document.querySelectorAll(".chip[data-due]").forEach((b) =>
+    b.setAttribute("aria-pressed", String(b.dataset.due === activeKind)));
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.altKey && e.key >= "1" && e.key <= "4") {
+    e.preventDefault();
+    setPriority(PRIORITIES[Number(e.key) - 1].id);
+    $("#cap-text").focus();
+  }
+});
+
+/* ---------- reminders ---------- */
+$("#notif-btn").onclick = async () => {
+  if (!("Notification" in window)) { alert("Browser ini tidak mendukung notifikasi."); return; }
+  const perm = await Notification.requestPermission();
+  $("#notif-btn").textContent = perm === "granted" ? "🔔 Pengingat aktif" : "🔕 Pengingat ditolak";
+};
+if ("Notification" in window && Notification.permission === "granted") {
+  $("#notif-btn").textContent = "🔔 Pengingat aktif";
+}
+function checkDue() {
+  const now = new Date();
+  let changed = false;
+  for (const t of tasks) {
+    if (t.status !== "selesai" && t.due && !t.notified && new Date(t.due) <= now) {
+      t.notified = true; changed = true;
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification("Catet — waktunya!", { body: t.text });
+      }
+    }
+  }
+  if (changed) save();
+  render(); // refresh relative times & overdue badges
+}
+setInterval(checkDue, 30000);
+
+render();
+</script>
