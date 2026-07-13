@@ -244,6 +244,29 @@
   .clear-done:hover { color: var(--late); }
 
   footer.foot { text-align: center; font-size: 11.5px; color: var(--ink-faint); }
+
+  /* ---- In-page reminder toasts ---- */
+  .toasts {
+    position: fixed; right: 16px; bottom: 16px; z-index: 50;
+    display: flex; flex-direction: column; gap: 8px; max-width: min(340px, calc(100vw - 32px));
+  }
+  .toast {
+    background: var(--surface); color: var(--ink);
+    border: 1px solid var(--line); border-left: 4px solid var(--p-urgent);
+    border-radius: 8px; box-shadow: var(--shadow);
+    padding: 10px 12px; cursor: pointer;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .toast .toast-title {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--p-urgent);
+  }
+  .toast .toast-body { font-size: 13.5px; overflow-wrap: break-word; }
+  .toast .toast-hint { font-size: 10.5px; color: var(--ink-faint); }
+  @media (prefers-reduced-motion: no-preference) {
+    .toast { animation: toast-in .18s ease-out; }
+    @keyframes toast-in { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+  }
 </style>
 
 <div class="app">
@@ -253,7 +276,7 @@
       <span class="tag">catatan cepat berprioritas</span>
     </div>
     <div class="top-actions">
-      <button class="btn-ghost" id="notif-btn" title="Aktifkan notifikasi browser untuk pengingat waktu">🔔 Pengingat</button>
+      <button class="btn-ghost" id="notif-btn" title="Nyalakan/matikan pengingat waktu">🔔 Pengingat</button>
     </div>
   </header>
 
@@ -287,6 +310,8 @@
 
   <footer class="foot">Data tersimpan lokal di browser ini (localStorage) — tidak dikirim ke mana pun.</footer>
 </div>
+
+<div class="toasts" id="toasts" role="status" aria-live="assertive"></div>
 
 <script>
 "use strict";
@@ -584,27 +609,102 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-/* ---------- reminders ---------- */
-$("#notif-btn").onclick = async () => {
-  if (!("Notification" in window)) { alert("Browser ini tidak mendukung notifikasi."); return; }
-  const perm = await Notification.requestPermission();
-  $("#notif-btn").textContent = perm === "granted" ? "🔔 Pengingat aktif" : "🔕 Pengingat ditolak";
-};
-if ("Notification" in window && Notification.permission === "granted") {
-  $("#notif-btn").textContent = "🔔 Pengingat aktif";
+/* ---------- reminders ----------
+   Dua lapis, dengan toggle nyala/mati sendiri (terpisah dari izin browser):
+   1. Toast dalam halaman + bip — selalu bisa, termasuk saat notifikasi
+      browser diblokir atau halaman dibuka dari file://.
+   2. Notifikasi sistem — bonus kalau izin browser diberikan. Sekali izin
+      ditolak, browser tidak akan menampilkan prompt lagi; membukanya harus
+      lewat pengaturan situs (ikon gembok), bukan dari halaman ini. */
+const REMIND_KEY = "catet.reminders.v1";
+let remindersOn = localStorage.getItem(REMIND_KEY) !== "0"; // default nyala
+
+function sysNotifAvailable() {
+  return "Notification" in window && Notification.permission === "granted";
 }
+function updateNotifBtn() {
+  const btn = $("#notif-btn");
+  if (!remindersOn) {
+    btn.textContent = "🔕 Pengingat mati";
+    btn.title = "Klik untuk menyalakan pengingat waktu";
+  } else if (sysNotifAvailable()) {
+    btn.textContent = "🔔 Pengingat aktif";
+    btn.title = "Pengingat lewat notifikasi sistem + di dalam halaman. Klik untuk mematikan.";
+  } else {
+    btn.textContent = "🔔 Pengingat aktif (di tab ini)";
+    btn.title = "Pengingat muncul di dalam halaman ini. Notifikasi sistem belum diizinkan browser. Klik untuk mematikan.";
+  }
+}
+$("#notif-btn").onclick = () => {
+  // Simpan state toggle dulu — permintaan izin browser bisa lama atau tidak
+  // pernah terjawab, dan tidak boleh menyandera toggle-nya.
+  remindersOn = !remindersOn;
+  localStorage.setItem(REMIND_KEY, remindersOn ? "1" : "0");
+  updateNotifBtn();
+  if (remindersOn && "Notification" in window) {
+    if (Notification.permission === "default") {
+      Notification.requestPermission().then(updateNotifBtn).catch(() => {});
+    } else if (Notification.permission === "denied") {
+      alert(
+        "Pengingat dinyalakan — akan muncul di dalam halaman ini.\n\n" +
+        "Notifikasi sistem sedang diblokir oleh browser (pernah ditolak, atau halaman dibuka dari file://). " +
+        "Browser tidak mengizinkan halaman meminta ulang izinnya. Untuk membukanya:\n" +
+        "• Klik ikon gembok/setelan di kiri address bar → Notifikasi → Izinkan, lalu muat ulang; atau\n" +
+        "• Buka pengaturan situs browser dan hapus blokir notifikasi untuk halaman ini.\n\n" +
+        "Tanpa itu pun pengingat di dalam halaman tetap jalan."
+      );
+    }
+  }
+};
+updateNotifBtn();
+
+function showToast(t) {
+  const wrap = $("#toasts");
+  const toast = el("div", "toast");
+  toast.append(
+    el("div", "toast-title", "⏰ Waktunya!"),
+    el("div", "toast-body", t.text),
+    el("div", "toast-hint", "klik untuk menutup")
+  );
+  toast.onclick = () => toast.remove();
+  wrap.append(toast);
+  setTimeout(() => toast.remove(), 30000);
+}
+let audioCtx = null;
+function beep() {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") { audioCtx.resume(); }
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = "sine"; osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.5);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+  } catch {}
+}
+
 function checkDue() {
   const now = new Date();
   let changed = false;
+  let dueNow = [];
   for (const t of tasks) {
     if (t.status !== "selesai" && t.due && !t.notified && new Date(t.due) <= now) {
       t.notified = true; changed = true;
-      if ("Notification" in window && Notification.permission === "granted") {
-        new Notification("Catet — waktunya!", { body: t.text });
-      }
+      dueNow.push(t);
     }
   }
   if (changed) save();
+  if (remindersOn) {
+    for (const t of dueNow) {
+      showToast(t);
+      if (sysNotifAvailable()) {
+        try { new Notification("Catet — waktunya!", { body: t.text }); } catch {}
+      }
+    }
+    if (dueNow.length) beep();
+  }
   render(); // refresh relative times & overdue badges
 }
 setInterval(checkDue, 30000);

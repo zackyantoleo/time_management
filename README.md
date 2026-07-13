@@ -21,9 +21,15 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
   - Kapan: Bebas / Hari ini / Besok pagi / pilih tanggal-jam sendiri
 - **Daftar terurut otomatis** — dikelompokkan per prioritas, di dalamnya
   diurutkan berdasarkan tenggat terdekat.
-- **Pengingat** — tugas yang lewat tenggat diberi tanda ⚠ "terlambat", jumlah
-  tugas urgent/terlambat muncul di judul tab, dan (opsional) notifikasi
-  browser saat waktunya tiba — klik tombol 🔔 sekali untuk mengizinkan.
+- **Pengingat** — saat waktunya tiba, muncul pemberitahuan di dalam halaman
+  (toast + bunyi bip) — ini selalu jalan, bahkan saat notifikasi browser
+  diblokir atau halaman dibuka dari `file://`. Tugas yang lewat tenggat diberi
+  tanda ⚠ "terlambat" dan jumlah tugas urgent/terlambat muncul di judul tab.
+  Tombol 🔔 di kanan atas menyalakan/mematikan pengingat; kalau browser
+  mengizinkan, notifikasi sistem ikut dikirim sebagai lapisan tambahan.
+  Catatan: sekali izin notifikasi ditolak, browser tidak akan menampilkan
+  prompt-nya lagi — buka bloknya lewat ikon gembok di address bar →
+  Notifikasi → Izinkan.
 - **Edit & riwayat** — klik dua kali untuk mengedit teks; tugas selesai
   tersimpan di bagian "Selesai" yang bisa dibersihkan.
 - Tema terang & gelap mengikuti pengaturan sistem.
