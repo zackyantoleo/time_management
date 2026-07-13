@@ -32,6 +32,12 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
   Notifikasi → Izinkan.
 - **Edit & riwayat** — klik dua kali untuk mengedit teks; tugas selesai
   tersimpan di bagian "Selesai" yang bisa dibersihkan.
+- **Log kerja harian** — tab "🗒 Log kerja" berisi semua tugas yang selesai,
+  dikelompokkan per hari lengkap dengan jam selesai dan total lama fokus
+  (dihitung dari berapa lama tugas berada di slot "Sedang dikerjakan").
+  Tombol **Salin** menyalin log satu hari sebagai teks siap tempel ke
+  worklog Jira, laporan harian, atau standup. Log bersifat riwayat
+  tersendiri: membersihkan bagian "Selesai" di papan tidak menghapusnya.
 - Tema terang & gelap mengikuti pengaturan sistem.
 
 ## Cara pakai

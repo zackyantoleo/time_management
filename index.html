@@ -249,6 +249,44 @@
 
   footer.foot { text-align: center; font-size: 11.5px; color: var(--ink-faint); }
 
+  /* ---- View tabs ---- */
+  .tabs {
+    display: flex; gap: 4px; width: max-content;
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 4px;
+  }
+  .tab { font-size: 13px; font-weight: 600; padding: 6px 16px; border-radius: 6px; color: var(--ink-muted); }
+  .tab:hover { color: var(--ink); }
+  .tab[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+  .hidden { display: none !important; }
+
+  /* ---- Work log ---- */
+  .log-day {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px;
+  }
+  .log-day-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .log-day-head h3 { font-size: 14px; font-weight: 700; margin: 0; }
+  .log-day-head .log-sum { font-size: 11.5px; color: var(--ink-faint); }
+  .log-day-head .btn-ghost { margin-left: auto; }
+  ul.log-entries { list-style: none; margin: 0; padding: 0; }
+  .log-entry {
+    display: flex; gap: 10px; align-items: baseline; padding: 7px 0;
+    border-top: 1px dashed var(--line);
+  }
+  .log-entry:first-child { border-top: none; }
+  .log-time { font-size: 12px; color: var(--ink-faint); flex: none; }
+  .log-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; align-self: center; }
+  .log-dot.p-urgent { background: var(--p-urgent); }
+  .log-dot.p-tinggi { background: var(--p-tinggi); }
+  .log-dot.p-sedang { background: var(--p-sedang); }
+  .log-dot.p-rendah { background: var(--p-rendah); }
+  .log-text { flex: 1; min-width: 0; overflow-wrap: break-word; font-size: 14px; }
+  .log-mins {
+    font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent); flex: none;
+  }
+  .log-entry .icon-btn { width: 24px; height: 24px; font-size: 12px; align-self: center; }
+
   /* ---- In-page reminder toasts ---- */
   .toasts {
     position: fixed; right: 16px; bottom: 16px; z-index: 50;
@@ -284,9 +322,14 @@
     </div>
   </header>
 
-  <section class="focus-card" id="focus-card" aria-live="polite"></section>
+  <nav class="tabs" role="tablist" aria-label="Tampilan">
+    <button class="tab" id="tab-papan" role="tab" aria-selected="true">📋 Papan</button>
+    <button class="tab" id="tab-log" role="tab" aria-selected="false">🗒 Log kerja</button>
+  </nav>
 
-  <section class="capture" aria-label="Tambah catatan">
+  <section class="focus-card board-view" id="focus-card" aria-live="polite"></section>
+
+  <section class="capture board-view" aria-label="Tambah catatan">
     <div class="capture-row1">
       <input type="text" id="cap-text" placeholder="Catat cepat… mis. “kabari mas Budi soal deploy” lalu Enter" autofocus>
       <button class="btn-solid" id="cap-save">Simpan</button>
@@ -310,7 +353,9 @@
     </div>
   </section>
 
-  <div id="sections"></div>
+  <div id="sections" class="board-view"></div>
+
+  <div id="worklog" class="hidden"></div>
 
   <footer class="foot">Data tersimpan lokal di browser ini (localStorage) — tidak dikirim ke mana pun.</footer>
 </div>
@@ -329,9 +374,13 @@ const PRIORITIES = [
 ];
 const PR_ORDER = { urgent: 0, tinggi: 1, sedang: 2, rendah: 3 };
 
+const WORKLOG_KEY = "catet.worklog.v1";
+
 let tasks = load();
+let worklog = loadWorklog();
 let capPriority = "sedang";
 let capDue = { kind: "none" }; // none | today | tomorrow-am | custom(value)
+let view = "papan"; // papan | log
 
 function load() {
   try { return JSON.parse(localStorage.getItem(STORE_KEY)) || []; }
@@ -340,7 +389,62 @@ function load() {
 function save() {
   localStorage.setItem(STORE_KEY, JSON.stringify(tasks));
 }
+function loadWorklog() {
+  try { return JSON.parse(localStorage.getItem(WORKLOG_KEY)) || []; }
+  catch { return []; }
+}
+function saveWorklog() {
+  localStorage.setItem(WORKLOG_KEY, JSON.stringify(worklog));
+}
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+/* ---------- work log (append-only, terpisah dari daftar tugas) ---------- */
+function localDateStr(d) {
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" +
+    String(d.getDate()).padStart(2, "0");
+}
+// Akumulasi menit fokus berhenti di sini; dipanggil setiap tugas keluar dari
+// slot fokus (ditunda, diganti, atau selesai).
+function stopFocus(t) {
+  if (t.focusedAt) {
+    t.focusMins = (t.focusMins || 0) + Math.max(0, (Date.now() - new Date(t.focusedAt)) / 60000);
+    t.focusedAt = null;
+  }
+}
+function completeTask(t) {
+  stopFocus(t);
+  t.status = "selesai";
+  t.doneAt = new Date().toISOString();
+  const when = new Date(t.doneAt);
+  worklog.push({
+    id: uid(), taskId: t.id, date: localDateStr(when), ts: t.doneAt,
+    text: t.text, priority: t.priority, mins: Math.round(t.focusMins || 0),
+  });
+  t.focusMins = 0;
+  save(); saveWorklog();
+}
+function uncompleteTask(t) {
+  t.status = "aktif"; t.doneAt = null;
+  for (let i = worklog.length - 1; i >= 0; i--) {
+    if (worklog[i].taskId === t.id) { worklog.splice(i, 1); break; }
+  }
+  save(); saveWorklog();
+}
+// Tugas yang sudah berstatus selesai sebelum fitur log ada ikut dicatat sekali.
+(function backfillWorklog() {
+  let changed = false;
+  for (const t of tasks) {
+    if (t.status === "selesai" && t.doneAt && !worklog.some((e) => e.taskId === t.id)) {
+      const when = new Date(t.doneAt);
+      worklog.push({
+        id: uid(), taskId: t.id, date: localDateStr(when), ts: t.doneAt,
+        text: t.text, priority: t.priority, mins: Math.round(t.focusMins || 0),
+      });
+      changed = true;
+    }
+  }
+  if (changed) saveWorklog();
+})();
 
 function resolveDue() {
   const now = new Date();
@@ -424,9 +528,9 @@ function renderFocus() {
     card.append(meta);
     const actions = el("div", "focus-actions");
     const doneBtn = el("button", "btn-solid", "✓ Selesai");
-    doneBtn.onclick = () => { t.status = "selesai"; t.doneAt = new Date().toISOString(); save(); render(); };
+    doneBtn.onclick = () => { completeTask(t); render(); };
     const pauseBtn = el("button", "btn-line", "Tunda — balikin ke daftar");
-    pauseBtn.onclick = () => { t.status = "aktif"; save(); render(); };
+    pauseBtn.onclick = () => { stopFocus(t); t.status = "aktif"; save(); render(); };
     const intBtn = el("button", "btn-line", "⚡ Ada interupsi? Catat dulu");
     intBtn.title = "Fokus tetap di tugas ini; catat interupsinya di kolom bawah";
     intBtn.onclick = () => { $("#cap-text").focus(); };
@@ -448,9 +552,9 @@ function taskRow(t) {
   check.title = t.status === "selesai" ? "Tandai belum selesai" : "Tandai selesai";
   check.setAttribute("aria-label", check.title);
   check.onclick = () => {
-    if (t.status === "selesai") { t.status = "aktif"; t.doneAt = null; }
-    else { t.status = "selesai"; t.doneAt = new Date().toISOString(); }
-    save(); render();
+    if (t.status === "selesai") uncompleteTask(t);
+    else completeTask(t);
+    render();
   };
 
   const body = el("div", "task-body");
@@ -490,7 +594,7 @@ function taskRow(t) {
     focusBtn.setAttribute("aria-label", focusBtn.title);
     focusBtn.onclick = () => {
       const cur = tasks.find((x) => x.status === "fokus");
-      if (cur && cur !== t) cur.status = "aktif";
+      if (cur && cur !== t) { stopFocus(cur); cur.status = "aktif"; }
       t.status = "fokus"; t.focusedAt = new Date().toISOString();
       save(); render();
     };
@@ -573,7 +677,125 @@ function renderTitle() {
   document.title = (urgent ? "(" + urgent + ") " : "") + "Catet — catatan cepat berprioritas";
 }
 
-function render() { renderFocus(); renderSections(); renderTitle(); }
+/* ---------- work log view ---------- */
+const BULAN = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+const HARI_FULL = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+const PR_LABEL = { urgent: "urgent", tinggi: "tinggi", sedang: "sedang", rendah: "rendah" };
+function fmtDayName(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  return HARI_FULL[date.getDay()] + ", " + d + " " + BULAN[m - 1] + " " + y;
+}
+function fmtDayHeading(dateStr) {
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+  let label = fmtDayName(dateStr);
+  if (dateStr === localDateStr(new Date())) label = "Hari ini — " + label;
+  else if (dateStr === localDateStr(yesterday)) label = "Kemarin — " + label;
+  return label;
+}
+function fmtMins(mins) {
+  if (!mins || mins < 1) return null;
+  if (mins < 60) return mins + " mnt";
+  return Math.floor(mins / 60) + " j " + (mins % 60) + " mnt";
+}
+function dayLogText(dateStr, entries) {
+  const lines = entries.map((e) => {
+    let line = "- " + fmtClock(new Date(e.ts)) + " " + e.text + " [" + PR_LABEL[e.priority] + "]";
+    const m = fmtMins(e.mins);
+    if (m) line += " (fokus ±" + m + ")";
+    return line;
+  });
+  return "Log kerja " + fmtDayName(dateStr) + "\n" + lines.join("\n");
+}
+function copyText(text, btn) {
+  const done = () => {
+    const old = btn.textContent;
+    btn.textContent = "Tersalin ✓";
+    setTimeout(() => { btn.textContent = old; }, 1500);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+  } else fallbackCopy(text, done);
+}
+function fallbackCopy(text, done) {
+  const ta = document.createElement("textarea");
+  ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.append(ta); ta.select();
+  try { document.execCommand("copy"); done(); } catch {}
+  ta.remove();
+}
+
+function renderWorklog() {
+  const wrap = $("#worklog");
+  wrap.innerHTML = "";
+  if (!worklog.length) {
+    wrap.append(el("div", "empty-note",
+      "Log masih kosong. Setiap tugas yang kamu tandai ✓ selesai otomatis tercatat di sini per hari — lengkap dengan jam selesai dan lama fokus. Cocok untuk mengisi worklog/standup."));
+    return;
+  }
+  const byDate = new Map();
+  for (const e of worklog) {
+    if (!byDate.has(e.date)) byDate.set(e.date, []);
+    byDate.get(e.date).push(e);
+  }
+  const dates = [...byDate.keys()].sort().reverse();
+  for (const dateStr of dates) {
+    const entries = byDate.get(dateStr).sort((a, b) => new Date(a.ts) - new Date(b.ts));
+    const day = el("section", "log-day");
+    const head = el("div", "log-day-head");
+    head.append(el("h3", null, fmtDayHeading(dateStr)));
+    const totalMins = Math.round(entries.reduce((s, e) => s + (e.mins || 0), 0));
+    let sum = entries.length + " tugas";
+    if (fmtMins(totalMins)) sum += " · fokus " + fmtMins(totalMins);
+    head.append(el("span", "log-sum mono", sum));
+    const copyBtn = el("button", "btn-ghost", "Salin");
+    copyBtn.title = "Salin log hari ini sebagai teks";
+    copyBtn.onclick = () => copyText(dayLogText(dateStr, entries), copyBtn);
+    head.append(copyBtn);
+    day.append(head);
+
+    const ul = el("ul", "log-entries");
+    for (const e of entries) {
+      const li = el("li", "log-entry");
+      li.append(el("span", "log-time mono", fmtClock(new Date(e.ts))));
+      const dot = el("span", "log-dot p-" + e.priority);
+      dot.title = "prioritas " + PR_LABEL[e.priority];
+      li.append(dot);
+      li.append(el("span", "log-text", e.text));
+      const m = fmtMins(e.mins);
+      if (m) li.append(el("span", "log-mins mono", "fokus ±" + m));
+      const del = el("button", "icon-btn danger", "✕");
+      del.title = "Hapus dari log"; del.setAttribute("aria-label", "Hapus dari log");
+      del.onclick = () => {
+        if (confirm("Hapus entri log ini?\n\n“" + e.text + "”")) {
+          worklog = worklog.filter((x) => x.id !== e.id); saveWorklog(); render();
+        }
+      };
+      li.append(del);
+      ul.append(li);
+    }
+    day.append(ul);
+    wrap.append(day);
+  }
+}
+
+/* ---------- view switching ---------- */
+function setView(v) {
+  view = v;
+  $("#tab-papan").setAttribute("aria-selected", String(v === "papan"));
+  $("#tab-log").setAttribute("aria-selected", String(v === "log"));
+  document.querySelectorAll(".board-view").forEach((n) => n.classList.toggle("hidden", v !== "papan"));
+  $("#worklog").classList.toggle("hidden", v !== "log");
+  render();
+}
+$("#tab-papan").onclick = () => setView("papan");
+$("#tab-log").onclick = () => setView("log");
+
+function render() {
+  if (view === "papan") { renderFocus(); renderSections(); }
+  else renderWorklog();
+  renderTitle();
+}
 
 /* ---------- capture interactions ---------- */
 $("#cap-save").onclick = () => { addTask($("#cap-text").value); $("#cap-text").value = ""; $("#cap-text").focus(); };
