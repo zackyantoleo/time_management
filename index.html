@@ -1,6 +1,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Catet — catatan cepat berprioritas</title>
+<meta name="theme-color" content="#0e7a6f">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
   :root {
     --bg: #eef1f4;
@@ -708,6 +712,12 @@ function checkDue() {
   render(); // refresh relative times & overdue badges
 }
 setInterval(checkDue, 30000);
+
+// Offline di HP: service worker hanya jalan bila di-serve lewat https/localhost,
+// tidak dari file:// atau lingkungan tanpa dukungan SW.
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
 
 render();
 </script>
