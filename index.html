@@ -288,6 +288,32 @@
   .routine-list li { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; }
   .routine-list .r-days { font-size: 11px; color: var(--ink-faint); }
 
+  /* ---- Jira inbox ---- */
+  .section.s-jira h2 { color: var(--p-sedang); }
+  .jira-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px dashed var(--line); }
+  .jira-row:first-child { border-top: none; }
+  .jira-summary { flex: 1; min-width: 0; overflow-wrap: break-word; }
+  .jira-status { font-size: 11px; color: var(--ink-faint); flex: none; }
+  a.jira-key {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "Ubuntu Mono", Menlo, monospace;
+    font-size: 12px; font-weight: 600; color: var(--p-sedang);
+    text-decoration: none; border: 1px solid var(--line); border-radius: 5px;
+    padding: 1px 6px; flex: none;
+  }
+  a.jira-key:hover { border-color: var(--p-sedang); text-decoration: underline; text-underline-offset: 2px; }
+  span.jira-key { font-family: ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 600; flex: none; }
+  .task-text a, .log-text a, .focus-text a {
+    color: var(--p-sedang); text-decoration: underline; text-underline-offset: 2px;
+  }
+  .jira-import textarea {
+    width: 100%; min-height: 90px; resize: vertical; font: 12.5px/1.5 ui-monospace, Menlo, monospace;
+    color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px;
+  }
+  .jira-import input[type="url"] {
+    flex: 1; min-width: 200px; font: inherit; font-size: 12.5px; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px;
+  }
+
   /* ---- View tabs ---- */
   .tabs {
     display: flex; gap: 4px; width: max-content;
@@ -470,6 +496,82 @@ function uncompleteTask(t) {
   }
   save(); saveWorklog();
 }
+/* ---------- Jira: autolink + inbox tiket ---------- */
+const JIRA_KEY_STORE = "catet.jira.v1";
+const JIRA_RE = /\b([A-Z][A-Z0-9]{1,9}-\d+)\b/g;
+let jira = (() => {
+  try {
+    const j = JSON.parse(localStorage.getItem(JIRA_KEY_STORE));
+    if (j && typeof j === "object" && Array.isArray(j.items)) return j;
+  } catch {}
+  return { site: "https://erafone.atlassian.net", items: [] };
+})();
+function saveJira() { localStorage.setItem(JIRA_KEY_STORE, JSON.stringify(jira)); }
+function jiraSite() { return (jira.site || "").trim().replace(/\/+$/, ""); }
+function jiraUrl(key) { return jiraSite() + "/browse/" + key; }
+
+// Ubah kode tiket dalam teks jadi link ke Jira. Mengembalikan node-node DOM
+// (bukan innerHTML) supaya teks pengguna tidak pernah dieksekusi sebagai HTML.
+function linkify(text) {
+  const frag = document.createDocumentFragment();
+  if (!jiraSite()) { frag.append(text); return frag; }
+  let last = 0;
+  for (const m of text.matchAll(JIRA_RE)) {
+    if (m.index > last) frag.append(text.slice(last, m.index));
+    const a = document.createElement("a");
+    a.href = jiraUrl(m[1]); a.target = "_blank"; a.rel = "noopener";
+    a.textContent = m[1];
+    frag.append(a);
+    last = m.index + m[1].length;
+  }
+  if (last < text.length) frag.append(text.slice(last));
+  return frag;
+}
+
+// Impor menerima: JSON {site?, items:[{key,summary,status?}]}, JSON array,
+// atau baris teks "KEY ringkasan".
+function parseJiraImport(raw) {
+  raw = raw.trim();
+  if (!raw) return [];
+  try {
+    const j = JSON.parse(raw);
+    const arr = Array.isArray(j) ? j : (Array.isArray(j.items) ? j.items : null);
+    if (arr) {
+      if (!Array.isArray(j) && typeof j.site === "string" && j.site.trim()) jira.site = j.site.trim();
+      return arr
+        .filter((x) => x && typeof x.key === "string" && typeof x.summary === "string")
+        .map((x) => ({ key: x.key.toUpperCase(), summary: x.summary, status: typeof x.status === "string" ? x.status : null }));
+    }
+  } catch {}
+  const out = [];
+  for (const line of raw.split("\n")) {
+    const m = line.trim().match(/^([A-Za-z][A-Za-z0-9]{1,9}-\d+)[\s:—-]+(.+)$/);
+    if (m) out.push({ key: m[1].toUpperCase(), summary: m[2].trim(), status: null });
+  }
+  return out;
+}
+function importJira(raw) {
+  const parsed = parseJiraImport(raw);
+  let added = 0;
+  for (const p of parsed) {
+    const dup = jira.items.some((x) => x.key === p.key) ||
+      tasks.some((t) => t.status !== "selesai" && t.text.includes(p.key));
+    if (!dup) { jira.items.push({ id: uid(), ...p, addedAt: new Date().toISOString() }); added++; }
+  }
+  saveJira();
+  return { parsed: parsed.length, added };
+}
+// "Ambil" — geser tiket dari inbox Jira ke papan utama sebagai tugas biasa.
+function takeJiraItem(item) {
+  tasks.push({
+    id: uid(), text: item.key + " — " + item.summary, priority: "sedang", due: null,
+    createdAt: new Date().toISOString(),
+    status: "aktif", doneAt: null, focusedAt: null, notified: false,
+  });
+  jira.items = jira.items.filter((x) => x.id !== item.id);
+  save(); saveJira();
+}
+
 /* ---------- daily routines (standup, cek email, dst.) ---------- */
 const ROUTINE_KEY = "catet.routines.v1";
 const RDAY_KEY = "catet.routineday.v1";
@@ -608,7 +710,9 @@ function renderFocus() {
     const dot = el("span", "dot"); dot.setAttribute("aria-hidden", "true");
     eyebrow.append(dot, "Sedang dikerjakan");
     card.append(eyebrow);
-    card.append(el("div", "focus-text", t.text));
+    const ftext = el("div", "focus-text");
+    ftext.append(linkify(t.text));
+    card.append(ftext);
     const meta = el("div", "focus-meta mono");
     meta.textContent = "fokus sejak " + fmtAgo(t.focusedAt) +
       (t.due ? " · tenggat: " + fmtDue(t.due) : "");
@@ -645,7 +749,8 @@ function taskRow(t) {
   };
 
   const body = el("div", "task-body");
-  const text = el("div", "task-text", t.text);
+  const text = el("div", "task-text");
+  text.append(linkify(t.text));
   text.title = "Klik dua kali untuk mengedit";
   text.ondblclick = () => {
     text.contentEditable = "true"; text.focus();
@@ -803,6 +908,77 @@ function renderRoutines(frag) {
   frag.append(sec);
 }
 
+/* ---------- Jira inbox rendering ---------- */
+let jiraImportOpen = false;
+function renderJiraInbox(frag) {
+  const sec = el("section", "section s-jira");
+  sec.style.marginBottom = "18px";
+  const head = el("div", "section-head");
+  head.append(el("h2", null, "Tiket Jira — belum diambil"));
+  if (jira.items.length) head.append(el("span", "count mono", String(jira.items.length)));
+  sec.append(head);
+
+  if (jira.items.length) {
+    const card = el("div", "routine-card");
+    for (const item of jira.items) {
+      const row = el("div", "jira-row");
+      if (jiraSite()) {
+        const a = el("a", "jira-key", item.key);
+        a.href = jiraUrl(item.key); a.target = "_blank"; a.rel = "noopener";
+        a.title = "Buka di Jira";
+        row.append(a);
+      } else {
+        row.append(el("span", "jira-key", item.key));
+      }
+      row.append(el("span", "jira-summary", item.summary));
+      if (item.status) row.append(el("span", "jira-status", item.status));
+      const take = el("button", "btn-line", "＋ Ambil");
+      take.title = "Pindahkan ke papan utama sebagai tugas";
+      take.onclick = () => { takeJiraItem(item); render(); };
+      row.append(take);
+      const del = el("button", "icon-btn danger", "✕");
+      del.title = "Buang dari daftar"; del.setAttribute("aria-label", "Buang dari daftar");
+      del.onclick = () => {
+        jira.items = jira.items.filter((x) => x.id !== item.id);
+        saveJira(); render();
+      };
+      row.append(del);
+      card.append(row);
+    }
+    sec.append(card);
+  }
+
+  const det = document.createElement("details");
+  det.className = "routine-manage jira-import";
+  det.open = jiraImportOpen;
+  det.addEventListener("toggle", () => { jiraImportOpen = det.open; });
+  const sum = document.createElement("summary");
+  sum.textContent = jira.items.length ? "impor tiket" : "+ impor tiket (tempel daftar dari Claude / Jira)";
+  det.append(sum);
+  const editor = el("div", "routine-editor");
+  const ta = document.createElement("textarea");
+  ta.placeholder = 'Tempel di sini. Bisa JSON {"items":[{"key":"ERA-123","summary":"…"}]} atau per baris: ERA-123 perbaiki bug login';
+  editor.append(ta);
+  const form = el("div", "routine-form");
+  const site = document.createElement("input");
+  site.type = "url"; site.value = jira.site || "";
+  site.placeholder = "https://perusahaan.atlassian.net";
+  site.title = "Alamat Jira — dipakai untuk membuat link tiket";
+  const impBtn = el("button", "btn-solid", "Impor");
+  impBtn.onclick = () => {
+    jira.site = site.value.trim();
+    const res = importJira(ta.value);
+    if (!res.parsed) { alert("Tidak ada tiket yang dikenali. Formatnya per baris: KODE-123 ringkasan tiket — atau JSON dari Claude."); return; }
+    if (!res.added) { alert("Semua " + res.parsed + " tiket sudah ada di daftar/papan."); return; }
+    saveJira(); render();
+  };
+  form.append(site, impBtn);
+  editor.append(form);
+  det.append(editor);
+  sec.append(det);
+  frag.append(sec);
+}
+
 function renderSections() {
   const wrap = $("#sections");
   wrap.innerHTML = "";
@@ -836,6 +1012,7 @@ function renderSections() {
     frag.append(el("div", "empty-note",
       "Daftar kosong. Semua yang mampir ke kepala — tiket baru, permintaan teman, follow-up meeting — catat di atas biar tidak lupa."));
   }
+  renderJiraInbox(frag);
 
   const done = tasks.filter((t) => t.status === "selesai")
     .sort((a, b) => new Date(b.doneAt || 0) - new Date(a.doneAt || 0));
@@ -952,7 +1129,9 @@ function renderWorklog() {
       const dot = el("span", "log-dot p-" + e.priority);
       dot.title = "prioritas " + PR_LABEL[e.priority];
       li.append(dot);
-      li.append(el("span", "log-text", e.text));
+      const ltext = el("span", "log-text");
+      ltext.append(linkify(e.text));
+      li.append(ltext);
       const m = fmtMins(e.mins);
       if (m) li.append(el("span", "log-mins mono", "fokus ±" + m));
       const del = el("button", "icon-btn danger", "✕");
