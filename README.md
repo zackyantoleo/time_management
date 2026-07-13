@@ -32,6 +32,13 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
   Notifikasi → Izinkan.
 - **Edit & riwayat** — klik dua kali untuk mengedit teks; tugas selesai
   tersimpan di bagian "Selesai" yang bisa dibersihkan.
+- **Rutinitas harian** — tugas berulang seperti daily standup, cek email,
+  atau isi worklog cukup didefinisikan sekali (teks + jam pengingat opsional +
+  pilihan hari, default Senin–Jumat). Setiap hari mereka muncul sebagai
+  checklist "Rutinitas hari ini" di papan, otomatis kosong lagi keesokan
+  harinya. Rutinitas berjam diingatkan (toast/notifikasi) pada jamnya sampai
+  dicentang, dan yang dicentang ikut tercatat ke Log kerja dengan label
+  [rutin].
 - **Log kerja harian** — tab "🗒 Log kerja" berisi semua tugas yang selesai,
   dikelompokkan per hari lengkap dengan jam selesai dan total lama fokus
   (dihitung dari berapa lama tugas berada di slot "Sedang dikerjakan").
