@@ -22,20 +22,22 @@ dependensi, tanpa framework. Data pengguna di `localStorage`.
   di `index.html` penting:
   1. `util.js` — helper DOM (`$`, `el`), `uid`, format tanggal/waktu, salin teks
   2. `tasks.js` — state `tasks` + `worklog`; skor dinamis (`skorTugas`, `masukHariIni`); selesai/batal/fokus
-  3. `capture.js` — kolom catat cepat (prioritas, kapan, `addTask`)
-  4. `routines.js` — rutinitas harian + render section-nya
-  5. `jira.js` — autolink kode tiket, inbox tiket, impor, sinkron via proxy
-  6. `board.js` — render papan (kartu fokus, "Kerjakan hari ini" terurut skor, "Nanti" terlipat)
-  7. `worklog.js` — render tab Log kerja, salin per hari, kirim worklog → Jira
-  8. `reminders.js` — toggle pengingat, toast + bip, notifikasi, `checkDue`
-  9. `app.js` — `view`/`render()`/`setView()` + `initApp()` (semua binding & timer)
+  3. `sprints.js` — sprint (nama + tanggal selesai); `sprintPts` menekan skor anggotanya
+  4. `capture.js` — kolom catat cepat (prioritas, kapan, `addTask`)
+  5. `routines.js` — rutinitas harian + render section-nya
+  6. `jira.js` — autolink kode tiket, inbox tiket, impor, sinkron via proxy
+  7. `board.js` — render papan (kartu fokus, "Kerjakan hari ini" terurut skor, "Nanti" terlipat)
+  8. `worklog.js` — render tab Log kerja, salin per hari, kirim worklog → Jira
+  9. `reminders.js` — toggle pengingat, toast + bip, notifikasi, `checkDue`
+  10. `app.js` — `view`/`render()`/`setView()` + `initApp()` (semua binding & timer)
 - `sw.js` — service worker network-first; **tambahkan file baru ke `ASSETS`
   dan naikkan versi `CACHE`** setiap daftar aset berubah
 - `manifest.webmanifest` + `icon-*.png` — PWA (Add to Home Screen)
 - `worker/` — proxy Cloudflare Worker untuk Jira (deploy manual oleh pemilik,
   bukan bagian dari Pages); panduan di `worker/README.md`
 - Kunci localStorage: `catet.tasks.v1`, `catet.worklog.v1`, `catet.routines.v1`,
-  `catet.routineday.v1`, `catet.reminders.v1`, `catet.jira.v1` — jaga
+  `catet.routineday.v1`, `catet.reminders.v1`, `catet.jira.v1`,
+  `catet.sprints.v1` — jaga
   kompatibilitas mundur; kalau skema berubah, tulis migrasi, jangan menghapus
   data pengguna.
 

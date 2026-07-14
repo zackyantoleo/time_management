@@ -84,6 +84,12 @@ function taskRow(t) {
       const usahaLabel = { S: "⚡ ≤1 jam", M: "⏱ ±½ hari", L: "⏳ ≥1 hari" };
       meta.append(el("span", "effort-badge", usahaLabel[t.usaha]));
     }
+    const sprint = t.sprintId ? sprintById(t.sprintId) : null;
+    if (sprint) {
+      const sb = el("span", "effort-badge" + (sprintPts(t) >= 3 ? " sprint-mepet" : ""), "🏃 " + sprint.nama);
+      sb.title = "Sprint berakhir " + fmtDayName(sprint.selesai) + " (" + fmtSisaSprint(sprint) + ")";
+      meta.append(sb);
+    }
   }
   meta.append(el("span", "mono", "dicatat " + fmtAgo(t.createdAt)));
   if (t.status === "selesai" && t.doneAt) meta.append(el("span", "mono", "selesai " + fmtAgo(t.doneAt)));

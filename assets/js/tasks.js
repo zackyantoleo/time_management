@@ -48,17 +48,22 @@ function duePtsTugas(t) {
   if (h <= 48) return 2; // besok
   return 1;
 }
+// Tekanan waktu efektif = yang paling mendesak antara tenggat per-tugas dan
+// akhir sprint yang memuat tugas ini (sprintPts dari sprints.js).
+function tekananWaktu(t) {
+  return Math.max(duePtsTugas(t), sprintPts(t));
+}
 function skorTugas(t) {
   const base = t.dampak ? t.dampak * 2 : (SKOR_BASE_PRIORITAS[t.priority] || 3);
   const uPts = t.usaha === "L" ? 2 : t.usaha === "M" ? 1 : 0;
-  const raw = base + duePtsTugas(t) + uPts; // maks 6 + 4 + 2 = 12
+  const raw = base + tekananWaktu(t) + uPts; // maks 6 + 4 + 2 = 12
   return Math.min(10, Math.round((raw / 12) * 10));
 }
-// Masuk daftar "Kerjakan hari ini"? Ya bila: skornya tinggi, tenggatnya hari
-// ini/terlambat, prioritas urgent, atau ada yang terblokir (dampak 3).
+// Masuk daftar "Kerjakan hari ini"? Ya bila: skornya tinggi, tenggat/akhir
+// sprint sudah dekat, prioritas urgent, atau ada yang terblokir (dampak 3).
 function masukHariIni(t) {
   return t.priority === "urgent" || t.dampak === 3 ||
-    duePtsTugas(t) >= 3 || skorTugas(t) >= SKOR_AMBANG_HARI_INI;
+    tekananWaktu(t) >= 3 || skorTugas(t) >= SKOR_AMBANG_HARI_INI;
 }
 // Urutan pengerjaan: skor tertinggi dulu, lalu tenggat terdekat, lalu yang
 // lebih dulu dicatat.
