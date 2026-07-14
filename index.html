@@ -309,10 +309,11 @@
     width: 100%; min-height: 90px; resize: vertical; font: 12.5px/1.5 ui-monospace, Menlo, monospace;
     color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px;
   }
-  .jira-import input[type="url"] {
+  .jira-import input[type="url"], .jira-import input[type="password"] {
     flex: 1; min-width: 200px; font: inherit; font-size: 12.5px; color: var(--ink);
     background: var(--surface); border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px;
   }
+  .jira-import input[type="password"] { flex: 0 1 180px; min-width: 120px; }
 
   /* ---- View tabs ---- */
   .tabs {
@@ -506,6 +507,10 @@ let jira = (() => {
   } catch {}
   return { site: "https://erafone.atlassian.net", items: [] };
 })();
+// Skema lama (sebelum ada sinkronisasi proxy) tidak punya field-field ini.
+jira.proxy = jira.proxy || "";
+jira.key = jira.key || "";
+jira.dismissed = jira.dismissed || [];
 function saveJira() { localStorage.setItem(JIRA_KEY_STORE, JSON.stringify(jira)); }
 function jiraSite() { return (jira.site || "").trim().replace(/\/+$/, ""); }
 function jiraUrl(key) { return jiraSite() + "/browse/" + key; }
@@ -562,6 +567,7 @@ function importJira(raw) {
   return { parsed: parsed.length, added };
 }
 // "Ambil" — geser tiket dari inbox Jira ke papan utama sebagai tugas biasa.
+// Key-nya masuk daftar dismissed supaya sinkronisasi tidak memunculkannya lagi.
 function takeJiraItem(item) {
   tasks.push({
     id: uid(), text: item.key + " — " + item.summary, priority: "sedang", due: null,
@@ -569,8 +575,50 @@ function takeJiraItem(item) {
     status: "aktif", doneAt: null, focusedAt: null, notified: false,
   });
   jira.items = jira.items.filter((x) => x.id !== item.id);
+  if (!jira.dismissed.includes(item.key)) jira.dismissed.push(item.key);
   save(); saveJira();
 }
+
+/* ---------- sinkronisasi otomatis lewat proxy (Cloudflare Worker) ---------- */
+function jiraProxy() { return (jira.proxy || "").trim().replace(/\/+$/, ""); }
+let jiraSyncMsg = "";
+let jiraSyncing = false;
+async function syncJira(manual) {
+  if (!jiraProxy()) {
+    if (manual) alert("Isi dulu alamat proxy + kunci di panel “impor tiket” (lihat worker/README.md di repo).");
+    return;
+  }
+  if (jiraSyncing) return;
+  jiraSyncing = true;
+  jiraSyncMsg = "menarik…";
+  if (view === "papan") render();
+  try {
+    const r = await fetch(jiraProxy() + "/tickets", { headers: { "X-Catet-Key": jira.key || "" } });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+    if (typeof data.site === "string" && data.site) jira.site = data.site;
+    const feed = Array.isArray(data.items) ? data.items : [];
+    const feedKeys = new Set(feed.map((f) => f.key));
+    for (const f of feed) {
+      if (jira.dismissed.includes(f.key)) continue;
+      if (tasks.some((t) => t.status !== "selesai" && t.text.includes(f.key))) continue;
+      const ex = jira.items.find((x) => x.key === f.key);
+      if (ex) { ex.summary = f.summary; ex.status = f.status; }
+      else jira.items.push({ id: uid(), key: f.key, summary: f.summary, status: f.status, src: "sync", addedAt: new Date().toISOString() });
+    }
+    // Tiket hasil sinkron yang sudah tidak muncul di Jira (selesai/di-reassign)
+    // ikut hilang; tiket hasil impor manual dibiarkan.
+    jira.items = jira.items.filter((x) => x.src !== "sync" || feedKeys.has(x.key));
+    jira.lastSync = new Date().toISOString();
+    jiraSyncMsg = "";
+    saveJira();
+  } catch (e) {
+    jiraSyncMsg = "gagal: " + (e && e.message ? e.message : "koneksi");
+  }
+  jiraSyncing = false;
+  if (view === "papan") render();
+}
+setInterval(() => syncJira(false), 5 * 60 * 1000);
 
 /* ---------- daily routines (standup, cek email, dst.) ---------- */
 const ROUTINE_KEY = "catet.routines.v1";
@@ -916,6 +964,13 @@ function renderJiraInbox(frag) {
   const head = el("div", "section-head");
   head.append(el("h2", null, "Tiket Jira — belum diambil"));
   if (jira.items.length) head.append(el("span", "count mono", String(jira.items.length)));
+  if (jiraProxy()) {
+    const refresh = el("button", "clear-done", jiraSyncing ? "menarik…" : "⟳ tarik sekarang");
+    refresh.onclick = () => syncJira(true);
+    head.append(refresh);
+    if (jiraSyncMsg && !jiraSyncing) head.append(el("span", "count", jiraSyncMsg));
+    else if (jira.lastSync && !jiraSyncing) head.append(el("span", "count mono", "sinkron " + fmtAgo(jira.lastSync)));
+  }
   sec.append(head);
 
   if (jira.items.length) {
@@ -937,9 +992,11 @@ function renderJiraInbox(frag) {
       take.onclick = () => { takeJiraItem(item); render(); };
       row.append(take);
       const del = el("button", "icon-btn danger", "✕");
-      del.title = "Buang dari daftar"; del.setAttribute("aria-label", "Buang dari daftar");
+      del.title = "Buang dari daftar (tidak akan muncul lagi saat sinkron)";
+      del.setAttribute("aria-label", "Buang dari daftar");
       del.onclick = () => {
         jira.items = jira.items.filter((x) => x.id !== item.id);
+        if (!jira.dismissed.includes(item.key)) jira.dismissed.push(item.key);
         saveJira(); render();
       };
       row.append(del);
@@ -974,6 +1031,29 @@ function renderJiraInbox(frag) {
   };
   form.append(site, impBtn);
   editor.append(form);
+
+  // Sinkronisasi otomatis via proxy (Cloudflare Worker — lihat worker/README.md)
+  const proxyForm = el("div", "routine-form");
+  const proxyIn = document.createElement("input");
+  proxyIn.type = "url"; proxyIn.value = jira.proxy || "";
+  proxyIn.placeholder = "Alamat proxy: https://catet-jira-proxy.….workers.dev";
+  proxyIn.title = "URL Cloudflare Worker kamu (panduan: worker/README.md di repo)";
+  const keyIn = document.createElement("input");
+  keyIn.type = "password"; keyIn.value = jira.key || "";
+  keyIn.placeholder = "Kunci (CATET_KEY)";
+  keyIn.title = "Kunci rahasia yang kamu set sebagai CATET_KEY di Worker";
+  const saveBtn = el("button", "btn-line", "Simpan & tarik");
+  saveBtn.onclick = () => {
+    jira.proxy = proxyIn.value.trim();
+    jira.key = keyIn.value;
+    saveJira();
+    if (jiraProxy()) syncJira(true); else render();
+  };
+  proxyForm.append(proxyIn, keyIn, saveBtn);
+  editor.append(proxyForm);
+  editor.append(el("div", "cap-hint",
+    "Dengan proxy terpasang, tiket ditarik otomatis tiap 5 menit dan Log kerja bisa dikirim sebagai worklog (tombol → Jira)."));
+
   det.append(editor);
   sec.append(det);
   frag.append(sec);
@@ -1134,6 +1214,37 @@ function renderWorklog() {
       li.append(ltext);
       const m = fmtMins(e.mins);
       if (m) li.append(el("span", "log-mins mono", "fokus ±" + m));
+      const ticketKey = (e.text.match(JIRA_RE) || [null])[0];
+      if (jiraProxy() && ticketKey && e.priority !== "rutin") {
+        if (e.jiraLogged) {
+          li.append(el("span", "log-mins mono", "✓ Jira"));
+        } else {
+          const send = el("button", "btn-ghost", "→ Jira");
+          send.title = "Kirim sebagai worklog ke " + ticketKey +
+            " (durasi: " + (e.mins ? "±" + e.mins + " mnt fokus" : "1 mnt minimum") + ")";
+          send.onclick = async () => {
+            send.disabled = true; send.textContent = "mengirim…";
+            try {
+              const r = await fetch(jiraProxy() + "/worklog", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "X-Catet-Key": jira.key || "" },
+                body: JSON.stringify({
+                  key: ticketKey, started: e.ts,
+                  timeSpentSeconds: Math.max(60, (e.mins || 0) * 60),
+                  comment: e.text,
+                }),
+              });
+              const data = await r.json().catch(() => ({}));
+              if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+              e.jiraLogged = true; saveWorklog(); render();
+            } catch (err) {
+              alert("Gagal mengirim worklog ke " + ticketKey + ":\n" + (err && err.message ? err.message : "koneksi"));
+              send.disabled = false; send.textContent = "→ Jira";
+            }
+          };
+          li.append(send);
+        }
+      }
       const del = el("button", "icon-btn danger", "✕");
       del.title = "Hapus dari log"; del.setAttribute("aria-label", "Hapus dari log");
       del.onclick = () => {
@@ -1324,4 +1435,5 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
 }
 
 render();
+if (jiraProxy()) syncJira(false);
 </script>
