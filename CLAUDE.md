@@ -1,8 +1,8 @@
 # Catet — panduan pengembangan
 
-Aplikasi web statis satu file (`index.html`) berbahasa Indonesia: catatan cepat
-berprioritas + rutinitas harian + log kerja. Tanpa build step, tanpa dependensi;
-semua CSS/JS inline. Data pengguna di `localStorage`.
+Aplikasi web statis berbahasa Indonesia: catatan cepat berprioritas +
+rutinitas harian + log kerja + integrasi Jira. Tanpa build step, tanpa
+dependensi, tanpa framework. Data pengguna di `localStorage`.
 
 ## Alur kerja git (WAJIB)
 
@@ -15,16 +15,43 @@ semua CSS/JS inline. Data pengguna di `localStorage`.
 
 ## Struktur
 
-- `index.html` — seluruh aplikasi (CSS + HTML + JS inline)
-- `sw.js` — service worker (network-first); `manifest.webmanifest` + `icon-*.png` — PWA
+- `index.html` — markup saja; memuat CSS + JS lewat tag `<link>`/`<script src>`
+- `assets/css/styles.css` — seluruh style (token tema di `:root`, terang & gelap)
+- `assets/js/` — satu file per fitur, **skrip klasik** (bukan ES module, supaya
+  tetap jalan dari `file://`), berbagi state lewat global scope. Urutan muat
+  di `index.html` penting:
+  1. `util.js` — helper DOM (`$`, `el`), `uid`, format tanggal/waktu, salin teks
+  2. `tasks.js` — state `tasks` + `worklog`; selesai/batal/fokus (`completeTask`, `stopFocus`)
+  3. `capture.js` — kolom catat cepat (prioritas, kapan, `addTask`)
+  4. `routines.js` — rutinitas harian + render section-nya
+  5. `jira.js` — autolink kode tiket, inbox tiket, impor, sinkron via proxy
+  6. `board.js` — render papan (kartu fokus, baris tugas, section prioritas)
+  7. `worklog.js` — render tab Log kerja, salin per hari, kirim worklog → Jira
+  8. `reminders.js` — toggle pengingat, toast + bip, notifikasi, `checkDue`
+  9. `app.js` — `view`/`render()`/`setView()` + `initApp()` (semua binding & timer)
+- `sw.js` — service worker network-first; **tambahkan file baru ke `ASSETS`
+  dan naikkan versi `CACHE`** setiap daftar aset berubah
+- `manifest.webmanifest` + `icon-*.png` — PWA (Add to Home Screen)
+- `worker/` — proxy Cloudflare Worker untuk Jira (deploy manual oleh pemilik,
+  bukan bagian dari Pages); panduan di `worker/README.md`
 - Kunci localStorage: `catet.tasks.v1`, `catet.worklog.v1`, `catet.routines.v1`,
-  `catet.routineday.v1`, `catet.reminders.v1` — jaga kompatibilitas mundur;
-  kalau skema berubah, tulis migrasi, jangan menghapus data pengguna.
+  `catet.routineday.v1`, `catet.reminders.v1`, `catet.jira.v1` — jaga
+  kompatibilitas mundur; kalau skema berubah, tulis migrasi, jangan menghapus
+  data pengguna.
+
+## Konvensi kode
+
+- Fungsi render membangun DOM dengan `el()`/`append` — **jangan pernah**
+  merender teks pengguna lewat `innerHTML`.
+- Setelah mengubah state: panggil fungsi `save*()` yang sesuai lalu `render()`.
+- Binding event global dan `setInterval` hanya di `initApp()` (`app.js`),
+  bukan di top-level file fitur.
 
 ## Verifikasi sebelum commit
 
-1. Cek sintaks JS inline: ekstrak isi `<script>` lalu `node --check`.
+1. `node --check assets/js/*.js` (loop semua file).
 2. Uji end-to-end dengan Playwright + Chromium headless
-   (`/opt/pw-browsers/.../chrome`): buka `index.html`, jalankan alur yang
-   diubah, pastikan tanpa error console, lalu screenshot tema terang & gelap.
+   (`/opt/pw-browsers/.../chrome`): jalankan alur yang diubah lewat dua cara —
+   `file://` langsung dan `python3 -m http.server` — pastikan tanpa error
+   console, lalu screenshot tema terang & gelap.
 3. UI dan teks aplikasi berbahasa Indonesia.
