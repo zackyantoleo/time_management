@@ -31,8 +31,13 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
   tinggi tapi bisa dikerjakan nanti" atau "kabari orang ini besok pagi":
   - Prioritas: Urgent / Tinggi / Sedang / Rendah
   - Kapan: Bebas / Hari ini / Besok pagi / pilih tanggal-jam sendiri
-- **Daftar terurut otomatis** — dikelompokkan per prioritas, di dalamnya
-  diurutkan berdasarkan tenggat terdekat.
+- **Papan fokus "Kerjakan hari ini"** — setiap tugas dinilai ulang terus-
+  menerus dengan **skor dinamis 0–10** (dampak/prioritas + kedekatan tenggat +
+  perkiraan usaha; tenggat yang makin dekat menaikkan skor otomatis). Yang
+  tampil di papan hanya yang memang perlu dikerjakan hari ini — skor tinggi,
+  tenggat hari ini/terlambat, urgent, atau memblokir orang — terurut dari
+  skor tertinggi. Sisanya terlipat rapi di bagian **"Nanti"** (tetap ada,
+  sekali klik untuk membuka), jadi kamu cuma melihat yang penting sekarang.
 - **Pengingat** — saat waktunya tiba, muncul pemberitahuan di dalam halaman
   (toast + bunyi bip) — ini selalu jalan, bahkan saat notifikasi browser
   diblokir atau halaman dibuka dari `file://`. Tugas yang lewat tenggat diberi
