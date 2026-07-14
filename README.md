@@ -15,6 +15,18 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
   Tugas itu terpampang di paling atas beserta durasi fokus, jadi setelah
   interupsi selesai kamu langsung ingat tadi sedang mengerjakan apa.
 - **Catat cepat** — ketik, pilih prioritas, Enter. Selesai.
+- **Bantu nilai (skoring)** — bingung ini urgent atau bukan? Klik **🧮 Bantu
+  nilai**, jawab dua hal: *kalau ditunda kenapa?* (aman / mengganggu /
+  memblokir orang-produksi) dan *perkiraan usaha* (≤1 jam / ±½ hari / ≥1
+  hari). Digabung dengan tenggat, Catet menghitung skor 1–10, menyarankan
+  prioritas (chip-nya di-set otomatis, tetap bisa diubah), dan kapan harus
+  mulai — termasuk aturan penting: tugas **lama** bertenggat dekat disuruh
+  dicicil dari sekarang, bukan ditunda. Badge usaha + skor tampil di baris
+  tugas, dan skor jadi penentu urutan di dalam prioritas yang sama.
+- **Cari** — satu kolom cari untuk semua tab: tugas di papan, tiket Jira,
+  dan entri log kerja.
+- **Tab Jira terpisah** — tiket yang belum diambil punya tab sendiri (🎫,
+  dengan penghitung), jadi papan utama tetap pendek dan fokus.
 - **Prioritas terpisah dari waktu** — bisa mencatat "tiket ini prioritasnya
   tinggi tapi bisa dikerjakan nanti" atau "kabari orang ini besok pagi":
   - Prioritas: Urgent / Tinggi / Sedang / Rendah

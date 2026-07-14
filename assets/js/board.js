@@ -77,6 +77,11 @@ function taskRow(t) {
     const late = new Date(t.due) < new Date();
     meta.append(el("span", "due-badge mono" + (late ? " late" : ""), (late ? "⚠ " : "🕑 ") + fmtDue(t.due)));
   }
+  if (t.usaha && t.status !== "selesai") {
+    const usahaLabel = { S: "⚡ ≤1 jam", M: "⏱ ±½ hari", L: "⏳ ≥1 hari" };
+    meta.append(el("span", "effort-badge", usahaLabel[t.usaha]));
+  }
+  if (t.skor && t.status !== "selesai") meta.append(el("span", "effort-badge mono", "skor " + t.skor + "/10"));
   meta.append(el("span", "mono", "dicatat " + fmtAgo(t.createdAt)));
   if (t.status === "selesai" && t.doneAt) meta.append(el("span", "mono", "selesai " + fmtAgo(t.doneAt)));
   body.append(meta);
@@ -110,17 +115,20 @@ function taskRow(t) {
 function renderSections() {
   const wrap = $("#sections");
   wrap.innerHTML = "";
-  const active = tasks.filter((t) => t.status === "aktif");
+  const q = searchQuery.trim().toLowerCase();
+  const cocok = (t) => !q || t.text.toLowerCase().includes(q);
+  const active = tasks.filter((t) => t.status === "aktif" && cocok(t));
   active.sort((a, b) => {
     if (PR_ORDER[a.priority] !== PR_ORDER[b.priority]) return PR_ORDER[a.priority] - PR_ORDER[b.priority];
     if (a.due && b.due) return new Date(a.due) - new Date(b.due);
     if (a.due) return -1;
     if (b.due) return 1;
+    if ((b.skor || 0) !== (a.skor || 0)) return (b.skor || 0) - (a.skor || 0);
     return new Date(a.createdAt) - new Date(b.createdAt);
   });
 
   const frag = document.createDocumentFragment();
-  renderRoutines(frag);
+  if (!q) renderRoutines(frag); // saat mencari, fokus ke hasil tugas saja
   let any = false;
   for (const p of PRIORITIES) {
     const items = active.filter((t) => t.priority === p.id);
@@ -137,12 +145,12 @@ function renderSections() {
     sec.style.marginBottom = "18px";
   }
   if (!any) {
-    frag.append(el("div", "empty-note",
-      "Daftar kosong. Semua yang mampir ke kepala — tiket baru, permintaan teman, follow-up meeting — catat di atas biar tidak lupa."));
+    frag.append(el("div", "empty-note", q
+      ? "Tidak ada tugas yang cocok dengan “" + searchQuery.trim() + "”. Coba juga tab Jira / Log kerja."
+      : "Daftar kosong. Semua yang mampir ke kepala — tiket baru, permintaan teman, follow-up meeting — catat di atas biar tidak lupa."));
   }
-  renderJiraInbox(frag);
 
-  const done = tasks.filter((t) => t.status === "selesai")
+  const done = tasks.filter((t) => t.status === "selesai" && cocok(t))
     .sort((a, b) => new Date(b.doneAt || 0) - new Date(a.doneAt || 0));
   if (done.length) {
     const det = document.createElement("details");
