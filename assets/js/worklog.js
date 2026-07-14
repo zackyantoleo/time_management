@@ -22,8 +22,14 @@ function renderWorklog() {
       "Log masih kosong. Setiap tugas yang kamu tandai ✓ selesai otomatis tercatat di sini per hari — lengkap dengan jam selesai dan lama fokus. Cocok untuk mengisi worklog/standup."));
     return;
   }
+  const q = searchQuery.trim().toLowerCase();
+  const shown = !q ? worklog : worklog.filter((e) => e.text.toLowerCase().includes(q));
+  if (q && !shown.length) {
+    wrap.append(el("div", "empty-note", "Tidak ada entri log yang cocok dengan “" + searchQuery.trim() + "”."));
+    return;
+  }
   const byDate = new Map();
-  for (const e of worklog) {
+  for (const e of shown) {
     if (!byDate.has(e.date)) byDate.set(e.date, []);
     byDate.get(e.date).push(e);
   }

@@ -125,14 +125,22 @@ async function syncJira(manual) {
   if (view === "papan") render();
 }
 
-/* ---------- Jira inbox rendering ---------- */
+/* ---------- Jira inbox rendering (tab sendiri: #jiraview) ---------- */
 let jiraImportOpen = false;
-function renderJiraInbox(frag) {
+function renderJiraInbox() {
+  const wrap = $("#jiraview");
+  wrap.innerHTML = "";
+  const q = searchQuery.trim().toLowerCase();
+  const shown = !q ? jira.items : jira.items.filter((x) =>
+    (x.key + " " + x.summary + " " + (x.status || "")).toLowerCase().includes(q));
+
   const sec = el("section", "section s-jira");
-  sec.style.marginBottom = "18px";
   const head = el("div", "section-head");
   head.append(el("h2", null, "Tiket Jira — belum diambil"));
-  if (jira.items.length) head.append(el("span", "count mono", String(jira.items.length)));
+  if (jira.items.length) {
+    head.append(el("span", "count mono",
+      q ? shown.length + "/" + jira.items.length : String(jira.items.length)));
+  }
   if (jiraProxy()) {
     const refresh = el("button", "clear-done", jiraSyncing ? "menarik…" : "⟳ tarik sekarang");
     refresh.onclick = () => syncJira(true);
@@ -142,9 +150,12 @@ function renderJiraInbox(frag) {
   }
   sec.append(head);
 
-  if (jira.items.length) {
+  if (q && !shown.length) {
+    sec.append(el("div", "empty-note", "Tidak ada tiket yang cocok dengan “" + searchQuery.trim() + "”."));
+  }
+  if (shown.length) {
     const card = el("div", "routine-card");
-    for (const item of jira.items) {
+    for (const item of shown) {
       const row = el("div", "jira-row");
       if (jiraSite()) {
         const a = el("a", "jira-key", item.key);
@@ -225,5 +236,5 @@ function renderJiraInbox(frag) {
 
   det.append(editor);
   sec.append(det);
-  frag.append(sec);
+  wrap.append(sec);
 }
