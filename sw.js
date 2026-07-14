@@ -1,8 +1,14 @@
 // Service worker Catet: network-first dengan cache fallback, supaya aplikasi
 // tetap bisa dibuka di HP saat tidak ada koneksi. Versi cache dinaikkan saat
 // daftar aset berubah.
-const CACHE = "catet-v1";
-const ASSETS = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
+const CACHE = "catet-v2";
+const ASSETS = [
+  "./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png",
+  "assets/css/styles.css",
+  "assets/js/util.js", "assets/js/tasks.js", "assets/js/capture.js",
+  "assets/js/routines.js", "assets/js/jira.js", "assets/js/board.js",
+  "assets/js/worklog.js", "assets/js/reminders.js", "assets/js/app.js",
+];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
