@@ -97,6 +97,21 @@ function taskRow(t) {
 
   const actions = el("div", "task-actions");
   if (t.status !== "selesai") {
+    // Semua tugas (bukan cuma tiket Jira) bisa keluar-masuk sprint dari sini.
+    const sAktif = sprintAktif();
+    if (t.sprintId || sAktif) {
+      const spBtn = el("button", "icon-btn" + (t.sprintId ? " in-sprint" : ""), "🏃");
+      if (t.sprintId) {
+        const s = sprintById(t.sprintId);
+        spBtn.title = "Keluarkan dari sprint" + (s ? " “" + s.nama + "”" : "");
+        spBtn.onclick = () => { t.sprintId = null; save(); render(); };
+      } else {
+        spBtn.title = "Masukkan ke sprint “" + sAktif.nama + "” (" + fmtSisaSprint(sAktif) + ")";
+        spBtn.onclick = () => { t.sprintId = sAktif.id; save(); render(); };
+      }
+      spBtn.setAttribute("aria-label", spBtn.title);
+      actions.append(spBtn);
+    }
     const focusBtn = el("button", "icon-btn", "▶");
     focusBtn.title = "Kerjakan sekarang (jadikan fokus)";
     focusBtn.setAttribute("aria-label", focusBtn.title);
@@ -111,8 +126,23 @@ function taskRow(t) {
   const delBtn = el("button", "icon-btn danger", "✕");
   delBtn.title = "Hapus"; delBtn.setAttribute("aria-label", "Hapus");
   delBtn.onclick = () => {
-    if (confirm("Hapus catatan ini?\n\n“" + t.text + "”")) {
-      tasks = tasks.filter((x) => x.id !== t.id); save(); render();
+    const adaKeyJira = (t.text.match(JIRA_RE) || []).length > 0;
+    const pesan = "Hapus catatan ini?\n\n“" + t.text + "”" +
+      (adaKeyJira ? "\n\nTiket Jira-nya akan bisa muncul lagi di tab Jira saat sinkron/impor." : "");
+    if (confirm(pesan)) {
+      tasks = tasks.filter((x) => x.id !== t.id);
+      // Tiket yang dihapus dari papan dicabut dari daftar dismissed, supaya
+      // sinkronisasi/impor berikutnya boleh memunculkannya lagi di tab Jira.
+      const keys = t.text.match(JIRA_RE) || [];
+      if (keys.length) {
+        const sebelum = jira.dismissed.length;
+        jira.dismissed = jira.dismissed.filter((k) => !keys.includes(k));
+        if (jira.dismissed.length !== sebelum) {
+          saveJira();
+          if (jiraProxy()) syncJira(false); // langsung tarik lagi, tidak menunggu 5 menit
+        }
+      }
+      save(); render();
     }
   };
   actions.append(delBtn);

@@ -70,8 +70,11 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
   tugas biasa yang bisa diprioritaskan dan difokuskan. Catatan: Jira Cloud
   memblokir akses API langsung dari browser (CORS), jadi impor tempel-manual
   ini adalah jalur tanpa-backend yang paling aman.
-- **Sprint** — kelompokkan tiket Jira ke sprint dengan tanggal selesai (buat
-  di tab Jira, lalu ambil tiket dengan tombol **🏃 Sprint**). Akhir sprint
+- **Sprint** — kelompokkan pekerjaan ke sprint dengan tanggal selesai (buat
+  di tab Jira). Tiket Jira masuk lewat tombol **🏃 Sprint** di tab Jira;
+  tugas catatan biasa masuk lewat tombol 🏃 di baris tugas (toggle
+  keluar/masuk) atau chip **🏃 [nama sprint]** di kolom catat cepat untuk
+  tugas baru. Akhir sprint
   ikut menekan skor dinamis semua tugas anggotanya: ≤1 minggu mulai naik,
   ≤3 hari melonjak dan otomatis muncul di "Kerjakan hari ini", hari terakhir
   setara tenggat terlambat. Badge 🏃 di baris tugas memerah saat sprint
