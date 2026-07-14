@@ -70,6 +70,12 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
   tugas biasa yang bisa diprioritaskan dan difokuskan. Catatan: Jira Cloud
   memblokir akses API langsung dari browser (CORS), jadi impor tempel-manual
   ini adalah jalur tanpa-backend yang paling aman.
+- **Sprint** — kelompokkan tiket Jira ke sprint dengan tanggal selesai (buat
+  di tab Jira, lalu ambil tiket dengan tombol **🏃 Sprint**). Akhir sprint
+  ikut menekan skor dinamis semua tugas anggotanya: ≤1 minggu mulai naik,
+  ≤3 hari melonjak dan otomatis muncul di "Kerjakan hari ini", hari terakhir
+  setara tenggat terlambat. Badge 🏃 di baris tugas memerah saat sprint
+  mepet. Menghapus sprint tidak menghapus tugasnya.
 - **Sinkronisasi Jira otomatis (opsional)** — deploy proxy kecil di
   Cloudflare Worker (gratis; kode + panduan di [`worker/`](worker/)), isi
   alamat + kunci di panel impor, dan Catet menarik tiket assigned-mu otomatis
