@@ -242,6 +242,7 @@
   }
   .icon-btn:hover { background: var(--surface-2); color: var(--ink); }
   .icon-btn.danger:hover { color: var(--late); }
+  .icon-btn.in-sprint { color: var(--accent); background: var(--accent-soft); }
 
   .empty-note {
     font-size: 13px; color: var(--ink-faint); background: var(--surface-2);

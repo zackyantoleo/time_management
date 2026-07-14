@@ -19,18 +19,36 @@ function resolveDue() {
   return null;
 }
 
+let capSprint = false; // chip "🏃 Sprint": tugas baru langsung masuk sprint aktif
+
 function addTask(text) {
   text = text.trim();
   if (!text) return;
   const s = scoreOpen ? hitungSkor() : null;
+  const sprint = capSprint ? sprintAktif() : null;
   tasks.push({
     id: uid(), text, priority: capPriority, due: resolveDue(),
     createdAt: new Date().toISOString(),
     status: "aktif", doneAt: null, focusedAt: null, notified: false,
     dampak: s ? scDampak : null, usaha: s ? scUsaha : null, skor: s ? s.skor : null,
+    sprintId: sprint ? sprint.id : null,
   });
   resetScore();
   save(); render();
+}
+
+// Chip sprint hanya tampil bila ada sprint; labelnya ikut nama sprint aktif.
+// Dipanggil dari render() karena daftar sprint bisa berubah kapan saja.
+function updateSprintChip() {
+  const btn = $("#sprint-capture");
+  const s = sprintAktif();
+  if (!s) { capSprint = false; btn.classList.add("hidden"); return; }
+  btn.classList.remove("hidden");
+  btn.textContent = "🏃 " + s.nama;
+  btn.title = capSprint
+    ? "Tugas baru masuk sprint “" + s.nama + "” — klik untuk melepas"
+    : "Masukkan tugas baru ke sprint “" + s.nama + "” (" + fmtSisaSprint(s) + ")";
+  btn.setAttribute("aria-pressed", String(capSprint));
 }
 
 /* ---------- skoring: "seberapa penting & harus mulai kapan?" ----------
@@ -101,6 +119,10 @@ function syncDueChips(activeKind) {
 
 // Dipanggil sekali dari app.js setelah DOM siap.
 function initCapture() {
+  $("#sprint-capture").onclick = () => {
+    capSprint = !capSprint;
+    updateSprintChip();
+  };
   $("#score-toggle").onclick = () => {
     scoreOpen = !scoreOpen;
     $("#score-toggle").setAttribute("aria-pressed", String(scoreOpen));

@@ -22,6 +22,7 @@ function render() {
   else if (view === "jira") renderJiraInbox();
   else renderWorklog();
   $("#tab-jira").textContent = "🎫 Jira" + (jira.items.length ? " (" + jira.items.length + ")" : "");
+  updateSprintChip();
   renderTitle();
 }
 
