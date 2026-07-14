@@ -21,11 +21,11 @@ dependensi, tanpa framework. Data pengguna di `localStorage`.
   tetap jalan dari `file://`), berbagi state lewat global scope. Urutan muat
   di `index.html` penting:
   1. `util.js` — helper DOM (`$`, `el`), `uid`, format tanggal/waktu, salin teks
-  2. `tasks.js` — state `tasks` + `worklog`; selesai/batal/fokus (`completeTask`, `stopFocus`)
+  2. `tasks.js` — state `tasks` + `worklog`; skor dinamis (`skorTugas`, `masukHariIni`); selesai/batal/fokus
   3. `capture.js` — kolom catat cepat (prioritas, kapan, `addTask`)
   4. `routines.js` — rutinitas harian + render section-nya
   5. `jira.js` — autolink kode tiket, inbox tiket, impor, sinkron via proxy
-  6. `board.js` — render papan (kartu fokus, baris tugas, section prioritas)
+  6. `board.js` — render papan (kartu fokus, "Kerjakan hari ini" terurut skor, "Nanti" terlipat)
   7. `worklog.js` — render tab Log kerja, salin per hari, kirim worklog → Jira
   8. `reminders.js` — toggle pengingat, toast + bip, notifikasi, `checkDue`
   9. `app.js` — `view`/`render()`/`setView()` + `initApp()` (semua binding & timer)

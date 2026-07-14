@@ -77,11 +77,14 @@ function taskRow(t) {
     const late = new Date(t.due) < new Date();
     meta.append(el("span", "due-badge mono" + (late ? " late" : ""), (late ? "⚠ " : "🕑 ") + fmtDue(t.due)));
   }
-  if (t.usaha && t.status !== "selesai") {
-    const usahaLabel = { S: "⚡ ≤1 jam", M: "⏱ ±½ hari", L: "⏳ ≥1 hari" };
-    meta.append(el("span", "effort-badge", usahaLabel[t.usaha]));
+  if (t.status !== "selesai") {
+    meta.append(el("span", "pr-tag pr-" + t.priority, PR_LABEL[t.priority]));
+    meta.append(el("span", "effort-badge mono", "skor " + skorTugas(t) + "/10"));
+    if (t.usaha) {
+      const usahaLabel = { S: "⚡ ≤1 jam", M: "⏱ ±½ hari", L: "⏳ ≥1 hari" };
+      meta.append(el("span", "effort-badge", usahaLabel[t.usaha]));
+    }
   }
-  if (t.skor && t.status !== "selesai") meta.append(el("span", "effort-badge mono", "skor " + t.skor + "/10"));
   meta.append(el("span", "mono", "dicatat " + fmtAgo(t.createdAt)));
   if (t.status === "selesai" && t.doneAt) meta.append(el("span", "mono", "selesai " + fmtAgo(t.doneAt)));
   body.append(meta);
@@ -112,42 +115,54 @@ function taskRow(t) {
   return li;
 }
 
+// Papan fokus: satu daftar peringkat "Kerjakan hari ini" (diurutkan skor
+// dinamis), sisanya dilipat ke "Nanti" supaya tidak mengganggu. Saat mencari,
+// semua hasil (termasuk yang di Nanti) ditampilkan rata.
+let nantiOpen = false;
 function renderSections() {
   const wrap = $("#sections");
   wrap.innerHTML = "";
   const q = searchQuery.trim().toLowerCase();
   const cocok = (t) => !q || t.text.toLowerCase().includes(q);
-  const active = tasks.filter((t) => t.status === "aktif" && cocok(t));
-  active.sort((a, b) => {
-    if (PR_ORDER[a.priority] !== PR_ORDER[b.priority]) return PR_ORDER[a.priority] - PR_ORDER[b.priority];
-    if (a.due && b.due) return new Date(a.due) - new Date(b.due);
-    if (a.due) return -1;
-    if (b.due) return 1;
-    if ((b.skor || 0) !== (a.skor || 0)) return (b.skor || 0) - (a.skor || 0);
-    return new Date(a.createdAt) - new Date(b.createdAt);
-  });
+  const active = tasks.filter((t) => t.status === "aktif" && cocok(t)).sort(bandingkanTugas);
 
   const frag = document.createDocumentFragment();
   if (!q) renderRoutines(frag); // saat mencari, fokus ke hasil tugas saja
-  let any = false;
-  for (const p of PRIORITIES) {
-    const items = active.filter((t) => t.priority === p.id);
-    if (!items.length) continue;
-    any = true;
-    const sec = el("section", "section s-" + p.id);
-    const head = el("div", "section-head");
-    head.append(el("h2", null, p.label), el("span", "count mono", String(items.length)));
-    sec.append(head);
+
+  const hariIni = q ? active : active.filter(masukHariIni);
+  const nanti = q ? [] : active.filter((t) => !masukHariIni(t));
+
+  const sec = el("section", "section s-today");
+  sec.style.marginBottom = "18px";
+  const head = el("div", "section-head");
+  head.append(el("h2", null, q ? "Hasil pencarian" : "🎯 Kerjakan hari ini"));
+  if (hariIni.length) head.append(el("span", "count mono", String(hariIni.length)));
+  sec.append(head);
+  if (hariIni.length) {
     const ul = el("ul", "tasks");
-    items.forEach((t) => ul.append(taskRow(t)));
+    hariIni.forEach((t) => ul.append(taskRow(t)));
     sec.append(ul);
-    frag.append(sec);
-    sec.style.marginBottom = "18px";
-  }
-  if (!any) {
-    frag.append(el("div", "empty-note", q
+  } else {
+    sec.append(el("div", "empty-note", q
       ? "Tidak ada tugas yang cocok dengan “" + searchQuery.trim() + "”. Coba juga tab Jira / Log kerja."
-      : "Daftar kosong. Semua yang mampir ke kepala — tiket baru, permintaan teman, follow-up meeting — catat di atas biar tidak lupa."));
+      : nanti.length
+        ? "Tidak ada yang mendesak hari ini 🎉 — kalau senggang, ambil dari bagian “Nanti” di bawah."
+        : "Daftar kosong. Semua yang mampir ke kepala — tiket baru, permintaan teman, follow-up meeting — catat di atas biar tidak lupa."));
+  }
+  frag.append(sec);
+
+  if (nanti.length) {
+    const det = document.createElement("details");
+    det.className = "done-wrap section s-nanti";
+    det.open = nantiOpen;
+    det.addEventListener("toggle", () => { nantiOpen = det.open; });
+    const sum = document.createElement("summary");
+    sum.append("Nanti — belum perlu hari ini ", el("span", "count mono", String(nanti.length)));
+    det.append(sum);
+    const ul = el("ul", "tasks");
+    nanti.forEach((t) => ul.append(taskRow(t)));
+    det.append(ul);
+    frag.append(det);
   }
 
   const done = tasks.filter((t) => t.status === "selesai" && cocok(t))
