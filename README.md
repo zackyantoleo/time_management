@@ -53,6 +53,13 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
   tugas biasa yang bisa diprioritaskan dan difokuskan. Catatan: Jira Cloud
   memblokir akses API langsung dari browser (CORS), jadi impor tempel-manual
   ini adalah jalur tanpa-backend yang paling aman.
+- **Sinkronisasi Jira otomatis (opsional)** — deploy proxy kecil di
+  Cloudflare Worker (gratis; kode + panduan di [`worker/`](worker/)), isi
+  alamat + kunci di panel impor, dan Catet menarik tiket assigned-mu otomatis
+  tiap 5 menit (plus tombol ⟳). Tiket yang selesai/di-reassign di Jira hilang
+  sendiri dari inbox; yang sudah di-Ambil atau dibuang (✕) tidak muncul lagi.
+  Bonus dua-arah: entri Log kerja yang memuat kode tiket punya tombol
+  **→ Jira** untuk mengirim worklog (durasi diambil dari waktu fokus).
 - Tema terang & gelap mengikuti pengaturan sistem.
 
 ## Cara pakai
