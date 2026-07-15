@@ -47,8 +47,12 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
   Catatan: sekali izin notifikasi ditolak, browser tidak akan menampilkan
   prompt-nya lagi — buka bloknya lewat ikon gembok di address bar →
   Notifikasi → Izinkan.
-- **Edit & riwayat** — klik dua kali untuk mengedit teks; tugas selesai
-  tersimpan di bagian "Selesai" yang bisa dibersihkan.
+- **Edit tugas** — tombol ✎ di baris tugas membuka panel untuk mengubah
+  **prioritas**, **tenggat** (Bebas / Hari ini / Besok pagi / pilih sendiri),
+  dan **perkiraan usaha** — langsung tersimpan, dan tugas otomatis pindah ke
+  "Kerjakan hari ini" begitu skornya naik. Teks tugas tetap bisa diubah
+  dengan klik dua kali. Tugas selesai tersimpan di bagian "Selesai" yang
+  bisa dibersihkan.
 - **Rutinitas harian** — tugas berulang seperti daily standup, cek email,
   atau isi worklog cukup didefinisikan sekali (teks + jam pengingat opsional +
   pilihan hari, default Senin–Jumat). Setiap hari mereka muncul sebagai

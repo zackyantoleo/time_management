@@ -38,8 +38,92 @@ function renderFocus() {
   }
 }
 
+// Tugas yang sedang dibuka panel editnya (prioritas/tenggat/usaha).
+let editingTaskId = null;
+
+// Konversi ISO → nilai untuk <input datetime-local> (waktu lokal).
+function isoKeLocalInput(iso) {
+  const d = new Date(iso);
+  const p = (n) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) +
+    "T" + p(d.getHours()) + ":" + p(d.getMinutes());
+}
+function tenggatHariIni() {
+  const d = new Date(); d.setHours(17, 0, 0, 0);
+  if (d <= new Date()) d.setTime(Date.now() + 60 * 60 * 1000);
+  return d.toISOString();
+}
+function tenggatBesokPagi() {
+  const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(8, 0, 0, 0);
+  return d.toISOString();
+}
+// Chip tenggat mana yang aktif untuk t.due saat ini (untuk penyorotan).
+function dueKind(t) {
+  if (!t.due) return "none";
+  const d = new Date(t.due), now = new Date();
+  const besok = new Date(now); besok.setDate(besok.getDate() + 1);
+  if (sameDay(d, now)) return "today";
+  if (sameDay(d, besok)) return "tomorrow-am";
+  return "custom";
+}
+
+// Panel edit inline: ubah prioritas, tenggat, dan usaha. Setiap perubahan
+// langsung save()+render() — tugas bisa pindah ke "Kerjakan hari ini" seketika.
+function taskEditor(t) {
+  const ed = el("div", "task-editor");
+
+  const grpPrio = el("div", "cap-group");
+  grpPrio.append(el("span", "cap-label", "Prioritas"));
+  for (const p of PRIORITIES) {
+    const chip = el("button", "chip pr-" + p.id, PR_LABEL[p.id]);
+    chip.setAttribute("aria-pressed", String(t.priority === p.id));
+    chip.onclick = () => { t.priority = p.id; save(); render(); };
+    grpPrio.append(chip);
+  }
+  ed.append(grpPrio);
+
+  const grpDue = el("div", "cap-group");
+  grpDue.append(el("span", "cap-label", "Kapan"));
+  const kind = dueKind(t);
+  const dueChip = (label, k, setter) => {
+    const chip = el("button", "chip time", label);
+    chip.setAttribute("aria-pressed", String(kind === k));
+    chip.onclick = () => { t.due = setter(); save(); render(); };
+    return chip;
+  };
+  grpDue.append(
+    dueChip("Bebas", "none", () => null),
+    dueChip("Hari ini", "today", tenggatHariIni),
+    dueChip("Besok pagi", "tomorrow-am", tenggatBesokPagi),
+  );
+  const custom = document.createElement("input");
+  custom.type = "datetime-local";
+  custom.setAttribute("aria-label", "Pilih tenggat sendiri");
+  if (t.due && kind === "custom") custom.value = isoKeLocalInput(t.due);
+  custom.onchange = (e) => { if (e.target.value) { t.due = new Date(e.target.value).toISOString(); save(); render(); } };
+  grpDue.append(custom);
+  ed.append(grpDue);
+
+  const grpUsaha = el("div", "cap-group");
+  grpUsaha.append(el("span", "cap-label", "Usaha"));
+  const usahaOpts = [["", "—"], ["S", "⚡ ≤1 jam"], ["M", "⏱ ±½ hari"], ["L", "⏳ ≥1 hari"]];
+  for (const [val, label] of usahaOpts) {
+    const chip = el("button", "chip sc", label);
+    chip.setAttribute("aria-pressed", String((t.usaha || "") === val));
+    chip.onclick = () => { t.usaha = val || null; save(); render(); };
+    grpUsaha.append(chip);
+  }
+  ed.append(grpUsaha);
+
+  const tutup = el("button", "btn-line", "Selesai edit");
+  tutup.onclick = () => { editingTaskId = null; render(); };
+  ed.append(tutup);
+  return ed;
+}
+
 function taskRow(t) {
-  const li = el("li", "task p-" + t.priority + (t.status === "selesai" ? " done" : ""));
+  const li = el("li", "task p-" + t.priority + (t.status === "selesai" ? " done" : "") +
+    (editingTaskId === t.id ? " editing" : ""));
 
   const check = el("button", "check", "✓");
   check.title = t.status === "selesai" ? "Tandai belum selesai" : "Tandai selesai";
@@ -112,6 +196,11 @@ function taskRow(t) {
       spBtn.setAttribute("aria-label", spBtn.title);
       actions.append(spBtn);
     }
+    const editBtn = el("button", "icon-btn" + (editingTaskId === t.id ? " in-sprint" : ""), "✎");
+    editBtn.title = "Ubah prioritas / tenggat / usaha";
+    editBtn.setAttribute("aria-label", editBtn.title);
+    editBtn.onclick = () => { editingTaskId = editingTaskId === t.id ? null : t.id; render(); };
+    actions.append(editBtn);
     const focusBtn = el("button", "icon-btn", "▶");
     focusBtn.title = "Kerjakan sekarang (jadikan fokus)";
     focusBtn.setAttribute("aria-label", focusBtn.title);
@@ -148,6 +237,7 @@ function taskRow(t) {
   actions.append(delBtn);
 
   li.append(check, body, actions);
+  if (editingTaskId === t.id && t.status !== "selesai") li.append(taskEditor(t));
   return li;
 }
 
