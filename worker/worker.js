@@ -13,8 +13,11 @@
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  // PUT wajib ada di sini — sinkronisasi state pakai PUT /state; tanpa PUT,
+  // preflight CORS gagal dan browser memblokir permintaannya.
+  "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, X-Catet-Key",
+  "Access-Control-Max-Age": "86400",
 };
 
 function json(obj, status = 200) {
