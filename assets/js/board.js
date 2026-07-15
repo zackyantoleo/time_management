@@ -125,23 +125,8 @@ function taskEditor(t) {
   }
   ed.append(grpUsaha);
 
-  // Pilih task ini masuk sprint mana (kalau ada sprint).
-  const daftarSprint = sprintAktifList();
-  if (daftarSprint.length) {
-    const grpSprint = el("div", "cap-group");
-    grpSprint.append(el("span", "cap-label", "Sprint"));
-    const chipTanpa = el("button", "chip", "Tanpa");
-    chipTanpa.setAttribute("aria-pressed", String(!t.sprintId));
-    chipTanpa.onclick = () => { t.sprintId = null; save(); render(); };
-    grpSprint.append(chipTanpa);
-    for (const s of daftarSprint) {
-      const chip = el("button", "chip time", "🏃 " + s.nama);
-      chip.setAttribute("aria-pressed", String(t.sprintId === s.id));
-      chip.onclick = () => { t.sprintId = s.id; save(); render(); };
-      grpSprint.append(chip);
-    }
-    ed.append(grpSprint);
-  }
+  // Sprint diatur lewat tombol 🏃 di baris tugas (menu pilih sprint), bukan
+  // di sini — biar panel edit tetap ringkas.
 
   const tutup = el("button", "btn-line", "Selesai edit");
   tutup.onclick = () => { editingTaskId = null; render(); };
@@ -209,19 +194,16 @@ function taskRow(t) {
 
   const actions = el("div", "task-actions");
   if (t.status !== "selesai") {
-    // Semua tugas (bukan cuma tiket Jira) bisa keluar-masuk sprint dari sini.
-    const sAktif = sprintAktif();
-    if (t.sprintId || sAktif) {
+    // Tombol 🏃 → menu pilih sprint langsung (masuk / pindah / keluarkan).
+    if (sprintAktifList().length || t.sprintId) {
       const spBtn = el("button", "icon-btn" + (t.sprintId ? " in-sprint" : ""), "🏃");
-      if (t.sprintId) {
-        const s = sprintById(t.sprintId);
-        spBtn.title = "Keluarkan dari sprint" + (s ? " “" + s.nama + "”" : "");
-        spBtn.onclick = () => { t.sprintId = null; save(); render(); };
-      } else {
-        spBtn.title = "Masukkan ke sprint “" + sAktif.nama + "” (" + fmtSisaSprint(sAktif) + ")";
-        spBtn.onclick = () => { t.sprintId = sAktif.id; save(); render(); };
-      }
+      const s = t.sprintId ? sprintById(t.sprintId) : null;
+      spBtn.title = s ? "Sprint: " + s.nama + " (klik untuk ganti/keluar)" : "Masukkan ke sprint";
       spBtn.setAttribute("aria-label", spBtn.title);
+      spBtn.onclick = (e) => {
+        e.stopPropagation();
+        bukaSprintMenu(spBtn, t.sprintId || null, (id) => { t.sprintId = id; save(); render(); });
+      };
       actions.append(spBtn);
     }
     const editBtn = el("button", "icon-btn" + (editingTaskId === t.id ? " in-sprint" : ""), "✎");

@@ -87,9 +87,10 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
     lihat daftar tugas di dalamnya, keluarkan tugas, atau tekan **✓ Selesai
     sprint** untuk menutupnya — tercatat di Log kerja dan tekanan skornya
     berhenti. Sprint yang ditutup masuk area "Sprint selesai".
-  - **Pilih sprint per tugas**: di panel edit tugas (✎) ada baris Sprint —
-    pilih tugas ini masuk sprint mana (atau "Tanpa"), berguna kalau ada lebih
-    dari satu sprint.
+  - **Pilih sprint per tugas**: tombol 🏃 di baris tugas membuka menu pilih
+    sprint langsung (masuk / pindah antar sprint / keluarkan) — sama juga di
+    tombol 🏃 pada tiket Jira dan di chip 🏃 kolom catat cepat untuk tugas
+    baru.
 - **Sinkronisasi Jira otomatis (opsional)** — deploy proxy kecil di
   Cloudflare Worker (gratis; kode + panduan di [`worker/`](worker/)), isi
   alamat + kunci di panel impor, dan Catet menarik tiket assigned-mu otomatis

@@ -19,13 +19,13 @@ function resolveDue() {
   return null;
 }
 
-let capSprint = false; // chip "🏃 Sprint": tugas baru langsung masuk sprint aktif
+let capSprintId = null; // chip "🏃 Sprint": sprint tujuan untuk tugas baru
 
 function addTask(text) {
   text = text.trim();
   if (!text) return;
   const s = scoreOpen ? hitungSkor() : null;
-  const sprint = capSprint ? sprintAktif() : null;
+  const sprint = capSprintId ? sprintById(capSprintId) : null;
   tasks.push({
     id: uid(), text, priority: capPriority, due: resolveDue(),
     createdAt: new Date().toISOString(),
@@ -37,18 +37,18 @@ function addTask(text) {
   save(); render();
 }
 
-// Chip sprint hanya tampil bila ada sprint; labelnya ikut nama sprint aktif.
-// Dipanggil dari render() karena daftar sprint bisa berubah kapan saja.
+// Chip sprint: tampil bila ada sprint; klik → menu pilih sprint tujuan.
+// Sprint yang dipilih menempel sampai diganti (sticky, seperti chip prioritas).
 function updateSprintChip() {
   const btn = $("#sprint-capture");
-  const s = sprintAktif();
-  if (!s) { capSprint = false; btn.classList.add("hidden"); return; }
+  if (!sprintAktifList().length) { capSprintId = null; btn.classList.add("hidden"); return; }
+  if (capSprintId && !sprintById(capSprintId)) capSprintId = null; // sprint dihapus
+  const s = capSprintId ? sprintById(capSprintId) : null;
   btn.classList.remove("hidden");
-  btn.textContent = "🏃 " + s.nama;
-  btn.title = capSprint
-    ? "Tugas baru masuk sprint “" + s.nama + "” — klik untuk melepas"
-    : "Masukkan tugas baru ke sprint “" + s.nama + "” (" + fmtSisaSprint(s) + ")";
-  btn.setAttribute("aria-pressed", String(capSprint));
+  btn.textContent = s ? "🏃 " + s.nama : "🏃 Sprint";
+  btn.title = s ? "Tugas baru masuk sprint “" + s.nama + "” — klik untuk ganti/lepas"
+    : "Pilih sprint untuk tugas baru";
+  btn.setAttribute("aria-pressed", String(!!s));
 }
 
 /* ---------- skoring: "seberapa penting & harus mulai kapan?" ----------
@@ -119,9 +119,9 @@ function syncDueChips(activeKind) {
 
 // Dipanggil sekali dari app.js setelah DOM siap.
 function initCapture() {
-  $("#sprint-capture").onclick = () => {
-    capSprint = !capSprint;
-    updateSprintChip();
+  $("#sprint-capture").onclick = (e) => {
+    e.stopPropagation();
+    bukaSprintMenu($("#sprint-capture"), capSprintId, (id) => { capSprintId = id; updateSprintChip(); });
   };
   $("#score-toggle").onclick = () => {
     scoreOpen = !scoreOpen;
