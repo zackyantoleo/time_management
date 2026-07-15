@@ -90,7 +90,9 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
   - **Pilih sprint per tugas**: tombol 🏃 di baris tugas membuka menu pilih
     sprint langsung (masuk / pindah antar sprint / keluarkan) — sama juga di
     tombol 🏃 pada tiket Jira dan di chip 🏃 kolom catat cepat untuk tugas
-    baru.
+    baru. **Mengeluarkan** tugas asal-tiket-Jira dari sprint mengembalikannya
+    ke daftar "Tiket Jira — belum diambil" (dianggap belum diambil lagi);
+    tugas biasa tetap di papan (turun ke "Nanti").
 - **Sinkronisasi Jira otomatis (opsional)** — deploy proxy kecil di
   Cloudflare Worker (gratis; kode + panduan di [`worker/`](worker/)), isi
   alamat + kunci di panel impor, dan Catet menarik tiket assigned-mu otomatis

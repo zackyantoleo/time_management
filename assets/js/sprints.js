@@ -67,6 +67,35 @@ function jumlahTugasSprint(id) {
   return tasks.filter((t) => t.status !== "selesai" && t.sprintId === id).length;
 }
 
+// Ubah keanggotaan sprint sebuah tugas. id berisi → pindah/masuk sprint.
+// id null → keluarkan (lihat keluarkanDariSprint).
+function setTaskSprint(t, id) {
+  if (id) { t.sprintId = id; save(); return; }
+  keluarkanDariSprint(t);
+}
+
+// Keluarkan tugas dari sprint. Kalau asalnya tiket Jira, kembalikan ke inbox
+// "belum diambil" dan cabut dari daftar dismissed — jadi tidak lagi dianggap
+// sudah diambil untuk dikerjakan. Tugas biasa (non-Jira) tetap di papan
+// (turun ke "Nanti"; bagian itu dibuka biar terlihat tidak hilang).
+function keluarkanDariSprint(t) {
+  const key = (t.text.match(JIRA_RE) || [null])[0];
+  if (key) {
+    const summary = t.text.replace(new RegExp("^\\s*" + key + "\\s*[—–-]\\s*"), "").trim() || t.text;
+    if (!jira.items.some((x) => x.key === key)) {
+      jira.items.push({ id: uid(), key, summary, status: null, addedAt: new Date().toISOString() });
+    }
+    jira.dismissed = jira.dismissed.filter((k) => k !== key);
+    if (t.status === "fokus") stopFocus(t);
+    tasks = tasks.filter((x) => x.id !== t.id);
+    save(); saveJira();
+  } else {
+    t.sprintId = null;
+    if (typeof nantiOpen !== "undefined") nantiOpen = true;
+    save();
+  }
+}
+
 // Menu popup pilih sprint. Dipakai tombol 🏃 di baris tugas, tiket Jira, dan
 // kolom catat. anchor = elemen tombol; currentId = sprint yang sedang dipilih
 // (untuk tanda ✓); onPick(idAtauNull) dipanggil saat memilih.
