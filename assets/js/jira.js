@@ -17,7 +17,7 @@ let jira = (() => {
 jira.proxy = jira.proxy || "";
 jira.key = jira.key || "";
 jira.dismissed = jira.dismissed || [];
-function saveJira() { localStorage.setItem(JIRA_KEY_STORE, JSON.stringify(jira)); }
+function saveJira() { localStorage.setItem(JIRA_KEY_STORE, JSON.stringify(jira)); if (typeof syncDirty === "function") syncDirty(); }
 function jiraSite() { return (jira.site || "").trim().replace(/\/+$/, ""); }
 function jiraUrl(key) { return jiraSite() + "/browse/" + key; }
 
@@ -99,7 +99,7 @@ async function syncJira(manual) {
   if (jiraSyncing) return;
   jiraSyncing = true;
   jiraSyncMsg = "menarik…";
-  if (view === "papan") render();
+  if (view === "papan" || view === "jira") render();
   try {
     const r = await fetch(jiraProxy() + "/tickets", { headers: { "X-Catet-Key": jira.key || "" } });
     const data = await r.json().catch(() => ({}));
@@ -124,7 +124,7 @@ async function syncJira(manual) {
     jiraSyncMsg = "gagal: " + (e && e.message ? e.message : "koneksi");
   }
   jiraSyncing = false;
-  if (view === "papan") render();
+  if (view === "papan" || view === "jira") render();
 }
 
 /* ---------- sprint bar (di atas daftar tiket) ---------- */
@@ -328,6 +328,25 @@ function renderJiraInbox() {
   editor.append(proxyForm);
   editor.append(el("div", "cap-hint",
     "Dengan proxy terpasang, tiket ditarik otomatis tiap 5 menit dan Log kerja bisa dikirim sebagai worklog (tombol → Jira)."));
+
+  // Pemulihan: key yang pernah dibuang (✕) atau terkunci oleh bug lama bisa
+  // dibebaskan lagi — kecuali yang tugasnya memang masih aktif di papan.
+  const terkunci = jira.dismissed.filter((k) =>
+    !tasks.some((t) => t.status !== "selesai" && t.text.includes(k)));
+  if (terkunci.length) {
+    const pulih = el("button", "clear-done",
+      "♻ pulihkan " + terkunci.length + " tiket yang pernah dibuang/dihapus");
+    pulih.title = "Cabut dari daftar abaikan: " + terkunci.join(", ");
+    pulih.onclick = () => {
+      if (!confirm("Pulihkan " + terkunci.length + " tiket ini supaya bisa muncul lagi di tab Jira?\n\n" + terkunci.join(", "))) return;
+      jira.dismissed = jira.dismissed.filter((k) => !terkunci.includes(k));
+      saveJira();
+      if (jiraProxy()) syncJira(true);
+      else alert("Selesai. Tiketnya akan muncul lagi saat sinkron/impor berikutnya.");
+      render();
+    };
+    editor.append(pulih);
+  }
 
   det.append(editor);
   sec.append(det);

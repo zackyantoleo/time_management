@@ -22,6 +22,7 @@ function load() {
 }
 function save() {
   localStorage.setItem(STORE_KEY, JSON.stringify(tasks));
+  if (typeof syncDirty === "function") syncDirty();
 }
 function loadWorklog() {
   try { return JSON.parse(localStorage.getItem(WORKLOG_KEY)) || []; }
@@ -29,6 +30,7 @@ function loadWorklog() {
 }
 function saveWorklog() {
   localStorage.setItem(WORKLOG_KEY, JSON.stringify(worklog));
+  if (typeof syncDirty === "function") syncDirty();
 }
 
 /* ---------- skor dinamis: menentukan urutan & apa yang tampil hari ini ----

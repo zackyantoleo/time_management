@@ -14,7 +14,11 @@ let rday = (() => {
   try { return JSON.parse(localStorage.getItem(RDAY_KEY)) || null; }
   catch { return null; }
 })();
-function saveRoutines() { localStorage.setItem(ROUTINE_KEY, JSON.stringify(routines)); }
+function saveRoutines() { localStorage.setItem(ROUTINE_KEY, JSON.stringify(routines)); if (typeof syncDirty === "function") syncDirty(); }
+// Sengaja TIDAK memanggil syncDirty(): reset harian otomatis bukan perubahan
+// dari pengguna — kalau ikut menandai dirty, perangkat yang baru dibuka akan
+// mengaku "lebih baru" dan menimpa state server. Centang rutinitas tetap
+// tersinkron karena toggleRoutine juga menulis worklog (yang menandai dirty).
 function saveRday() { localStorage.setItem(RDAY_KEY, JSON.stringify(rday)); }
 // Centang & status pengingat rutinitas hanya berlaku untuk satu tanggal;
 // ganti hari = checklist kosong lagi.

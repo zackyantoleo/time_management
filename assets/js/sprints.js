@@ -12,7 +12,7 @@ let sprints = (() => {
   } catch {}
   return { list: [], aktif: null };
 })();
-function saveSprints() { localStorage.setItem(SPRINT_KEY, JSON.stringify(sprints)); }
+function saveSprints() { localStorage.setItem(SPRINT_KEY, JSON.stringify(sprints)); if (typeof syncDirty === "function") syncDirty(); }
 
 function sprintById(id) { return sprints.list.find((s) => s.id === id) || null; }
 // Sprint aktif = target tombol "＋ Sprint" di tab Jira.
