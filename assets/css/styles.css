@@ -273,6 +273,22 @@
   .sprint-task-text { flex: 1; min-width: 0; overflow-wrap: break-word; }
   .sprint-task-text.done { text-decoration: line-through; color: var(--ink-faint); }
 
+  /* ---- Menu popup pilih sprint ---- */
+  .sprint-menu {
+    position: fixed; z-index: 60; min-width: 180px; max-width: min(280px, 90vw);
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+    box-shadow: var(--shadow); padding: 4px; display: flex; flex-direction: column; gap: 2px;
+  }
+  .sprint-menu-item {
+    display: flex; align-items: center; gap: 8px; text-align: left;
+    font-size: 13px; color: var(--ink); padding: 7px 9px; border-radius: 6px; background: none;
+  }
+  .sprint-menu-item:hover { background: var(--surface-2); }
+  .sprint-menu-item.aktif { color: var(--accent); font-weight: 600; }
+  .sprint-menu-item.danger { color: var(--ink-muted); }
+  .sprint-menu-item.danger:hover { color: var(--late); }
+  .sprint-menu-tick { width: 12px; flex: none; color: var(--accent); }
+
   .empty-note {
     font-size: 13px; color: var(--ink-faint); background: var(--surface-2);
     border: 1px dashed var(--line); border-radius: 8px; padding: 10px 14px;

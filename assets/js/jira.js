@@ -134,17 +134,6 @@ let sprintEditId = null; // satu sprint yang panel editnya terbuka (biar tak amb
 // Baris satu sprint + panel edit (nama, tanggal, daftar task, selesai/hapus).
 function sprintRow(s, sec) {
   const row = el("div", "jira-row");
-  const radio = el("button", "check", "✓");
-  const isAktif = sprintAktif() && sprintAktif().id === s.id;
-  if (isAktif) {
-    radio.style.background = "var(--accent)"; radio.style.borderColor = "var(--accent)";
-    radio.style.color = "var(--accent-ink)";
-  }
-  radio.title = isAktif ? "Sprint aktif (target tombol ＋ Sprint)" : "Jadikan sprint aktif";
-  radio.setAttribute("aria-label", radio.title);
-  radio.onclick = () => { sprints.aktif = s.id; saveSprints(); render(); };
-  row.append(radio);
-
   const body = el("span", "jira-summary");
   body.append(el("strong", null, s.nama));
   row.append(body);
@@ -361,11 +350,13 @@ function renderJiraInbox() {
       take.title = "Pindahkan ke papan utama sebagai tugas";
       take.onclick = () => { takeJiraItem(item); render(); };
       row.append(take);
-      const sAktif = sprintAktif();
-      if (sAktif) {
+      if (sprintAktifList().length) {
         const takeSprint = el("button", "btn-line", "🏃 Sprint");
-        takeSprint.title = "Ambil ke papan sebagai bagian “" + sAktif.nama + "” (" + fmtSisaSprint(sAktif) + ")";
-        takeSprint.onclick = () => { takeJiraItem(item, sAktif.id); render(); };
+        takeSprint.title = "Ambil ke papan + pilih sprint";
+        takeSprint.onclick = (e) => {
+          e.stopPropagation();
+          bukaSprintMenu(takeSprint, null, (id) => { if (id) { takeJiraItem(item, id); render(); } });
+        };
         row.append(takeSprint);
       }
       const del = el("button", "icon-btn danger", "✕");

@@ -66,3 +66,54 @@ function fmtSisaSprint(s) {
 function jumlahTugasSprint(id) {
   return tasks.filter((t) => t.status !== "selesai" && t.sprintId === id).length;
 }
+
+// Menu popup pilih sprint. Dipakai tombol 🏃 di baris tugas, tiket Jira, dan
+// kolom catat. anchor = elemen tombol; currentId = sprint yang sedang dipilih
+// (untuk tanda ✓); onPick(idAtauNull) dipanggil saat memilih.
+let sprintMenuEl = null;
+function tutupSprintMenu() {
+  if (sprintMenuEl) { sprintMenuEl.remove(); sprintMenuEl = null; }
+  document.removeEventListener("mousedown", onDocSprintMenu, true);
+  document.removeEventListener("keydown", onDocSprintMenu, true);
+}
+// Tutup hanya bila klik/tekan di LUAR menu (klik item ditangani sendiri).
+function onDocSprintMenu(e) {
+  if (e.type === "keydown" && e.key !== "Escape") return;
+  if (e.type === "mousedown" && sprintMenuEl && sprintMenuEl.contains(e.target)) return;
+  tutupSprintMenu();
+}
+function bukaSprintMenu(anchor, currentId, onPick) {
+  tutupSprintMenu();
+  const menu = el("div", "sprint-menu");
+  sprintMenuEl = menu;
+  const pilih = (id) => (ev) => { ev.stopPropagation(); tutupSprintMenu(); onPick(id); };
+  for (const s of sprintAktifList()) {
+    const item = el("button", "sprint-menu-item" + (currentId === s.id ? " aktif" : ""));
+    item.append(el("span", "sprint-menu-tick", currentId === s.id ? "✓" : ""));
+    item.append(el("span", null, s.nama + " · " + fmtSisaSprint(s)));
+    item.onclick = pilih(s.id);
+    menu.append(item);
+  }
+  if (currentId) {
+    const keluar = el("button", "sprint-menu-item danger");
+    keluar.append(el("span", "sprint-menu-tick", ""));
+    keluar.append(el("span", null, "Keluarkan dari sprint"));
+    keluar.onclick = pilih(null);
+    menu.append(keluar);
+  }
+  document.body.append(menu);
+  const r = anchor.getBoundingClientRect();
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  let left = r.left;
+  if (left + mw > window.innerWidth - 8) left = window.innerWidth - mw - 8;
+  menu.style.left = Math.max(8, left) + "px";
+  // Buka ke bawah; kalau ruang bawah kurang, balik ke atas tombol.
+  const top = (r.bottom + 4 + mh > window.innerHeight - 8 && r.top - mh - 4 > 8)
+    ? r.top - mh - 4 : r.bottom + 4;
+  menu.style.top = top + "px";
+  // Tutup saat klik di luar / Escape (dipasang setelah event klik ini selesai).
+  setTimeout(() => {
+    document.addEventListener("mousedown", onDocSprintMenu, true);
+    document.addEventListener("keydown", onDocSprintMenu, true);
+  }, 0);
+}
