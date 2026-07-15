@@ -189,7 +189,7 @@ function sprintRow(s, sec) {
       li.append(tx);
       const keluar = el("button", "icon-btn danger", "✕");
       keluar.title = "Keluarkan dari sprint"; keluar.setAttribute("aria-label", keluar.title);
-      keluar.onclick = () => { t.sprintId = null; save(); render(); };
+      keluar.onclick = () => { setTaskSprint(t, null); render(); };
       li.append(keluar);
       ul.append(li);
     });

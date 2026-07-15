@@ -202,7 +202,7 @@ function taskRow(t) {
       spBtn.setAttribute("aria-label", spBtn.title);
       spBtn.onclick = (e) => {
         e.stopPropagation();
-        bukaSprintMenu(spBtn, t.sprintId || null, (id) => { t.sprintId = id; save(); render(); });
+        bukaSprintMenu(spBtn, t.sprintId || null, (id) => { setTaskSprint(t, id); render(); });
       };
       actions.append(spBtn);
     }
