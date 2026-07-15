@@ -42,7 +42,21 @@ function initApp() {
   setInterval(checkDue, 30000);
   setInterval(() => syncJira(false), 5 * 60 * 1000);
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
+    // Auto-update: begitu service worker versi baru mengambil alih, muat ulang
+    // sekali supaya pengguna langsung dapat build terbaru (tanpa clear cache
+    // manual). Juga cek update tiap kali app kembali aktif.
+    let sudahReload = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (sudahReload) return;
+      sudahReload = true;
+      location.reload();
+    });
+    navigator.serviceWorker.register("sw.js").then((reg) => {
+      reg.update();
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") reg.update();
+      });
+    }).catch(() => {});
   }
   render();
   initSync(); // pull state → sinkron Jira → push tertunda (urutan di sync.js)

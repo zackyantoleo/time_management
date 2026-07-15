@@ -32,7 +32,7 @@ dependensi, tanpa framework. Data pengguna di `localStorage`.
   10. `sync.js` — sinkron antar perangkat via Worker+KV (`syncDirty` dipanggil
       semua `save*()`; push debounce, pull saat buka/visible; last-write-wins)
   11. `app.js` — `view`/`render()`/`setView()` + `initApp()` (semua binding & timer)
-- `sw.js` — service worker network-first; **tambahkan file baru ke `ASSETS`
+- `sw.js` — service worker network-first + auto-update (reload saat SW baru aktif); **tambahkan file baru ke `ASSETS`
   dan naikkan versi `CACHE`** setiap daftar aset berubah
 - `manifest.webmanifest` + `icon-*.png` — PWA (Add to Home Screen)
 - `worker/` — proxy Cloudflare Worker untuk Jira (deploy manual oleh pemilik,
