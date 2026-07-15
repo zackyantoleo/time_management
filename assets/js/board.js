@@ -72,6 +72,16 @@ function dueKind(t) {
 function taskEditor(t) {
   const ed = el("div", "task-editor");
 
+  const grpNama = el("div", "cap-group");
+  grpNama.append(el("span", "cap-label", "Judul"));
+  const namaIn = document.createElement("input");
+  namaIn.type = "text"; namaIn.value = t.text; namaIn.className = "task-edit-nama";
+  const simpanNama = () => { const v = namaIn.value.trim(); if (v && v !== t.text) { t.text = v; save(); render(); } };
+  namaIn.onblur = simpanNama;
+  namaIn.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); namaIn.blur(); } };
+  grpNama.append(namaIn);
+  ed.append(grpNama);
+
   const grpPrio = el("div", "cap-group");
   grpPrio.append(el("span", "cap-label", "Prioritas"));
   for (const p of PRIORITIES) {
@@ -114,6 +124,24 @@ function taskEditor(t) {
     grpUsaha.append(chip);
   }
   ed.append(grpUsaha);
+
+  // Pilih task ini masuk sprint mana (kalau ada sprint).
+  const daftarSprint = sprintAktifList();
+  if (daftarSprint.length) {
+    const grpSprint = el("div", "cap-group");
+    grpSprint.append(el("span", "cap-label", "Sprint"));
+    const chipTanpa = el("button", "chip", "Tanpa");
+    chipTanpa.setAttribute("aria-pressed", String(!t.sprintId));
+    chipTanpa.onclick = () => { t.sprintId = null; save(); render(); };
+    grpSprint.append(chipTanpa);
+    for (const s of daftarSprint) {
+      const chip = el("button", "chip time", "🏃 " + s.nama);
+      chip.setAttribute("aria-pressed", String(t.sprintId === s.id));
+      chip.onclick = () => { t.sprintId = s.id; save(); render(); };
+      grpSprint.append(chip);
+    }
+    ed.append(grpSprint);
+  }
 
   const tutup = el("button", "btn-line", "Selesai edit");
   tutup.onclick = () => { editingTaskId = null; render(); };

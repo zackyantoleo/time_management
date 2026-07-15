@@ -259,6 +259,19 @@
     background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px;
   }
   .task-editor .btn-line { align-self: flex-start; }
+  .task-editor input[type="text"], .task-editor input[type="date"] {
+    flex: 1 1 180px; min-width: 0; font: inherit; font-size: 13px; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px;
+  }
+  ul.sprint-tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  ul.sprint-tasks li { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 2px 0; }
+  .sprint-task-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .sprint-task-dot.p-urgent { background: var(--p-urgent); }
+  .sprint-task-dot.p-tinggi { background: var(--p-tinggi); }
+  .sprint-task-dot.p-sedang { background: var(--p-sedang); }
+  .sprint-task-dot.p-rendah { background: var(--p-rendah); }
+  .sprint-task-text { flex: 1; min-width: 0; overflow-wrap: break-word; }
+  .sprint-task-text.done { text-decoration: line-through; color: var(--ink-faint); }
 
   .empty-note {
     font-size: 13px; color: var(--ink-faint); background: var(--surface-2);
@@ -385,6 +398,7 @@
   .log-dot.p-sedang { background: var(--p-sedang); }
   .log-dot.p-rendah { background: var(--p-rendah); }
   .log-dot.p-rutin { background: var(--accent); }
+  .log-dot.p-sprint { background: var(--p-tinggi); }
   .log-text { flex: 1; min-width: 0; overflow-wrap: break-word; font-size: 14px; }
   .log-mins {
     font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px;

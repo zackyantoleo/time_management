@@ -129,6 +129,112 @@ async function syncJira(manual) {
 
 /* ---------- sprint bar (di atas daftar tiket) ---------- */
 let sprintFormOpen = false;
+let sprintEditId = null; // satu sprint yang panel editnya terbuka (biar tak ambigu)
+
+// Baris satu sprint + panel edit (nama, tanggal, daftar task, selesai/hapus).
+function sprintRow(s, sec) {
+  const row = el("div", "jira-row");
+  const radio = el("button", "check", "✓");
+  const isAktif = sprintAktif() && sprintAktif().id === s.id;
+  if (isAktif) {
+    radio.style.background = "var(--accent)"; radio.style.borderColor = "var(--accent)";
+    radio.style.color = "var(--accent-ink)";
+  }
+  radio.title = isAktif ? "Sprint aktif (target tombol ＋ Sprint)" : "Jadikan sprint aktif";
+  radio.setAttribute("aria-label", radio.title);
+  radio.onclick = () => { sprints.aktif = s.id; saveSprints(); render(); };
+  row.append(radio);
+
+  const body = el("span", "jira-summary");
+  body.append(el("strong", null, s.nama));
+  row.append(body);
+  const badge = el("span", "due-badge mono" + (sprintPtsUntukBadge(s) >= 3 ? " late" : ""),
+    "🏁 " + fmtDayName(s.selesai) + " · " + fmtSisaSprint(s));
+  row.append(badge);
+  const jml = jumlahTugasSprint(s.id);
+  row.append(el("span", "jira-status", jml + " tugas"));
+
+  const edit = el("button", "icon-btn" + (sprintEditId === s.id ? " in-sprint" : ""), "✎");
+  edit.title = "Ubah sprint / lihat isinya"; edit.setAttribute("aria-label", edit.title);
+  edit.onclick = () => { sprintEditId = sprintEditId === s.id ? null : s.id; render(); };
+  row.append(edit);
+  sec.append(row);
+
+  if (sprintEditId !== s.id) return;
+
+  // ----- panel edit sprint -----
+  const ed = el("div", "task-editor");
+  ed.style.borderLeft = "3px solid var(--p-tinggi)";
+  ed.style.paddingLeft = "10px";
+
+  const grpNama = el("div", "cap-group");
+  grpNama.append(el("span", "cap-label", "Nama"));
+  const namaIn = document.createElement("input");
+  namaIn.type = "text"; namaIn.value = s.nama; namaIn.className = "sprint-edit-nama";
+  const simpanNama = () => { const v = namaIn.value.trim(); if (v && v !== s.nama) { s.nama = v; saveSprints(); render(); } };
+  namaIn.onblur = simpanNama;
+  namaIn.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); namaIn.blur(); } };
+  grpNama.append(namaIn);
+  ed.append(grpNama);
+
+  const grpTgl = el("div", "cap-group");
+  grpTgl.append(el("span", "cap-label", "Selesai"));
+  const tglIn = document.createElement("input");
+  tglIn.type = "date"; tglIn.value = s.selesai;
+  tglIn.onchange = (e) => { if (e.target.value) { s.selesai = e.target.value; saveSprints(); render(); } };
+  grpTgl.append(tglIn);
+  ed.append(grpTgl);
+
+  // daftar task di sprint ini
+  const anggota = tasks.filter((t) => t.sprintId === s.id);
+  const lbl = el("div", "cap-label"); lbl.style.marginTop = "2px";
+  lbl.textContent = "Isi sprint (" + anggota.length + ")";
+  ed.append(lbl);
+  if (anggota.length) {
+    const ul = el("ul", "sprint-tasks");
+    anggota.sort(bandingkanTugas).forEach((t) => {
+      const li = el("li");
+      li.append(el("span", "sprint-task-dot p-" + t.priority));
+      const tx = el("span", "sprint-task-text" + (t.status === "selesai" ? " done" : ""));
+      tx.append(linkify(t.text));
+      li.append(tx);
+      const keluar = el("button", "icon-btn danger", "✕");
+      keluar.title = "Keluarkan dari sprint"; keluar.setAttribute("aria-label", keluar.title);
+      keluar.onclick = () => { t.sprintId = null; save(); render(); };
+      li.append(keluar);
+      ul.append(li);
+    });
+    ed.append(ul);
+  } else {
+    ed.append(el("div", "cap-hint", "Belum ada tugas. Tambahkan lewat panel edit tugas (tombol ✎) atau tombol 🏃 di tiket Jira."));
+  }
+
+  const aksi = el("div", "cap-group");
+  const selesaiBtn = el("button", "btn-solid", "✓ Selesai sprint");
+  selesaiBtn.title = "Tutup sprint & catat ke Log kerja";
+  selesaiBtn.onclick = () => {
+    const belum = anggota.filter((t) => t.status !== "selesai").length;
+    const pesan = "Tutup sprint “" + s.nama + "”?" +
+      (belum ? "\n\nMasih ada " + belum + " tugas belum selesai (tetap di papan, hanya lepas tekanan sprint)." : "") +
+      "\n\nAkan dicatat di Log kerja.";
+    if (confirm(pesan)) { sprintEditId = null; completeSprint(s); render(); }
+  };
+  aksi.append(selesaiBtn);
+  const hapusBtn = el("button", "btn-line", "Hapus sprint");
+  hapusBtn.onclick = () => {
+    if (confirm("Hapus sprint “" + s.nama + "”?\nTugas-tugasnya tetap ada di papan, hanya lepas dari sprint.")) {
+      sprints.list = sprints.list.filter((x) => x.id !== s.id);
+      if (sprints.aktif === s.id) sprints.aktif = null;
+      tasks.forEach((t) => { if (t.sprintId === s.id) t.sprintId = null; });
+      sprintEditId = null;
+      saveSprints(); save(); render();
+    }
+  };
+  aksi.append(hapusBtn);
+  ed.append(aksi);
+  sec.append(ed);
+}
+
 function renderSprintBar() {
   const sec = el("section", "section s-jira");
   sec.style.marginBottom = "18px";
@@ -136,43 +242,39 @@ function renderSprintBar() {
   head.append(el("h2", null, "Sprint"));
   sec.append(head);
 
-  if (sprints.list.length) {
+  const aktif = sprintAktifList();
+  if (aktif.length) {
     const card = el("div", "routine-card");
-    for (const s of sprints.list) {
+    aktif.forEach((s) => sprintRow(s, card));
+    sec.append(card);
+  }
+
+  // Sprint yang sudah ditutup — ringkas, tanpa menekan skor.
+  const selesai = sprints.list.filter(sprintSelesai)
+    .sort((a, b) => new Date(b.selesaiPada || 0) - new Date(a.selesaiPada || 0));
+  if (selesai.length) {
+    const det2 = document.createElement("details");
+    det2.className = "routine-manage";
+    const sum2 = document.createElement("summary");
+    sum2.append("Sprint selesai ", el("span", "count mono", String(selesai.length)));
+    det2.append(sum2);
+    const card2 = el("div", "routine-card");
+    for (const s of selesai) {
       const row = el("div", "jira-row");
-      const radio = el("button", "check", "✓");
-      const isAktif = sprintAktif() && sprintAktif().id === s.id;
-      if (isAktif) {
-        radio.style.background = "var(--accent)"; radio.style.borderColor = "var(--accent)";
-        radio.style.color = "var(--accent-ink)";
-      }
-      radio.title = isAktif ? "Sprint aktif (target tombol ＋ Sprint)" : "Jadikan sprint aktif";
-      radio.setAttribute("aria-label", radio.title);
-      radio.onclick = () => { sprints.aktif = s.id; saveSprints(); render(); };
-      row.append(radio);
-      const body = el("span", "jira-summary");
-      body.append(el("strong", null, s.nama));
-      row.append(body);
-      const sisa = fmtSisaSprint(s);
-      const badge = el("span", "due-badge mono" + (sprintPtsUntukBadge(s) >= 3 ? " late" : ""),
-        "🏁 " + fmtDayName(s.selesai) + " · " + sisa);
-      row.append(badge);
-      row.append(el("span", "jira-status", jumlahTugasSprint(s.id) + " tugas"));
+      row.append(el("span", "jira-summary", "🏁 " + s.nama));
+      row.append(el("span", "jira-status", "ditutup " + (s.selesaiPada ? fmtAgo(s.selesaiPada) : "")));
       const del = el("button", "icon-btn danger", "✕");
-      del.title = "Hapus sprint (tugasnya tetap ada, hanya lepas dari sprint)";
-      del.setAttribute("aria-label", "Hapus sprint");
+      del.title = "Hapus dari riwayat"; del.setAttribute("aria-label", del.title);
       del.onclick = () => {
-        if (confirm("Hapus sprint “" + s.nama + "”?\nTugas-tugasnya tetap ada di papan, hanya lepas dari sprint.")) {
-          sprints.list = sprints.list.filter((x) => x.id !== s.id);
-          if (sprints.aktif === s.id) sprints.aktif = null;
-          tasks.forEach((t) => { if (t.sprintId === s.id) t.sprintId = null; });
-          saveSprints(); save(); render();
-        }
+        sprints.list = sprints.list.filter((x) => x.id !== s.id);
+        tasks.forEach((t) => { if (t.sprintId === s.id) t.sprintId = null; });
+        saveSprints(); save(); render();
       };
       row.append(del);
-      card.append(row);
+      card2.append(row);
     }
-    sec.append(card);
+    det2.append(card2);
+    sec.append(det2);
   }
 
   const det = document.createElement("details");
