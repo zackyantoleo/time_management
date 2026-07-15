@@ -45,6 +45,6 @@ function initApp() {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }
   render();
-  if (jiraProxy()) syncJira(false);
+  initSync(); // pull state → sinkron Jira → push tertunda (urutan di sync.js)
 }
 initApp();

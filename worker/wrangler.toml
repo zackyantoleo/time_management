@@ -1,3 +1,11 @@
 name = "catet-jira-proxy"
 main = "worker.js"
 compatibility_date = "2026-01-01"
+
+# Sinkronisasi data antar perangkat (opsional). Buat namespace dulu:
+#   wrangler kv namespace create CATET_KV
+# lalu buka komentar 3 baris di bawah dan isi id dari output perintah itu,
+# terakhir `wrangler deploy` ulang.
+# [[kv_namespaces]]
+# binding = "CATET_KV"
+# id = "ISI_ID_NAMESPACE_DI_SINI"

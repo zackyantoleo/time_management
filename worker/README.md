@@ -60,14 +60,40 @@ otomatis tiap 5 menit selama Catet terbuka, dan entri Log kerja yang memuat
 kode tiket punya tombol **→ Jira** untuk mengirim worklog (durasi diambil
 dari waktu fokus).
 
+## Sinkronisasi antar perangkat (opsional, gratis)
+
+Supaya data Catet di laptop dan HP sama, Worker yang sama bisa jadi tempat
+penitipan state lewat Cloudflare KV:
+
+```bash
+cd worker
+wrangler kv namespace create CATET_KV
+```
+
+Salin `id` dari output-nya, buka `wrangler.toml`, buka komentar blok
+`[[kv_namespaces]]` dan tempel id-nya, lalu:
+
+```bash
+wrangler deploy
+```
+
+Selesai — tidak ada pengaturan tambahan di aplikasi (Catet memakai alamat
+proxy + kunci yang sudah kamu isi). Status sinkron tampil kecil di footer
+("☁ tersinkron 10.42"). Cara kerjanya: `localStorage` tetap jadi sumber
+utama (offline tetap jalan); perubahan didorong ke Worker beberapa detik
+kemudian, dan data terbaru ditarik saat aplikasi dibuka/kembali aktif.
+Konflik ditangani last-write-wins — hindari mengedit bersamaan di dua
+perangkat dalam hitungan detik yang sama.
+
 ## Endpoint (untuk referensi)
 
 | Method | Path | Fungsi |
 |---|---|---|
 | GET | `/tickets` | Tiket terbuka yang di-assign ke pemilik token (max 100) |
 | POST | `/worklog` | Kirim worklog: `{key, started, timeSpentSeconds, comment}` |
+| GET/PUT | `/state` | Simpan/ambil state Catet untuk sinkron antar perangkat (butuh KV) |
 
-Keduanya mewajibkan header `X-Catet-Key`.
+Semuanya mewajibkan header `X-Catet-Key`.
 
 ## Mencabut akses
 - Hapus API token di https://id.atlassian.com/manage-profile/security/api-tokens → proxy langsung mati.

@@ -20,7 +20,9 @@ const CORS = {
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
     status,
-    headers: { "Content-Type": "application/json", ...CORS },
+    // no-store: respons /state & /tickets tidak boleh diambil dari cache
+    // browser — data sinkronisasi harus selalu segar.
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...CORS },
   });
 }
 
@@ -96,6 +98,29 @@ export default {
       return json({ ok: true });
     }
 
-    return json({ error: "Endpoint tidak dikenal. Yang ada: GET /tickets, POST /worklog." }, 404);
+    // GET/PUT /state — sinkronisasi data Catet antar perangkat lewat KV.
+    // Satu blob JSON per pengguna; strategi last-write-wins di sisi klien.
+    if (url.pathname === "/state") {
+      if (!env.CATET_KV) {
+        return json({ error: "KV belum dikonfigurasi — buat namespace (wrangler kv namespace create CATET_KV), isi id-nya di wrangler.toml, lalu deploy ulang. Lihat worker/README.md." }, 500);
+      }
+      if (request.method === "GET") {
+        const raw = await env.CATET_KV.get("state");
+        return json(raw ? JSON.parse(raw) : { updatedAt: null, stores: null });
+      }
+      if (request.method === "PUT") {
+        let body;
+        try { body = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
+        if (!body || typeof body.updatedAt !== "string" || typeof body.stores !== "object") {
+          return json({ error: "Field updatedAt dan stores wajib ada." }, 400);
+        }
+        const raw = JSON.stringify({ updatedAt: body.updatedAt, stores: body.stores });
+        if (raw.length > 512 * 1024) return json({ error: "Data terlalu besar (maks 512 KB)." }, 413);
+        await env.CATET_KV.put("state", raw);
+        return json({ ok: true, updatedAt: body.updatedAt });
+      }
+    }
+
+    return json({ error: "Endpoint tidak dikenal. Yang ada: GET /tickets, POST /worklog, GET/PUT /state." }, 404);
   },
 };

@@ -29,7 +29,9 @@ dependensi, tanpa framework. Data pengguna di `localStorage`.
   7. `board.js` — render papan (kartu fokus, "Kerjakan hari ini" terurut skor, "Nanti" terlipat)
   8. `worklog.js` — render tab Log kerja, salin per hari, kirim worklog → Jira
   9. `reminders.js` — toggle pengingat, toast + bip, notifikasi, `checkDue`
-  10. `app.js` — `view`/`render()`/`setView()` + `initApp()` (semua binding & timer)
+  10. `sync.js` — sinkron antar perangkat via Worker+KV (`syncDirty` dipanggil
+      semua `save*()`; push debounce, pull saat buka/visible; last-write-wins)
+  11. `app.js` — `view`/`render()`/`setView()` + `initApp()` (semua binding & timer)
 - `sw.js` — service worker network-first; **tambahkan file baru ke `ASSETS`
   dan naikkan versi `CACHE`** setiap daftar aset berubah
 - `manifest.webmanifest` + `icon-*.png` — PWA (Add to Home Screen)
