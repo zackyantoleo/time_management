@@ -2,7 +2,7 @@
 // dan kirim worklog ke Jira lewat proxy (tombol "→ Jira").
 "use strict";
 
-const PR_LABEL = { urgent: "urgent", tinggi: "tinggi", sedang: "sedang", rendah: "rendah", rutin: "rutin" };
+const PR_LABEL = { urgent: "urgent", tinggi: "tinggi", sedang: "sedang", rendah: "rendah", rutin: "rutin", sprint: "sprint" };
 
 function dayLogText(dateStr, entries) {
   const lines = entries.map((e) => {
@@ -62,7 +62,7 @@ function renderWorklog() {
       const m = fmtMins(e.mins);
       if (m) li.append(el("span", "log-mins mono", "fokus ±" + m));
       const ticketKey = (e.text.match(JIRA_RE) || [null])[0];
-      if (jiraProxy() && ticketKey && e.priority !== "rutin") {
+      if (jiraProxy() && ticketKey && e.priority !== "rutin" && e.priority !== "sprint") {
         if (e.jiraLogged) {
           li.append(el("span", "log-mins mono", "✓ Jira"));
         } else {

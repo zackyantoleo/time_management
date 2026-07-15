@@ -48,11 +48,11 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
   prompt-nya lagi — buka bloknya lewat ikon gembok di address bar →
   Notifikasi → Izinkan.
 - **Edit tugas** — tombol ✎ di baris tugas membuka panel untuk mengubah
-  **prioritas**, **tenggat** (Bebas / Hari ini / Besok pagi / pilih sendiri),
-  dan **perkiraan usaha** — langsung tersimpan, dan tugas otomatis pindah ke
-  "Kerjakan hari ini" begitu skornya naik. Teks tugas tetap bisa diubah
-  dengan klik dua kali. Tugas selesai tersimpan di bagian "Selesai" yang
-  bisa dibersihkan.
+  **judul**, **prioritas**, **tenggat** (Bebas / Hari ini / Besok pagi /
+  pilih sendiri), **perkiraan usaha**, dan **sprint** — langsung tersimpan,
+  dan tugas otomatis pindah ke "Kerjakan hari ini" begitu skornya naik.
+  (Judul juga bisa diubah cepat dengan klik dua kali di teksnya.) Tugas
+  selesai tersimpan di bagian "Selesai" yang bisa dibersihkan.
 - **Rutinitas harian** — tugas berulang seperti daily standup, cek email,
   atau isi worklog cukup didefinisikan sekali (teks + jam pengingat opsional +
   pilihan hari, default Senin–Jumat). Setiap hari mereka muncul sebagai
@@ -83,6 +83,13 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
   ≤3 hari melonjak dan otomatis muncul di "Kerjakan hari ini", hari terakhir
   setara tenggat terlambat. Badge 🏃 di baris tugas memerah saat sprint
   mepet. Menghapus sprint tidak menghapus tugasnya.
+  - **Kelola sprint** (tombol ✎ di bar sprint): ubah nama & tanggal selesai,
+    lihat daftar tugas di dalamnya, keluarkan tugas, atau tekan **✓ Selesai
+    sprint** untuk menutupnya — tercatat di Log kerja dan tekanan skornya
+    berhenti. Sprint yang ditutup masuk area "Sprint selesai".
+  - **Pilih sprint per tugas**: di panel edit tugas (✎) ada baris Sprint —
+    pilih tugas ini masuk sprint mana (atau "Tanpa"), berguna kalau ada lebih
+    dari satu sprint.
 - **Sinkronisasi Jira otomatis (opsional)** — deploy proxy kecil di
   Cloudflare Worker (gratis; kode + panduan di [`worker/`](worker/)), isi
   alamat + kunci di panel impor, dan Catet menarik tiket assigned-mu otomatis

@@ -15,9 +15,28 @@ let sprints = (() => {
 function saveSprints() { localStorage.setItem(SPRINT_KEY, JSON.stringify(sprints)); if (typeof syncDirty === "function") syncDirty(); }
 
 function sprintById(id) { return sprints.list.find((s) => s.id === id) || null; }
-// Sprint aktif = target tombol "＋ Sprint" di tab Jira.
+function sprintSelesai(s) { return !!(s && s.status === "selesai"); }
+function sprintAktifList() { return sprints.list.filter((s) => !sprintSelesai(s)); }
+// Sprint aktif = target tombol "＋ Sprint"; hanya dari sprint yang belum ditutup.
 function sprintAktif() {
-  return sprintById(sprints.aktif) || sprints.list[0] || null;
+  const dipilih = sprintById(sprints.aktif);
+  if (dipilih && !sprintSelesai(dipilih)) return dipilih;
+  return sprintAktifList()[0] || null;
+}
+// Tutup sprint: catat ke log kerja, lepas tekanan waktunya, simpan riwayat.
+function completeSprint(s) {
+  const anggota = tasks.filter((t) => t.sprintId === s.id);
+  const beres = anggota.filter((t) => t.status === "selesai").length;
+  s.status = "selesai";
+  s.selesaiPada = new Date().toISOString();
+  const now = new Date();
+  worklog.push({
+    id: uid(), taskId: "sprint:" + s.id, date: localDateStr(now), ts: now.toISOString(),
+    text: "🏁 Sprint “" + s.nama + "” ditutup — " + beres + "/" + anggota.length + " tugas selesai",
+    priority: "sprint", mins: 0,
+  });
+  if (sprints.aktif === s.id) sprints.aktif = (sprintAktifList()[0] || {}).id || null;
+  saveSprints(); saveWorklog();
 }
 // Akhir sprint dihitung sampai habisnya hari itu (23.59), bukan tengah malam.
 function akhirSprint(s) {
@@ -30,7 +49,7 @@ function akhirSprint(s) {
 function sprintPts(t) {
   if (!t.sprintId) return 0;
   const s = sprintById(t.sprintId);
-  if (!s) return 0; // sprint sudah dihapus — abaikan
+  if (!s || sprintSelesai(s)) return 0; // sprint dihapus/ditutup — tak menekan lagi
   const h = (akhirSprint(s) - Date.now()) / 3600000;
   if (h < 0) return 4;    // sprint lewat
   if (h <= 24) return 4;  // hari terakhir
