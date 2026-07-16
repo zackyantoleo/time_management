@@ -86,6 +86,12 @@
   .brand h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; margin: 0; }
   .brand .tag { font-size: 12.5px; color: var(--ink-muted); }
   .top-actions { display: flex; gap: 8px; }
+  /* Layar sempit: tombol header cukup ikonnya saja (label pindah ke title) —
+     tanpa ini "🔔 Pengingat aktif" melipat tiga baris dan mendominasi layar. */
+  @media (max-width: 560px) {
+    .top-actions .btn-label { display: none; }
+    .top-actions .btn-ghost { font-size: 16px; padding: 6px 10px; }
+  }
 
   button { font: inherit; color: inherit; cursor: pointer; border: none; background: none; }
   button:focus-visible, input:focus-visible, select:focus-visible {
@@ -132,12 +138,12 @@
     font-size: 11px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase;
     color: var(--ink-faint);
   }
-  .stack-row { display: flex; align-items: center; gap: 8px; }
+  .stack-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
   .stack-row .stack-text {
-    flex: 1; min-width: 0; overflow-wrap: anywhere;
+    flex: 1 1 auto; min-width: min(18ch, 100%); overflow-wrap: break-word;
     font-size: 14px; font-weight: 500; color: var(--ink-muted);
   }
-  .stack-row .stack-meta { font-size: 11.5px; color: var(--ink-faint); white-space: nowrap; }
+  .stack-row .stack-meta { font-size: 11.5px; color: var(--ink-faint); white-space: nowrap; margin-left: auto; }
 
   .btn-solid {
     background: var(--accent); color: var(--accent-ink);
@@ -365,9 +371,12 @@
 
   /* ---- Jira inbox ---- */
   .section.s-jira h2 { color: var(--p-sedang); }
-  .jira-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px dashed var(--line); }
+  /* flex-wrap + min-width pada kolom teks: di layar sempit badge/tombol turun
+     ke baris berikutnya, BUKAN menggencet teks sampai satu huruf per baris. */
+  .jira-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 0; border-top: 1px dashed var(--line); }
   .jira-row:first-child { border-top: none; }
-  .jira-summary { flex: 1; min-width: 0; overflow-wrap: break-word; }
+  .jira-summary { flex: 1 1 auto; min-width: min(24ch, 100%); overflow-wrap: break-word; }
+  .jira-row .due-badge { flex: none; white-space: nowrap; }
   .jira-status { font-size: 11px; color: var(--ink-faint); flex: none; }
   a.jira-key {
     font-family: ui-monospace, "SF Mono", "Cascadia Mono", "Ubuntu Mono", Menlo, monospace;
@@ -419,7 +428,9 @@
   .log-day-head .btn-ghost { margin-left: auto; }
   ul.log-entries { list-style: none; margin: 0; padding: 0; }
   .log-entry {
-    display: flex; gap: 10px; align-items: baseline; padding: 7px 0;
+    /* flex-wrap + min-width teks: badge (fokus/✓ Jira) turun baris di layar
+       sempit, bukan mematahkan teks log per suku kata. */
+    display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; padding: 7px 0;
     border-top: 1px dashed var(--line);
   }
   .log-entry:first-child { border-top: none; }
@@ -431,7 +442,7 @@
   .log-dot.p-rendah { background: var(--p-rendah); }
   .log-dot.p-rutin { background: var(--accent); }
   .log-dot.p-sprint { background: var(--p-tinggi); }
-  .log-text { flex: 1; min-width: 0; overflow-wrap: break-word; font-size: 14px; }
+  .log-text { flex: 1 1 auto; min-width: min(18ch, 100%); overflow-wrap: break-word; font-size: 14px; }
   .log-mins {
     font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
     background: var(--accent-soft); color: var(--accent); flex: none;
