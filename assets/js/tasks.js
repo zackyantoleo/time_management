@@ -87,10 +87,41 @@ function stopFocus(t) {
     t.focusedAt = null;
   }
 }
+
+/* ---------- tumpukan interupsi ----------
+   Memfokuskan tugas lain saat sudah ada yang difokuskan = interupsi: tugas
+   lama TIDAK kembali ke daftar, melainkan masuk tumpukan (field ditumpuk =
+   stempel waktu, ikut tersinkron lewat store tasks). Begitu tugas fokus
+   selesai, tumpukan teratas otomatis kembali difokuskan — persis alur
+   "diinterupsi, kerjakan, lalu balik ke kerjaan semula". Menit fokus
+   masing-masing tetap akurat karena stopFocus dipanggil di tiap perpindahan. */
+function fokuskan(t) {
+  const cur = tasks.find((x) => x.status === "fokus");
+  if (cur && cur !== t) {
+    stopFocus(cur);
+    cur.status = "aktif";
+    cur.ditumpuk = new Date().toISOString();
+  }
+  t.status = "fokus"; t.focusedAt = new Date().toISOString(); t.ditumpuk = null;
+  save();
+}
+// Tugas di tumpukan, yang terakhir ditunda paling atas (LIFO).
+function daftarTumpukan() {
+  return tasks.filter((t) => t.status === "aktif" && t.ditumpuk)
+    .sort((a, b) => (a.ditumpuk < b.ditumpuk ? 1 : -1));
+}
+function lanjutkanTumpukan() {
+  const top = daftarTumpukan()[0];
+  if (top) { top.ditumpuk = null; top.status = "fokus"; top.focusedAt = new Date().toISOString(); }
+  return top || null;
+}
+
 function completeTask(t) {
+  const tadinyaFokus = t.status === "fokus";
   stopFocus(t);
   t.status = "selesai";
   t.doneAt = new Date().toISOString();
+  if (tadinyaFokus) lanjutkanTumpukan(); // interupsi beres → balik ke semula
   const when = new Date(t.doneAt);
   worklog.push({
     id: uid(), taskId: t.id, date: localDateStr(when), ts: t.doneAt,

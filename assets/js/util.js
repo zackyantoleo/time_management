@@ -48,6 +48,15 @@ function fmtDue(iso) {
   if (sameDay(d, tomorrow)) return "besok " + fmtClock(d);
   return HARI[d.getDay()] + " " + d.getDate() + "/" + (d.getMonth() + 1) + " " + fmtClock(d);
 }
+// Stempel waktu absolut ("kapan"), bukan relatif ("berapa lama lalu") —
+// dipakai untuk "dicatat …" di baris tugas.
+function fmtStempel(iso) {
+  const d = new Date(iso), now = new Date();
+  const kemarin = new Date(now); kemarin.setDate(kemarin.getDate() - 1);
+  if (sameDay(d, now)) return "hari ini " + fmtClock(d);
+  if (sameDay(d, kemarin)) return "kemarin " + fmtClock(d);
+  return HARI[d.getDay()] + " " + d.getDate() + "/" + (d.getMonth() + 1) + " " + fmtClock(d);
+}
 function fmtAgo(iso) {
   const mins = Math.round((Date.now() - new Date(iso)) / 60000);
   if (mins < 1) return "baru saja";

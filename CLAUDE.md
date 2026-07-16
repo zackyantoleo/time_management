@@ -21,7 +21,7 @@ dependensi, tanpa framework. Data pengguna di `localStorage`.
   tetap jalan dari `file://`), berbagi state lewat global scope. Urutan muat
   di `index.html` penting:
   1. `util.js` — helper DOM (`$`, `el`), `uid`, format tanggal/waktu, salin teks
-  2. `tasks.js` — state `tasks` + `worklog`; skor dinamis (`skorTugas`, `masukHariIni`); selesai/batal/fokus
+  2. `tasks.js` — state `tasks` + `worklog`; skor dinamis (`skorTugas`, `masukHariIni`); selesai/batal/fokus; tumpukan interupsi (`fokuskan`, `lanjutkanTumpukan` — field `ditumpuk` di tugas)
   3. `sprints.js` — sprint (nama + tanggal selesai); `sprintPts` menekan skor anggotanya; `completeSprint` tutup + log
   4. `capture.js` — kolom catat cepat (prioritas, kapan, `addTask`)
   5. `routines.js` — rutinitas harian + render section-nya
