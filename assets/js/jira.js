@@ -140,6 +140,12 @@ async function syncJira(manual) {
     // Tiket hasil sinkron yang sudah tidak muncul di Jira (selesai/di-reassign)
     // ikut hilang; tiket hasil impor manual dibiarkan.
     jira.items = jira.items.filter((x) => x.src !== "sync" || feedKeys.has(x.key));
+    // Pangkas daftar dismissed: key yang tak ada lagi di feed berarti tiketnya
+    // sudah Done/di-reassign dan tak mungkin muncul lagi — tak perlu diingat
+    // selamanya (daftar ini tumbuh tanpa batas setiap tiket diambil/dibuang).
+    // Hanya saat feed berisi, supaya respons kosong yang janggal tidak
+    // menghapus penjaga untuk tiket yang sebenarnya masih terbuka.
+    if (feed.length) jira.dismissed = jira.dismissed.filter((k) => feedKeys.has(k));
     rapikanInbox(); // buang tiket yang sudah jadi tugas aktif
     jira.lastSync = new Date().toISOString();
     jiraSyncMsg = "";

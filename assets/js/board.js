@@ -25,7 +25,7 @@ function renderFocus() {
     const pauseBtn = el("button", "btn-line", "Tunda — balikin ke daftar");
     pauseBtn.onclick = () => { stopFocus(t); t.status = "aktif"; save(); render(); };
     const intBtn = el("button", "btn-line", "⚡ Ada interupsi? Catat dulu");
-    intBtn.title = "Fokus tetap di tugas ini; catat interupsinya di kolom bawah";
+    intBtn.title = "Catat interupsinya di kolom bawah, lalu tekan ▶ padanya kalau harus dikerjakan sekarang — tugas ini otomatis masuk tumpukan dan kembali difokuskan begitu interupsinya selesai.";
     intBtn.onclick = () => { $("#cap-text").focus(); };
     actions.append(doneBtn, pauseBtn, intBtn);
     card.append(actions);
@@ -33,8 +33,38 @@ function renderFocus() {
     card.classList.add("empty");
     eyebrow.textContent = "Sedang dikerjakan";
     card.append(eyebrow);
-    card.append(el("div", "focus-text",
-      "Belum ada tugas yang difokuskan. Tekan ▶ pada tugas di daftar supaya tidak hilang saat kamu diinterupsi."));
+    card.append(el("div", "focus-text", daftarTumpukan().length
+      ? "Fokus kosong, tapi masih ada kerjaan tertunda di tumpukan — lanjutkan salah satunya di bawah."
+      : "Belum ada tugas yang difokuskan. Tekan ▶ pada tugas di daftar supaya tidak hilang saat kamu diinterupsi."));
+  }
+
+  // Tumpukan interupsi: kerjaan yang tergeser karena interupsi menunggu di
+  // sini (bukan bercampur di daftar), paling baru di atas. Selesaikan tugas
+  // fokus → teratas otomatis lanjut; atau lanjutkan/keluarkan manual.
+  const tumpukan = daftarTumpukan();
+  if (tumpukan.length) {
+    const stack = el("div", "focus-stack");
+    stack.append(el("div", "stack-label",
+      "⏸ Tertunda karena interupsi (" + tumpukan.length + ")"));
+    for (const x of tumpukan) {
+      const row = el("div", "stack-row");
+      const tx = el("span", "stack-text");
+      tx.append(linkify(x.text));
+      row.append(tx);
+      row.append(el("span", "stack-meta mono", "tertunda " + fmtAgo(x.ditumpuk)));
+      const lanjut = el("button", "icon-btn", "▶");
+      lanjut.title = "Lanjutkan mengerjakan ini";
+      lanjut.setAttribute("aria-label", lanjut.title);
+      lanjut.onclick = () => { fokuskan(x); render(); };
+      row.append(lanjut);
+      const keluar = el("button", "icon-btn", "⤵");
+      keluar.title = "Keluarkan dari tumpukan (balikin ke daftar)";
+      keluar.setAttribute("aria-label", keluar.title);
+      keluar.onclick = () => { x.ditumpuk = null; save(); render(); };
+      row.append(keluar);
+      stack.append(row);
+    }
+    card.append(stack);
   }
 }
 
@@ -188,7 +218,7 @@ function taskRow(t) {
       meta.append(sb);
     }
   }
-  meta.append(el("span", "mono", "dicatat " + fmtAgo(t.createdAt)));
+  meta.append(el("span", "mono", "dicatat " + fmtStempel(t.createdAt)));
   if (t.status === "selesai" && t.doneAt) meta.append(el("span", "mono", "selesai " + fmtAgo(t.doneAt)));
   body.append(meta);
 
@@ -212,14 +242,9 @@ function taskRow(t) {
     editBtn.onclick = () => { editingTaskId = editingTaskId === t.id ? null : t.id; render(); };
     actions.append(editBtn);
     const focusBtn = el("button", "icon-btn", "▶");
-    focusBtn.title = "Kerjakan sekarang (jadikan fokus)";
-    focusBtn.setAttribute("aria-label", focusBtn.title);
-    focusBtn.onclick = () => {
-      const cur = tasks.find((x) => x.status === "fokus");
-      if (cur && cur !== t) { stopFocus(cur); cur.status = "aktif"; }
-      t.status = "fokus"; t.focusedAt = new Date().toISOString();
-      save(); render();
-    };
+    focusBtn.title = "Kerjakan sekarang (jadikan fokus) — yang sedang fokus otomatis masuk tumpukan dan kembali saat ini selesai";
+    focusBtn.setAttribute("aria-label", "Kerjakan sekarang");
+    focusBtn.onclick = () => { fokuskan(t); render(); };
     actions.append(focusBtn);
   }
   const delBtn = el("button", "icon-btn danger", "✕");
@@ -260,7 +285,9 @@ function renderSections() {
   wrap.innerHTML = "";
   const q = searchQuery.trim().toLowerCase();
   const cocok = (t) => !q || t.text.toLowerCase().includes(q);
-  const active = tasks.filter((t) => t.status === "aktif" && cocok(t)).sort(bandingkanTugas);
+  // Tugas di tumpukan interupsi tidak ikut daftar — tempatnya di bawah kartu
+  // fokus, supaya jelas itu kerjaan yang tergeser, bukan antrean biasa.
+  const active = tasks.filter((t) => t.status === "aktif" && !t.ditumpuk && cocok(t)).sort(bandingkanTugas);
 
   const frag = document.createDocumentFragment();
   if (!q) renderRoutines(frag); // saat mencari, fokus ke hasil tugas saja

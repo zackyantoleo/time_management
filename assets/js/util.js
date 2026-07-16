@@ -12,6 +12,16 @@ function el(tag, cls, text) {
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
+// Pengguna sedang mengetik? Render membangun ulang DOM — kalau dilakukan saat
+// fokus ada di input/textarea/contentEditable (edit inline judul, nama sprint,
+// form rutinitas), elemen yang sedang diketik ikut terhapus dan ketikannya
+// hilang. Pemanggil render berkala wajib mengecek ini dulu.
+function sedangMengetik() {
+  const a = document.activeElement;
+  return !!a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" ||
+    a.tagName === "SELECT" || a.isContentEditable);
+}
+
 function localDateStr(d) {
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" +
     String(d.getDate()).padStart(2, "0");
@@ -36,6 +46,15 @@ function fmtDue(iso) {
   }
   if (sameDay(d, now)) return "hari ini " + fmtClock(d);
   if (sameDay(d, tomorrow)) return "besok " + fmtClock(d);
+  return HARI[d.getDay()] + " " + d.getDate() + "/" + (d.getMonth() + 1) + " " + fmtClock(d);
+}
+// Stempel waktu absolut ("kapan"), bukan relatif ("berapa lama lalu") —
+// dipakai untuk "dicatat …" di baris tugas.
+function fmtStempel(iso) {
+  const d = new Date(iso), now = new Date();
+  const kemarin = new Date(now); kemarin.setDate(kemarin.getDate() - 1);
+  if (sameDay(d, now)) return "hari ini " + fmtClock(d);
+  if (sameDay(d, kemarin)) return "kemarin " + fmtClock(d);
   return HARI[d.getDay()] + " " + d.getDate() + "/" + (d.getMonth() + 1) + " " + fmtClock(d);
 }
 function fmtAgo(iso) {

@@ -112,5 +112,9 @@ function checkDue() {
     }
     if (dueNow.length) beep();
   }
-  render(); // refresh relative times & overdue badges
+  // Penyegaran berkala (waktu relatif, badge terlambat) hanya bila aman:
+  // saat pengguna mengetik, render menghapus ketikannya; saat tab
+  // tersembunyi, hasilnya tidak dilihat siapa-siapa (hemat baterai).
+  // Toast/notifikasi di atas tetap tampil terlepas dari ini.
+  if (!document.hidden && !sedangMengetik()) render();
 }
