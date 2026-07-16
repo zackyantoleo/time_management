@@ -12,6 +12,10 @@
 // ada perubahan lokal yang belum terkirim → jangan pernah timpa dengan data
 // server (kirim dulu); tidak ada → selalu terima data server.
 const DIRTY_KEY = "catet.dirty.v1";
+// Perangkat yang sudah pernah sinkron dengan server ini. Perangkat BARU
+// (belum pernah) akan mengadopsi data server saat pertama tersambung, bukan
+// menimpanya — mencegah browser kosong menghapus data yang sudah ada di KV.
+const SYNCED_KEY = "catet.synced.v1";
 
 let syncPushTimer = null;
 let syncStatus = ""; // teks kecil di footer
@@ -64,6 +68,7 @@ async function pushState() {
     });
     if (!r.ok) throw new Error(((await r.json().catch(() => ({}))).error) || ("HTTP " + r.status));
     localStorage.removeItem(DIRTY_KEY); // terkirim — perangkat ini bersih lagi
+    localStorage.setItem(SYNCED_KEY, "1");
     setSyncStatus("tersinkron " + fmtClock(new Date()));
   } catch (e) {
     setSyncStatus("gagal simpan: " + (e && e.message ? e.message : "koneksi"));
@@ -96,9 +101,12 @@ function terapkanRemote(stores) {
 
 async function pullState(paksa) {
   if (!syncAktif()) return;
-  // Ada perubahan lokal yang belum terkirim? Lindungi — kirim dulu, jangan
-  // timpa dengan data server.
-  if (isDirty()) { pushState(); return; }
+  const pernahSinkron = localStorage.getItem(SYNCED_KEY) === "1";
+  // Perangkat yang SUDAH pernah sinkron & punya perubahan lokal belum terkirim:
+  // lindungi — kirim dulu, jangan timpa dengan data server. Perangkat BARU
+  // (belum pernah sinkron) TIDAK boleh mendorong dulu, supaya tidak menimpa
+  // data yang sudah ada di server — dia harus mengadopsi server dulu.
+  if (isDirty() && pernahSinkron) { pushState(); return; }
   const now = Date.now();
   if (!paksa && now - syncLastPull < 30000) return; // throttle
   syncLastPull = now;
@@ -107,10 +115,18 @@ async function pullState(paksa) {
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
     if (data.stores) {
+      // Server punya data → adopsi (termasuk pada perangkat baru). Perubahan
+      // lokal yang belum terkirim di perangkat baru sengaja dilepas: onboarding
+      // = ikut data bersama, bukan menimpanya. (Backup dulu via Ekspor kalau
+      // data lokalnya penting.)
       terapkanRemote(data.stores);
+      localStorage.removeItem(DIRTY_KEY);
+      localStorage.setItem(SYNCED_KEY, "1");
       setSyncStatus("tersinkron " + fmtClock(new Date()));
     } else if (tasks.length || worklog.length || routines.length) {
       pushState(); // server masih kosong — unggah data perangkat ini
+    } else {
+      localStorage.setItem(SYNCED_KEY, "1"); // server & lokal sama-sama kosong
     }
   } catch (e) {
     setSyncStatus("gagal tarik: " + (e && e.message ? e.message : "koneksi"));
