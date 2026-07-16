@@ -87,6 +87,24 @@ function takeJiraItem(item, sprintId) {
   save(); saveJira();
 }
 
+// Bereskan inbox: tiket yang sudah jadi tugas aktif (sudah diambil / masuk
+// sprint) tak boleh ikut nampang di daftar "belum diambil". Bisa nyangkut
+// karena race sinkron antar perangkat — mis. satu perangkat mengambil tiket
+// sementara perangkat lain masih memegang salinan inbox lama, lalu keduanya
+// bergabung. Kembalikan true kalau ada yang dibersihkan (perlu disimpan).
+function rapikanInbox() {
+  const aktif = new Set();
+  for (const t of tasks) {
+    if (t.status === "selesai") continue;
+    for (const m of t.text.matchAll(JIRA_RE)) aktif.add(m[1]);
+  }
+  const nyangkut = jira.items.filter((x) => aktif.has(x.key));
+  if (!nyangkut.length) return false;
+  jira.items = jira.items.filter((x) => !aktif.has(x.key));
+  for (const x of nyangkut) if (!jira.dismissed.includes(x.key)) jira.dismissed.push(x.key);
+  return true;
+}
+
 /* ---------- sinkronisasi otomatis lewat proxy (Cloudflare Worker) ---------- */
 // Alamat proxy bawaan — semua perangkat otomatis tersambung tanpa setup apa
 // pun. Otorisasi di Worker berbasis Origin, jadi tidak ada kunci rahasia di
@@ -122,6 +140,7 @@ async function syncJira(manual) {
     // Tiket hasil sinkron yang sudah tidak muncul di Jira (selesai/di-reassign)
     // ikut hilang; tiket hasil impor manual dibiarkan.
     jira.items = jira.items.filter((x) => x.src !== "sync" || feedKeys.has(x.key));
+    rapikanInbox(); // buang tiket yang sudah jadi tugas aktif
     jira.lastSync = new Date().toISOString();
     jiraSyncMsg = "";
     saveJira();
@@ -314,6 +333,7 @@ function renderJiraInbox() {
   const wrap = $("#jiraview");
   wrap.innerHTML = "";
   wrap.append(renderSprintBar());
+  if (rapikanInbox()) saveJira(); // sembuhkan tiket yang telanjur nyangkut
   const q = searchQuery.trim().toLowerCase();
   const shown = !q ? jira.items : jira.items.filter((x) =>
     (x.key + " " + x.summary + " " + (x.status || "")).toLowerCase().includes(q));
