@@ -13,18 +13,25 @@ let remindersOn = localStorage.getItem(REMIND_KEY) !== "0"; // default nyala
 function sysNotifAvailable() {
   return "Notification" in window && Notification.permission === "granted";
 }
+// Ikon + label terpisah: di layar sempit label disembunyikan lewat CSS
+// (.btn-label) supaya header tidak dipenuhi tombol bertumpuk tiga baris.
+// Detail status ("di tab ini", dst.) cukup di title/tooltip.
 function updateNotifBtn() {
   const btn = $("#notif-btn");
+  let icon, label, title;
   if (!remindersOn) {
-    btn.textContent = "🔕 Pengingat mati";
-    btn.title = "Klik untuk menyalakan pengingat waktu";
+    icon = "🔕"; label = "Pengingat mati";
+    title = "Klik untuk menyalakan pengingat waktu";
   } else if (sysNotifAvailable()) {
-    btn.textContent = "🔔 Pengingat aktif";
-    btn.title = "Pengingat lewat notifikasi sistem + di dalam halaman. Klik untuk mematikan.";
+    icon = "🔔"; label = "Pengingat aktif";
+    title = "Pengingat lewat notifikasi sistem + di dalam halaman. Klik untuk mematikan.";
   } else {
-    btn.textContent = "🔔 Pengingat aktif (di tab ini)";
-    btn.title = "Pengingat muncul di dalam halaman ini. Notifikasi sistem belum diizinkan browser. Klik untuk mematikan.";
+    icon = "🔔"; label = "Pengingat aktif";
+    title = "Pengingat muncul di dalam halaman ini — notifikasi sistem belum diizinkan browser. Klik untuk mematikan.";
   }
+  btn.textContent = icon;
+  btn.append(el("span", "btn-label", " " + label));
+  btn.title = title;
 }
 
 // Dipanggil sekali dari app.js.
