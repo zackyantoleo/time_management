@@ -38,6 +38,7 @@ function initApp() {
   });
   initCapture();
   initReminders();
+  initBackup();
   backfillWorklog();
   setInterval(checkDue, 30000);
   setInterval(() => syncJira(false), 5 * 60 * 1000);

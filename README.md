@@ -100,6 +100,11 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
   sendiri dari inbox; yang sudah di-Ambil atau dibuang (✕) tidak muncul lagi.
   Bonus dua-arah: entri Log kerja yang memuat kode tiket punya tombol
   **→ Jira** untuk mengirim worklog (durasi diambil dari waktu fokus).
+- **Ekspor / Impor data** — tombol **⭳ Ekspor** mengunduh seluruh data
+  (tugas, log, rutinitas, sprint, tiket) sebagai satu file `.json`; **⭱ Impor**
+  memulihkannya di browser/perangkat lain. Cara andal memindahkan data antar
+  browser tanpa bergantung ke sinkron cloud, sekaligus backup manual. (Impor
+  mengganti data di browser tujuan.)
 - Tema terang & gelap mengikuti pengaturan sistem.
 
 ## Cara pakai

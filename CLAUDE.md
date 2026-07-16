@@ -30,6 +30,7 @@ dependensi, tanpa framework. Data pengguna di `localStorage`.
   8. `worklog.js` — render tab Log kerja, salin per hari, kirim worklog → Jira
   9. `reminders.js` — toggle pengingat, toast + bip, notifikasi, `checkDue`
   10. `sync.js` — sinkron antar perangkat via Worker+KV (`syncDirty` dipanggil
+      semua `save*()`); `backup.js` — ekspor/impor data ke file .json
       semua `save*()`; push debounce, pull saat buka/visible; last-write-wins)
   11. `app.js` — `view`/`render()`/`setView()` + `initApp()` (semua binding & timer)
 - `sw.js` — service worker network-first + auto-update (reload saat SW baru aktif); **tambahkan file baru ke `ASSETS`
