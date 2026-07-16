@@ -6,6 +6,6 @@ compatibility_date = "2026-01-01"
 #   wrangler kv namespace create CATET_KV
 # lalu buka komentar 3 baris di bawah dan isi id dari output perintah itu,
 # terakhir `wrangler deploy` ulang.
-# [[kv_namespaces]]
-# binding = "CATET_KV"
-# id = "ISI_ID_NAMESPACE_DI_SINI"
+ [[kv_namespaces]]
+ binding = "CATET_KV"
+ id = "fed6a17c52f34a6ebb79c60ac742648c"
