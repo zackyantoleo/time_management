@@ -12,6 +12,16 @@ function el(tag, cls, text) {
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
+// Pengguna sedang mengetik? Render membangun ulang DOM — kalau dilakukan saat
+// fokus ada di input/textarea/contentEditable (edit inline judul, nama sprint,
+// form rutinitas), elemen yang sedang diketik ikut terhapus dan ketikannya
+// hilang. Pemanggil render berkala wajib mengecek ini dulu.
+function sedangMengetik() {
+  const a = document.activeElement;
+  return !!a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" ||
+    a.tagName === "SELECT" || a.isContentEditable);
+}
+
 function localDateStr(d) {
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" +
     String(d.getDate()).padStart(2, "0");

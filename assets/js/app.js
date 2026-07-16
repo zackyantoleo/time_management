@@ -40,6 +40,12 @@ function initApp() {
   initReminders();
   initBackup();
   backfillWorklog();
+  arsipkanTugasSelesai(); // setelah backfill — log-nya dijamin sudah tercatat
+  // checkDue melewatkan render saat tab tersembunyi; segarkan waktu relatif
+  // yang basi begitu tab terlihat lagi.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && !sedangMengetik()) render();
+  });
   setInterval(checkDue, 30000);
   setInterval(() => syncJira(false), 5 * 60 * 1000);
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {

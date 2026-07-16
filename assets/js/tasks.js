@@ -107,6 +107,20 @@ function uncompleteTask(t) {
   save(); saveWorklog();
 }
 
+// Arsipkan tugas selesai yang sudah lama: buang dari papan supaya state
+// sinkron tidak membengkak tanpa batas (blob KV di Worker dibatasi 512 KB —
+// kalau penuh, sinkronisasi mati). Riwayatnya tidak hilang: setiap tugas
+// selesai sudah tercatat di Log kerja (backfillWorklog menjamin itu untuk
+// data lama, jadi panggil ini SETELAH backfill). Yang dibuang hanya baris
+// di lipatan "Selesai" yang sudah sebulan tak tersentuh.
+const ARSIP_SETELAH_HARI = 30;
+function arsipkanTugasSelesai() {
+  const batas = Date.now() - ARSIP_SETELAH_HARI * 86400000;
+  const sisa = tasks.filter((t) =>
+    !(t.status === "selesai" && t.doneAt && new Date(t.doneAt) < batas));
+  if (sisa.length !== tasks.length) { tasks = sisa; save(); }
+}
+
 // Tugas yang sudah berstatus selesai sebelum fitur log ada ikut dicatat sekali.
 function backfillWorklog() {
   let changed = false;
