@@ -9,16 +9,35 @@
 //   JIRA_SITE      mis. https://erafone.atlassian.net
 //   JIRA_EMAIL     email akun Atlassian pemilik API token
 //   JIRA_API_TOKEN dari id.atlassian.com/manage-profile/security/api-tokens
-//   CATET_KEY      string acak; Catet harus mengirimkannya di header X-Catet-Key
+//
+// Akses TIDAK lagi pakai kunci rahasia. Otorisasi berbasis Origin: hanya
+// halaman dari origin yang diizinkan (GitHub Pages, localhost, file://) yang
+// boleh memakai proxy ini. Efeknya: perangkat baru langsung tersinkron tanpa
+// menempel apa pun — cukup buka aplikasinya. (Origin dikunci oleh browser,
+// jadi halaman di origin lain tak bisa memalsukannya.)
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   // PUT wajib ada di sini — sinkronisasi state pakai PUT /state; tanpa PUT,
   // preflight CORS gagal dan browser memblokir permintaannya.
   "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, X-Catet-Key",
+  "Access-Control-Allow-Headers": "Content-Type",
   "Access-Control-Max-Age": "86400",
 };
+
+// Origin yang boleh memakai proxy ini. Tambahan bisa diset lewat variabel
+// ALLOWED_ORIGINS (dipisah koma) tanpa mengubah kode — mis. kalau dipasang di
+// domain lain. localhost & file:// diizinkan untuk pengembangan.
+const DEFAULT_ORIGINS = [
+  "https://zackyantoleo.github.io", // GitHub Pages (produksi)
+  "null",                            // dibuka langsung dari file:// → Origin: null
+];
+function originOk(origin, env) {
+  if (!origin) return false; // permintaan non-browser (mis. curl polos) ditolak
+  const extra = (env.ALLOWED_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (DEFAULT_ORIGINS.includes(origin) || extra.includes(origin)) return true;
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin); // dev lokal
+}
 
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
@@ -41,11 +60,11 @@ export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
 
-    if (!env.JIRA_SITE || !env.JIRA_EMAIL || !env.JIRA_API_TOKEN || !env.CATET_KEY) {
-      return json({ error: "Worker belum dikonfigurasi — set secrets JIRA_SITE, JIRA_EMAIL, JIRA_API_TOKEN, CATET_KEY." }, 500);
+    if (!env.JIRA_SITE || !env.JIRA_EMAIL || !env.JIRA_API_TOKEN) {
+      return json({ error: "Worker belum dikonfigurasi — set secrets JIRA_SITE, JIRA_EMAIL, JIRA_API_TOKEN." }, 500);
     }
-    if (request.headers.get("X-Catet-Key") !== env.CATET_KEY) {
-      return json({ error: "Kunci salah atau tidak dikirim (header X-Catet-Key)." }, 401);
+    if (!originOk(request.headers.get("Origin"), env)) {
+      return json({ error: "Origin tidak diizinkan untuk mengakses proxy ini." }, 403);
     }
 
     const site = env.JIRA_SITE.trim().replace(/\/+$/, "");

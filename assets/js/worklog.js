@@ -74,7 +74,7 @@ function renderWorklog() {
             try {
               const r = await fetch(jiraProxy() + "/worklog", {
                 method: "POST",
-                headers: { "Content-Type": "application/json", "X-Catet-Key": jira.key || "" },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   key: ticketKey, started: e.ts,
                   timeSpentSeconds: Math.max(60, (e.mins || 0) * 60),

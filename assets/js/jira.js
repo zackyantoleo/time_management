@@ -88,7 +88,12 @@ function takeJiraItem(item, sprintId) {
 }
 
 /* ---------- sinkronisasi otomatis lewat proxy (Cloudflare Worker) ---------- */
-function jiraProxy() { return (jira.proxy || "").trim().replace(/\/+$/, ""); }
+// Alamat proxy bawaan — semua perangkat otomatis tersambung tanpa setup apa
+// pun. Otorisasi di Worker berbasis Origin, jadi tidak ada kunci rahasia di
+// sini. (jira.proxy hanya dipakai kalau seseorang sengaja memasang Worker
+// sendiri dan mengisinya lewat konsol.)
+const DEFAULT_PROXY = "https://catet-jira-proxy.zackyanto-leo.workers.dev";
+function jiraProxy() { return (jira.proxy || DEFAULT_PROXY).trim().replace(/\/+$/, ""); }
 let jiraSyncMsg = "";
 let jiraSyncing = false;
 async function syncJira(manual) {
@@ -101,7 +106,7 @@ async function syncJira(manual) {
   jiraSyncMsg = "menarik…";
   if (view === "papan" || view === "jira") render();
   try {
-    const r = await fetch(jiraProxy() + "/tickets", { headers: { "X-Catet-Key": jira.key || "" } });
+    const r = await fetch(jiraProxy() + "/tickets");
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
     if (typeof data.site === "string" && data.site) jira.site = data.site;
@@ -400,27 +405,11 @@ function renderJiraInbox() {
   form.append(site, impBtn);
   editor.append(form);
 
-  // Sinkronisasi otomatis via proxy (Cloudflare Worker — lihat worker/README.md)
-  const proxyForm = el("div", "routine-form");
-  const proxyIn = document.createElement("input");
-  proxyIn.type = "url"; proxyIn.value = jira.proxy || "";
-  proxyIn.placeholder = "Alamat proxy: https://catet-jira-proxy.….workers.dev";
-  proxyIn.title = "URL Cloudflare Worker kamu (panduan: worker/README.md di repo)";
-  const keyIn = document.createElement("input");
-  keyIn.type = "password"; keyIn.value = jira.key || "";
-  keyIn.placeholder = "Kunci (CATET_KEY)";
-  keyIn.title = "Kunci rahasia yang kamu set sebagai CATET_KEY di Worker";
-  const saveBtn = el("button", "btn-line", "Simpan & tarik");
-  saveBtn.onclick = () => {
-    jira.proxy = proxyIn.value.trim();
-    jira.key = keyIn.value;
-    saveJira();
-    if (jiraProxy()) syncJira(true); else render();
-  };
-  proxyForm.append(proxyIn, keyIn, saveBtn);
-  editor.append(proxyForm);
+  // Sinkronisasi otomatis sudah aktif lewat proxy bawaan (Cloudflare Worker) —
+  // tak perlu setup per perangkat. Tiket ditarik tiap 5 menit dan data
+  // tersinkron antar perangkat; Log kerja bisa dikirim sebagai worklog.
   editor.append(el("div", "cap-hint",
-    "Dengan proxy terpasang, tiket ditarik otomatis tiap 5 menit dan Log kerja bisa dikirim sebagai worklog (tombol → Jira)."));
+    "Tiket & data tersinkron otomatis antar perangkat. Cukup buka aplikasinya — tak perlu memasukkan alamat proxy atau kunci."));
 
   // Pemulihan: key yang pernah dibuang (✕) atau terkunci oleh bug lama bisa
   // dibebaskan lagi — kecuali yang tugasnya memang masih aktif di papan.

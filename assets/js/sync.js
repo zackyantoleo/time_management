@@ -63,7 +63,7 @@ async function pushState() {
   try {
     const r = await fetch(jiraProxy() + "/state", {
       method: "PUT",
-      headers: { "Content-Type": "application/json", "X-Catet-Key": jira.key || "" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ updatedAt: new Date().toISOString(), stores: kumpulkanStores() }),
     });
     if (!r.ok) throw new Error(((await r.json().catch(() => ({}))).error) || ("HTTP " + r.status));
@@ -111,7 +111,7 @@ async function pullState(paksa) {
   if (!paksa && now - syncLastPull < 30000) return; // throttle
   syncLastPull = now;
   try {
-    const r = await fetch(jiraProxy() + "/state", { headers: { "X-Catet-Key": jira.key || "" } });
+    const r = await fetch(jiraProxy() + "/state");
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
     if (data.stores) {

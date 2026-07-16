@@ -7,11 +7,16 @@ gratis di paket Free Cloudflare (100.000 request/hari — Catet hanya butuh
 ratusan).
 
 **Keamanan singkat:** API token Jira kamu disimpan sebagai *secret* di
-Cloudflare — tidak pernah ada di browser, di repo, atau di URL. Semua request
-ke Worker harus membawa kunci rahasia (`X-Catet-Key`) yang kamu tentukan
-sendiri; tanpa kunci itu Worker menolak. Walau begitu, API token = akses penuh
-akun Jira-mu — pastikan ini tidak melanggar kebijakan IT kantor, dan cabut
-token kapan saja dari halaman yang sama tempat membuatnya.
+Cloudflare — tidak pernah ada di browser, di repo, atau di URL. Akses ke Worker
+dibatasi berdasarkan **Origin**: hanya halaman dari origin yang diizinkan
+(GitHub Pages aplikasi ini, `localhost` untuk dev, dan `file://`) yang boleh
+memakainya. Origin dikirim & dikunci oleh browser sehingga halaman di origin
+lain tak bisa memalsukannya — jadi tidak ada kunci rahasia yang perlu ditempel
+di aplikasi, dan perangkat baru langsung tersinkron begitu dibuka. (Origin
+tambahan bisa diset lewat variabel `ALLOWED_ORIGINS`, dipisah koma.) Walau
+begitu, API token = akses penuh akun Jira-mu — pastikan ini tidak melanggar
+kebijakan IT kantor, dan cabut token kapan saja dari halaman yang sama tempat
+membuatnya.
 
 ## Langkah deploy (±10 menit, sekali saja)
 
@@ -39,7 +44,6 @@ openssl rand -hex 16
 wrangler secret put JIRA_SITE       # isi: https://erafone.atlassian.net
 wrangler secret put JIRA_EMAIL      # isi: email Atlassian kamu
 wrangler secret put JIRA_API_TOKEN  # isi: token dari langkah 1
-wrangler secret put CATET_KEY       # isi: string acak dari openssl di atas
 
 wrangler deploy
 ```
@@ -48,17 +52,21 @@ Catat URL yang tercetak, bentuknya:
 
 > **Tanpa terminal?** Bisa juga lewat dashboard: Workers & Pages → Create →
 > paste isi `worker.js` → Deploy, lalu tab **Settings → Variables and
-> Secrets** untuk mengisi keempat secret di atas.
+> Secrets** untuk mengisi ketiga secret di atas.
 
-### 4. Sambungkan Catet
-Di Catet → section **Tiket Jira** → **impor tiket** → isi:
-- **Alamat proxy**: URL workers.dev dari langkah 3
-- **Kunci**: string acak `CATET_KEY` kamu
+> **Penting — alamat proxy bawaan.** Aplikasi (`assets/js/jira.js`, konstanta
+> `DEFAULT_PROXY`) menunjuk ke satu URL Worker bawaan. Kalau URL Worker-mu
+> berbeda, ganti `DEFAULT_PROXY` agar cocok. Dan kalau kamu memakai domain
+> selain GitHub Pages default, tambahkan origin-nya lewat variabel
+> `ALLOWED_ORIGINS` di Worker.
 
-Klik **Simpan & tarik**. Selesai — tiket assigned-mu muncul dan diperbarui
-otomatis tiap 5 menit selama Catet terbuka, dan entri Log kerja yang memuat
-kode tiket punya tombol **→ Jira** untuk mengirim worklog (durasi diambil
-dari waktu fokus).
+### 4. Selesai — tidak perlu menyambungkan apa pun
+Karena alamat proxy sudah tertanam di aplikasi dan akses dibatasi per-Origin
+(bukan kunci), tiap perangkat yang membuka aplikasi langsung tersinkron —
+**tidak ada** alamat proxy atau kunci yang perlu ditempel. Tiket assigned-mu
+muncul dan diperbarui otomatis tiap 5 menit selama Catet terbuka, dan entri
+Log kerja yang memuat kode tiket punya tombol **→ Jira** untuk mengirim
+worklog (durasi diambil dari waktu fokus).
 
 ## Sinkronisasi antar perangkat (opsional, gratis)
 
@@ -78,7 +86,7 @@ wrangler deploy
 ```
 
 Selesai — tidak ada pengaturan tambahan di aplikasi (Catet memakai alamat
-proxy + kunci yang sudah kamu isi). Status sinkron tampil kecil di footer
+proxy bawaan). Status sinkron tampil kecil di footer
 ("☁ tersinkron 10.42"). Cara kerjanya: `localStorage` tetap jadi sumber
 utama (offline tetap jalan); perubahan didorong ke Worker beberapa detik
 kemudian, dan data terbaru ditarik saat aplikasi dibuka/kembali aktif.
@@ -93,7 +101,8 @@ perangkat dalam hitungan detik yang sama.
 | POST | `/worklog` | Kirim worklog: `{key, started, timeSpentSeconds, comment}` |
 | GET/PUT | `/state` | Simpan/ambil state Catet untuk sinkron antar perangkat (butuh KV) |
 
-Semuanya mewajibkan header `X-Catet-Key`.
+Semuanya hanya bisa diakses dari Origin yang diizinkan (lihat "Keamanan
+singkat" di atas) — tanpa kunci rahasia.
 
 ## Mencabut akses
 - Hapus API token di https://id.atlassian.com/manage-profile/security/api-tokens → proxy langsung mati.
