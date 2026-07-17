@@ -369,6 +369,11 @@ function renderWorklog() {
       del.title = "Hapus dari log"; del.setAttribute("aria-label", "Hapus dari log");
       del.onclick = () => {
         if (confirm("Hapus entri log ini?\n\n“" + e.text + "”")) {
+          // Tandai tugas asalnya: backfillWorklog tidak boleh menghidupkan
+          // lagi entri tugas selesai yang sengaja dihapus penggunanya
+          // (dulu: hapus → refresh → entri muncul lagi).
+          const t = tasks.find((x) => x.id === e.taskId);
+          if (t) { t.logDihapus = true; save(); }
           worklog = worklog.filter((x) => x.id !== e.id); saveWorklog(); render();
         }
       };
