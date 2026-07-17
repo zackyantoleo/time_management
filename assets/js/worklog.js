@@ -92,8 +92,65 @@ function jiraJamBadge(dateStr) {
   return b;
 }
 
-function dayLogText(dateStr, entries) {
-  const lines = entries.map((e) => {
+// Entri worklog dari Jira untuk tanggal ini, minus yang aslinya dikirim dari
+// Catet (dedup: tiap entri lokal ber-jiraLogged mengonsumsi satu entri Jira
+// dengan key sama & durasi terdekat).
+function entriJiraUntuk(dateStr, lokal) {
+  const d = lapJira && lapJira.days ? lapJira.days[dateStr] : null;
+  if (!d || !Array.isArray(d.entries)) return [];
+  const sisa = [...d.entries];
+  for (const e of lokal) {
+    if (!e.jiraLogged) continue;
+    const key = (e.text.match(JIRA_RE) || [null])[0] || e.bauKey ||
+      (typeof cocokBau === "function" ? (cocokBau(e.text) || {}).key : null);
+    if (!key) continue;
+    const kirim = Math.max(60, (e.mins || 0) * 60);
+    let idx = -1, best = Infinity;
+    sisa.forEach((j, i) => {
+      if (j.key !== key) return;
+      const sel = Math.abs(j.seconds - kirim);
+      if (sel < best) { best = sel; idx = i; }
+    });
+    if (idx >= 0) sisa.splice(idx, 1);
+  }
+  return sisa;
+}
+function teksEntriJira(j) {
+  return j.comment || (lapJira && lapJira.summaries && lapJira.summaries[j.key]) || "";
+}
+
+// Baris log asal Jira: tampilan saja (hapus/edit lewat Jira langsung).
+function jiraRowLog(j) {
+  const li = el("li", "log-entry jira-asli");
+  li.append(el("span", "log-time mono", fmtClock(new Date(j.started))));
+  const dot = el("span", "log-dot p-jira");
+  dot.title = "worklog dari Jira";
+  li.append(dot);
+  const t = el("span", "log-text");
+  if (jiraSite()) {
+    const a = el("a", "jira-key", j.key);
+    a.href = jiraUrl(j.key); a.target = "_blank"; a.rel = "noopener";
+    t.append(a, " ");
+  } else t.append(j.key + " ");
+  t.append(teksEntriJira(j));
+  li.append(t);
+  li.append(el("span", "log-mins mono", "±" + (fmtMins(Math.round(j.seconds / 60)) || "<1 mnt")));
+  li.append(el("span", "log-mins mono", "☁ Jira"));
+  return li;
+}
+
+function dayLogText(dateStr, entries, jEntri) {
+  const gabung = [
+    ...entries.map((e) => ({ ts: e.ts, e })),
+    ...(jEntri || []).map((j) => ({ ts: j.started, j })),
+  ].sort((a, b) => new Date(a.ts) - new Date(b.ts));
+  const lines = gabung.map((g) => {
+    if (g.j) {
+      const m = fmtMins(Math.round(g.j.seconds / 60));
+      return "- " + fmtClock(new Date(g.j.started)) + " " + g.j.key + " " + teksEntriJira(g.j) +
+        (m ? " (±" + m + ")" : "") + " [jira]";
+    }
+    const e = g.e;
     let line = "- " + fmtClock(new Date(e.ts)) + " " + e.text + " [" + PR_LABEL[e.priority] + "]";
     const m = fmtMins(e.mins);
     if (m) line += " (fokus ±" + m + ")";
@@ -243,28 +300,32 @@ function renderLogFilter(wrap) {
 function renderWorklog() {
   const wrap = $("#worklog");
   wrap.innerHTML = "";
-  if (!worklog.length) {
+  const q = searchQuery.trim().toLowerCase();
+  if (jiraProxy()) tarikLaporanJira(false); // laporan Jira ditarik di latar
+  // hari ber-worklog Jira dalam rentang filter (untuk log gabungan)
+  const adaJiraHari = !q && !!(lapJira && lapJira.days &&
+    Object.keys(lapJira.days).some((t) => lolosFilterTanggal(t)));
+  if (!worklog.length && !adaJiraHari) {
     wrap.append(el("div", "empty-note",
       "Log masih kosong. Setiap tugas yang kamu tandai ✓ selesai otomatis tercatat di sini per hari — lengkap dengan jam selesai dan lama fokus. Cocok untuk mengisi worklog/standup."));
     return;
   }
-  const q = searchQuery.trim().toLowerCase();
   if (!q) renderLogFilter(wrap);
   const shown = q ? worklog.filter((e) => e.text.toLowerCase().includes(q))
     : worklog.filter((e) => lolosFilterTanggal(e.date));
-  if (q && !shown.length) {
+  const jCocokQ = (j) => (j.key + " " + teksEntriJira(j)).toLowerCase().includes(q);
+  const adaJiraQ = q && !!(lapJira && lapJira.days &&
+    Object.values(lapJira.days).some((d) => (d.entries || []).some(jCocokQ)));
+  if (q && !shown.length && !adaJiraQ) {
     wrap.append(el("div", "empty-note", "Tidak ada entri log yang cocok dengan “" + searchQuery.trim() + "”."));
     return;
   }
-  if (!q && !shown.length) {
+  if (!q && !shown.length && !adaJiraHari) {
     wrap.append(el("div", "empty-note",
       "Tidak ada entri log dalam rentang tanggal ini — longgarkan filternya di atas."));
     return;
   }
-  // Laporan jam ter-log di Jira (14 hari terakhir) — tarik di latar,
-  // badge-nya menempel di kepala tiap hari.
   if (jiraProxy()) {
-    tarikLaporanJira(false);
     const bar = el("div", "log-jira-bar");
     const ref = el("button", "clear-done",
       lapJiraLoading ? "menarik laporan Jira…" : "⟳ segarkan laporan Jira");
@@ -282,26 +343,46 @@ function renderWorklog() {
     if (!byDate.has(e.date)) byDate.set(e.date, []);
     byDate.get(e.date).push(e);
   }
+  // Hari yang HANYA punya worklog di Jira ikut ditampilkan (log gabungan).
+  if (lapJira && lapJira.days) {
+    for (const tgl of Object.keys(lapJira.days)) {
+      if (byDate.has(tgl)) continue;
+      const masuk = q ? (lapJira.days[tgl].entries || []).some(jCocokQ) : lolosFilterTanggal(tgl);
+      if (masuk) byDate.set(tgl, []);
+    }
+  }
   const dates = [...byDate.keys()].sort().reverse();
   for (const dateStr of dates) {
     const entries = byDate.get(dateStr).sort((a, b) => new Date(a.ts) - new Date(b.ts));
+    // dedup pakai SEMUA entri lokal tanggal ini (bukan hasil pencarian saja)
+    let jEntri = entriJiraUntuk(dateStr, worklog.filter((e) => e.date === dateStr));
+    if (q) jEntri = jEntri.filter(jCocokQ);
+    if (!entries.length && !jEntri.length) continue;
+
     const day = el("section", "log-day");
     const head = el("div", "log-day-head");
     head.append(el("h3", null, fmtDayHeading(dateStr)));
     const totalMins = Math.round(entries.reduce((s, e) => s + (e.mins || 0), 0));
-    let sum = entries.length + " tugas";
+    let sum = entries.length ? entries.length + " tugas" : jEntri.length + " worklog Jira";
     if (fmtMins(totalMins)) sum += " · fokus " + fmtMins(totalMins);
     head.append(el("span", "log-sum mono", sum));
     const jb = jiraJamBadge(dateStr);
     if (jb) head.append(jb);
     const copyBtn = el("button", "btn-ghost", "Salin");
     copyBtn.title = "Salin log hari ini sebagai teks";
-    copyBtn.onclick = () => copyText(dayLogText(dateStr, entries), copyBtn);
+    copyBtn.onclick = () => copyText(dayLogText(dateStr, entries, jEntri), copyBtn);
     head.append(copyBtn);
     day.append(head);
 
     const ul = el("ul", "log-entries");
-    for (const e of entries) {
+    // gabung entri Catet + Jira, urut jam
+    const gabung = [
+      ...entries.map((e) => ({ ts: e.ts, e })),
+      ...jEntri.map((j) => ({ ts: j.started, j })),
+    ].sort((a, b) => new Date(a.ts) - new Date(b.ts));
+    for (const g of gabung) {
+      if (g.j) { ul.append(jiraRowLog(g.j)); continue; }
+      const e = g.e;
       const li = el("li", "log-entry");
       li.append(el("span", "log-time mono", fmtClock(new Date(e.ts))));
       const dot = el("span", "log-dot p-" + e.priority);
