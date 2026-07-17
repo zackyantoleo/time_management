@@ -62,7 +62,9 @@ function fmtAgo(iso) {
   if (mins < 1) return "baru saja";
   if (mins < 60) return mins + " mnt lalu";
   const h = Math.floor(mins / 60);
-  if (h < 24) return h + " jam " + (mins % 60) + " mnt";
+  // Selalu berakhiran "lalu" — tanpa itu, "selesai 2 jam 0 mnt" terbaca
+  // seperti durasi, padahal maksudnya "2 jam yang lalu".
+  if (h < 24) return h + " jam" + (mins % 60 ? " " + (mins % 60) + " mnt" : "") + " lalu";
   return Math.floor(h / 24) + " hari lalu";
 }
 

@@ -57,7 +57,7 @@ function renderFocus() {
       lanjut.setAttribute("aria-label", lanjut.title);
       lanjut.onclick = () => { fokuskan(x); render(); };
       row.append(lanjut);
-      const keluar = el("button", "icon-btn", "⤵");
+      const keluar = el("button", "icon-btn", "↩");
       keluar.title = "Keluarkan dari tumpukan (balikin ke daftar)";
       keluar.setAttribute("aria-label", keluar.title);
       keluar.onclick = () => { x.ditumpuk = null; save(); render(); };
