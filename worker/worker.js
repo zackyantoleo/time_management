@@ -119,6 +119,68 @@ export default {
       });
     }
 
+    // GET /worklog-report?from=YYYY-MM-DD&to=YYYY-MM-DD — total worklog milik
+    // pemilik token per tanggal (semua project), untuk panel "sudah ter-log
+    // berapa hari ini" di Catet. Dua tahap: JQL worklogAuthor mencari tiket
+    // yang memuat worklog-ku pada rentang itu, lalu worklog tiap tiket
+    // diambil dan dijumlahkan per tanggal (tanggal lokal penulisnya — Jira
+    // menyimpan started lengkap dengan offset zona waktu).
+    if (request.method === "GET" && url.pathname === "/worklog-report") {
+      const from = url.searchParams.get("from") || "";
+      const to = url.searchParams.get("to") || "";
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) {
+        return json({ error: "Parameter from/to harus YYYY-MM-DD dan from ≤ to." }, 400);
+      }
+      if ((new Date(to) - new Date(from)) / 86400000 > 31) {
+        return json({ error: "Rentang maksimal 31 hari." }, 400);
+      }
+      const meR = await fetch(site + "/rest/api/3/myself", { headers: authHeaders });
+      if (!meR.ok) return json({ error: "Jira menolak (" + meR.status + ")" }, 502);
+      const me = (await meR.json()).accountId;
+
+      const jql = 'worklogAuthor = currentUser() AND worklogDate >= "' + from + '" AND worklogDate <= "' + to + '"';
+      const sR = await fetch(
+        site + "/rest/api/3/search/jql?jql=" + encodeURIComponent(jql) + "&fields=summary&maxResults=50",
+        { headers: authHeaders }
+      );
+      if (!sR.ok) return json({ error: "Jira menolak (" + sR.status + "): " + (await sR.text()).slice(0, 300) }, 502);
+      // Maks 40 tiket per permintaan — di bawah kuota 50 subrequest Worker.
+      const issues = ((await sR.json()).issues || []).slice(0, 40);
+
+      // Pagar zona waktu: filter startedAfter/Before dilonggarkan ±1 hari,
+      // penyaring pastinya tetap perbandingan tanggal lokal di bawah.
+      const afterMs = new Date(from + "T00:00:00Z").getTime() - 86400000;
+      const beforeMs = new Date(to + "T23:59:59Z").getTime() + 86400000;
+      const hasil = await Promise.all(issues.map(async (i) => {
+        const r = await fetch(
+          site + "/rest/api/3/issue/" + encodeURIComponent(i.key) + "/worklog" +
+            "?startedAfter=" + afterMs + "&startedBefore=" + beforeMs + "&maxResults=1000",
+          { headers: authHeaders }
+        );
+        if (!r.ok) return { key: i.key, logs: [] };
+        return { key: i.key, logs: (await r.json()).worklogs || [] };
+      }));
+
+      const days = {};
+      for (const { key, logs } of hasil) {
+        for (const w of logs) {
+          if (!w.author || w.author.accountId !== me) continue;
+          const tgl = String(w.started || "").slice(0, 10); // tanggal lokal penulis
+          if (tgl < from || tgl > to) continue;
+          const d = (days[tgl] = days[tgl] || { total: 0, items: {} });
+          d.total += w.timeSpentSeconds || 0;
+          d.items[key] = (d.items[key] || 0) + (w.timeSpentSeconds || 0);
+        }
+      }
+      // items: objek → array tersortir jam terbesar, biar enak ditampilkan.
+      for (const tgl of Object.keys(days)) {
+        days[tgl].items = Object.entries(days[tgl].items)
+          .map(([key, seconds]) => ({ key, seconds }))
+          .sort((a, b) => b.seconds - a.seconds);
+      }
+      return json({ from, to, days });
+    }
+
     // POST /worklog — { key, started (ISO), timeSpentSeconds, comment }
     if (request.method === "POST" && url.pathname === "/worklog") {
       let body;

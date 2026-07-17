@@ -465,6 +465,14 @@
   /* input inline pengganti badge menit saat durasi sedang diedit */
   .log-mins-input { width: 5.5em; font-size: 12px; padding: 1px 6px; }
 
+  /* laporan jam ter-log di Jira per tanggal */
+  .log-jira-bar { display: flex; align-items: center; gap: 10px; margin: 0 2px 12px; }
+  .jira-jam {
+    font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent); white-space: nowrap;
+  }
+  .jira-jam.kurang { background: var(--p-urgent-soft); color: var(--late); }
+
   /* ---- In-page reminder toasts ---- */
   .toasts {
     position: fixed; right: 16px; bottom: 16px; z-index: 50;
