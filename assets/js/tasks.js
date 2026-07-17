@@ -32,6 +32,15 @@ function saveWorklog() {
   localStorage.setItem(WORKLOG_KEY, JSON.stringify(worklog));
   if (typeof syncDirty === "function") syncDirty();
 }
+// Simpan TANPA menandai dirty — khusus perubahan yang dibuat mesin (arsip
+// otomatis, backfill, penanda notifikasi), bukan tangan pengguna. Perangkat
+// ber-flag dirty MENDORONG seluruh state-nya alih-alih menarik; kalau
+// perubahan mesin ikut mengklaim itu, tab lama yang berjalan di latar akan
+// terus menimpa server dengan state basi — tugas yang sudah diselesaikan di
+// perangkat lain "hidup lagi". Perubahan mesin bersifat deterministik: tiap
+// perangkat menghitungnya sendiri, tak perlu didorong.
+function saveTanpaSinkron() { localStorage.setItem(STORE_KEY, JSON.stringify(tasks)); }
+function saveWorklogTanpaSinkron() { localStorage.setItem(WORKLOG_KEY, JSON.stringify(worklog)); }
 
 /* ---------- skor dinamis: menentukan urutan & apa yang tampil hari ini ----
    Berbeda dari skor saat pencatatan (snapshot), skor ini dihitung ulang setiap
@@ -150,7 +159,7 @@ function arsipkanTugasSelesai() {
   const batas = Date.now() - ARSIP_SETELAH_HARI * 86400000;
   const sisa = tasks.filter((t) =>
     !(t.status === "selesai" && t.doneAt && new Date(t.doneAt) < batas));
-  if (sisa.length !== tasks.length) { tasks = sisa; save(); }
+  if (sisa.length !== tasks.length) { tasks = sisa; saveTanpaSinkron(); }
 }
 
 // Tugas yang sudah berstatus selesai sebelum fitur log ada ikut dicatat sekali.
@@ -168,5 +177,5 @@ function backfillWorklog() {
       changed = true;
     }
   }
-  if (changed) saveWorklog();
+  if (changed) saveWorklogTanpaSinkron();
 }
