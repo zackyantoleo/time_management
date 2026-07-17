@@ -17,6 +17,14 @@ let jira = (() => {
 jira.proxy = jira.proxy || "";
 jira.key = jira.key || "";
 jira.dismissed = jira.dismissed || [];
+// Topik BAU (Business as Usual): tiket "wadah worklog" di project khusus
+// (mis. TDBU) untuk kerjaan di luar task sprint — meeting, deployment, dst.
+// alias = pemetaan manual "teks tugas → key topik" yang diingat, supaya entri
+// berulang (mis. rutinitas "daily standup") cukup dipilihkan topiknya sekali.
+jira.bau = jira.bau || {};
+jira.bau.project = jira.bau.project || "";
+jira.bau.items = Array.isArray(jira.bau.items) ? jira.bau.items : [];
+jira.bau.alias = jira.bau.alias || {};
 function saveJira() { localStorage.setItem(JIRA_KEY_STORE, JSON.stringify(jira)); if (typeof syncDirty === "function") syncDirty(); }
 function jiraSite() { return (jira.site || "").trim().replace(/\/+$/, ""); }
 function jiraUrl(key) { return jiraSite() + "/browse/" + key; }
@@ -150,11 +158,175 @@ async function syncJira(manual) {
     jira.lastSync = new Date().toISOString();
     jiraSyncMsg = "";
     saveJira();
+    syncBau(false); // topik BAU ikut segar (throttle 6 jam di dalamnya)
   } catch (e) {
     jiraSyncMsg = "gagal: " + (e && e.message ? e.message : "koneksi");
   }
   jiraSyncing = false;
   if (view === "papan" || view === "jira") render();
+}
+
+/* ---------- topik BAU: worklog di luar task sprint ---------- */
+let bauSyncMsg = "";
+let bauSyncing = false;
+async function syncBau(manual) {
+  const proj = (jira.bau.project || "").trim().toUpperCase();
+  if (!jiraProxy() || !proj) return;
+  // Topik jarang berubah — otomatis cukup sekali per 6 jam; manual selalu boleh.
+  if (!manual && jira.bau.lastSync && Date.now() - new Date(jira.bau.lastSync) < 6 * 3600000) return;
+  if (bauSyncing) return;
+  bauSyncing = true;
+  bauSyncMsg = "menarik…";
+  if (view === "jira") render();
+  try {
+    const r = await fetch(jiraProxy() + "/bau?project=" + encodeURIComponent(proj));
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+    jira.bau.items = Array.isArray(data.items) ? data.items : [];
+    jira.bau.lastSync = new Date().toISOString();
+    bauSyncMsg = "";
+    saveJira();
+  } catch (e) {
+    bauSyncMsg = "gagal: " + (e && e.message ? e.message : "koneksi");
+  }
+  bauSyncing = false;
+  if (view === "jira") render();
+}
+
+// Cari topik BAU untuk sebuah teks tugas/log. Urutan: (1) alias — pemetaan
+// manual yang pernah dipilih untuk teks persis sama; (2) nama topik yang
+// terkandung di teks (case-insensitive), pilih yang paling spesifik (nama
+// terpanjang). Teks yang sudah memuat key tiket eksplisit tidak dicocokkan —
+// worklognya sudah punya tujuan.
+function cocokBau(text) {
+  if (!jira.bau.items.length) return null;
+  if ((text.match(JIRA_RE) || []).length) return null;
+  const alias = jira.bau.alias[text.trim().toLowerCase()];
+  if (alias) {
+    const b = jira.bau.items.find((x) => x.key === alias);
+    if (b) return b;
+  }
+  const lo = text.toLowerCase();
+  let best = null;
+  for (const b of jira.bau.items) {
+    const s = (b.summary || "").trim().toLowerCase();
+    if (s.length >= 3 && lo.includes(s) && (!best || s.length > best._len)) {
+      best = { key: b.key, summary: b.summary, _len: s.length };
+    }
+  }
+  return best ? { key: best.key, summary: best.summary } : null;
+}
+function bauByKey(key) { return jira.bau.items.find((x) => x.key === key) || null; }
+
+// Menu pilih topik BAU (pola sama dengan menu sprint; memakai CSS-nya juga).
+// onPick(key) — key topik, atau null untuk "kembali ke otomatis".
+let bauMenuEl = null;
+function tutupBauMenu() {
+  if (bauMenuEl) { bauMenuEl.remove(); bauMenuEl = null; }
+  document.removeEventListener("mousedown", onDocBauMenu, true);
+  document.removeEventListener("keydown", onDocBauMenu, true);
+}
+function onDocBauMenu(e) {
+  if (e.type === "keydown" && e.key !== "Escape") return;
+  if (e.type === "mousedown" && bauMenuEl && bauMenuEl.contains(e.target)) return;
+  tutupBauMenu();
+}
+function bukaBauMenu(anchor, currentKey, onPick) {
+  tutupBauMenu();
+  tutupSprintMenu();
+  const menu = el("div", "sprint-menu");
+  bauMenuEl = menu;
+  const pilih = (key) => (ev) => { ev.stopPropagation(); tutupBauMenu(); onPick(key); };
+  for (const b of jira.bau.items) {
+    const item = el("button", "sprint-menu-item" + (currentKey === b.key ? " aktif" : ""));
+    item.append(el("span", "sprint-menu-tick", currentKey === b.key ? "✓" : ""));
+    item.append(el("span", null, b.key + " — " + b.summary));
+    item.onclick = pilih(b.key);
+    menu.append(item);
+  }
+  if (currentKey) {
+    const reset = el("button", "sprint-menu-item danger");
+    reset.append(el("span", "sprint-menu-tick", ""));
+    reset.append(el("span", null, "↺ Kembali ke pencocokan otomatis"));
+    reset.onclick = pilih(null);
+    menu.append(reset);
+  }
+  document.body.append(menu);
+  const r = anchor.getBoundingClientRect();
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  let left = r.left;
+  if (left + mw > window.innerWidth - 8) left = window.innerWidth - mw - 8;
+  menu.style.left = Math.max(8, left) + "px";
+  const top = (r.bottom + 4 + mh > window.innerHeight - 8 && r.top - mh - 4 > 8)
+    ? r.top - mh - 4 : r.bottom + 4;
+  menu.style.top = top + "px";
+  setTimeout(() => {
+    document.addEventListener("mousedown", onDocBauMenu, true);
+    document.addEventListener("keydown", onDocBauMenu, true);
+  }, 0);
+}
+
+// Section "Topik BAU" di tab Jira: set project + daftar topik hasil tarikan.
+function renderBauSection(wrap) {
+  const sec = el("section", "section s-jira");
+  sec.style.marginTop = "18px";
+  const head = el("div", "section-head");
+  head.append(el("h2", null, "Topik BAU — worklog non-sprint"));
+  if (jira.bau.items.length) head.append(el("span", "count mono", String(jira.bau.items.length)));
+  if (jiraProxy() && jira.bau.project) {
+    const refresh = el("button", "clear-done", bauSyncing ? "menarik…" : "⟳ tarik topik");
+    refresh.onclick = () => syncBau(true);
+    head.append(refresh);
+    if (bauSyncMsg && !bauSyncing) head.append(el("span", "count", bauSyncMsg));
+    else if (jira.bau.lastSync && !bauSyncing) head.append(el("span", "count mono", "sinkron " + fmtAgo(jira.bau.lastSync)));
+  }
+  sec.append(head);
+
+  const det = document.createElement("details");
+  det.className = "routine-manage";
+  det.open = !jira.bau.project; // belum diset → langsung terbuka
+  const sum = document.createElement("summary");
+  sum.textContent = jira.bau.project ? "pengaturan topik BAU" :
+    "+ set project BAU (mis. TDBU) — worklog meeting/deployment/dll. di luar sprint";
+  det.append(sum);
+  const editor = el("div", "routine-editor");
+  const form = el("div", "routine-form");
+  const projIn = document.createElement("input");
+  projIn.type = "text"; projIn.value = jira.bau.project || "";
+  projIn.placeholder = "Key project BAU… mis. TDBU";
+  projIn.title = "Project Jira berisi tiket topik (Team Meeting, Deployment, dst.)";
+  const setBtn = el("button", "btn-solid", "Simpan & tarik topik");
+  setBtn.onclick = () => {
+    jira.bau.project = projIn.value.trim().toUpperCase();
+    jira.bau.lastSync = null;
+    saveJira();
+    if (jira.bau.project) syncBau(true); else render();
+  };
+  projIn.onkeydown = (e) => { if (e.key === "Enter") setBtn.onclick(); };
+  form.append(projIn, setBtn);
+  editor.append(form);
+  editor.append(el("div", "cap-hint",
+    "Tugas yang judulnya memuat nama topik (mis. “Deployment ccm”) otomatis nyantol ke tiketnya (mis. TDBU-28 Deployment) — lihat badge 🏢 di tugas, lalu kirim worklognya dari tab Log kerja. Salah cocok? Pilih manual lewat tombol 🏢 di entri log."));
+  det.append(editor);
+  sec.append(det);
+
+  if (jira.bau.items.length) {
+    const card = el("div", "routine-card");
+    for (const b of jira.bau.items) {
+      const row = el("div", "jira-row");
+      row.append(el("span", "jira-key", b.key));
+      row.append(el("span", "jira-summary", b.summary));
+      if (b.type) row.append(el("span", "jira-status", b.type));
+      card.append(row);
+    }
+    const det2 = document.createElement("details");
+    det2.className = "routine-manage";
+    const sum2 = document.createElement("summary");
+    sum2.append("daftar topik ", el("span", "count mono", String(jira.bau.items.length)));
+    det2.append(sum2, card);
+    sec.append(det2);
+  }
+  wrap.append(sec);
 }
 
 /* ---------- sprint bar (di atas daftar tiket) ---------- */
@@ -459,4 +631,5 @@ function renderJiraInbox() {
   det.append(editor);
   sec.append(det);
   wrap.append(sec);
+  renderBauSection(wrap);
 }

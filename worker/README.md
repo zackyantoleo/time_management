@@ -98,6 +98,7 @@ perangkat dalam hitungan detik yang sama.
 | Method | Path | Fungsi |
 |---|---|---|
 | GET | `/tickets` | Tiket terbuka yang di-assign ke pemilik token (max 100) |
+| GET | `/bau?project=TDBU` | Daftar tiket "topik" project BAU — wadah worklog non-sprint (meeting, deployment, dst.) |
 | POST | `/worklog` | Kirim worklog: `{key, started, timeSpentSeconds, comment}` |
 | GET/PUT | `/state` | Simpan/ambil state Catet untuk sinkron antar perangkat (butuh KV) |
 

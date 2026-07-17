@@ -448,6 +448,8 @@
     background: var(--accent-soft); color: var(--accent); flex: none;
   }
   .log-entry .icon-btn { width: 24px; height: 24px; font-size: 12px; align-self: center; }
+  /* input inline pengganti badge menit saat durasi sedang diedit */
+  .log-mins-input { width: 5.5em; font-size: 12px; padding: 1px 6px; }
 
   /* ---- In-page reminder toasts ---- */
   .toasts {

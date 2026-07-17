@@ -4,6 +4,38 @@
 
 const PR_LABEL = { urgent: "urgent", tinggi: "tinggi", sedang: "sedang", rendah: "rendah", rutin: "rutin", sprint: "sprint" };
 
+// Badge menit fokus. Saat editable (belum terkirim ke Jira & proxy aktif),
+// jadi tombol: klik → input angka, supaya durasi worklog bisa dikoreksi atau
+// diisi manual sebelum dikirim (menit fokus otomatis hanya terisi kalau
+// tombol ▶ dipakai).
+function minsBadge(e, editable) {
+  const m = fmtMins(e.mins);
+  if (!editable) {
+    return m ? el("span", "log-mins mono", "fokus ±" + m) : document.createDocumentFragment();
+  }
+  const b = el("button", "log-mins mono", m ? "±" + m + " ✎" : "＋ menit");
+  b.title = "Ubah durasi — dipakai saat worklog dikirim ke Jira";
+  b.onclick = () => {
+    const input = document.createElement("input");
+    input.type = "number"; input.min = "0"; input.step = "5";
+    input.value = String(Math.round(e.mins || 0));
+    input.className = "log-mins-input mono";
+    input.setAttribute("aria-label", "Durasi dalam menit");
+    b.replaceWith(input);
+    input.focus(); input.select();
+    const commit = () => {
+      e.mins = Math.max(0, Math.round(Number(input.value) || 0));
+      saveWorklog(); render();
+    };
+    input.onblur = commit;
+    input.onkeydown = (ev) => {
+      if (ev.key === "Enter") { ev.preventDefault(); input.blur(); }
+      if (ev.key === "Escape") { input.onblur = null; render(); }
+    };
+  };
+  return b;
+}
+
 function dayLogText(dateStr, entries) {
   const lines = entries.map((e) => {
     let line = "- " + fmtClock(new Date(e.ts)) + " " + e.text + " [" + PR_LABEL[e.priority] + "]";
@@ -59,38 +91,65 @@ function renderWorklog() {
       const ltext = el("span", "log-text");
       ltext.append(linkify(e.text));
       li.append(ltext);
-      const m = fmtMins(e.mins);
-      if (m) li.append(el("span", "log-mins mono", "fokus ±" + m));
-      const ticketKey = (e.text.match(JIRA_RE) || [null])[0];
-      if (jiraProxy() && ticketKey && e.priority !== "rutin" && e.priority !== "sprint") {
-        if (e.jiraLogged) {
-          li.append(el("span", "log-mins mono", "✓ Jira"));
-        } else {
-          const send = el("button", "btn-ghost", "→ Jira");
-          send.title = "Kirim sebagai worklog ke " + ticketKey +
-            " (durasi: " + (e.mins ? "±" + e.mins + " mnt fokus" : "1 mnt minimum") + ")";
-          send.onclick = async () => {
-            send.disabled = true; send.textContent = "mengirim…";
-            try {
-              const r = await fetch(jiraProxy() + "/worklog", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  key: ticketKey, started: e.ts,
-                  timeSpentSeconds: Math.max(60, (e.mins || 0) * 60),
-                  comment: e.text,
-                }),
-              });
-              const data = await r.json().catch(() => ({}));
-              if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
-              e.jiraLogged = true; saveWorklog(); render();
-            } catch (err) {
-              alert("Gagal mengirim worklog ke " + ticketKey + ":\n" + (err && err.message ? err.message : "koneksi"));
-              send.disabled = false; send.textContent = "→ Jira";
-            }
-          };
-          li.append(send);
-        }
+      // Tujuan worklog: key tiket eksplisit di teks, atau topik BAU (pilihan
+      // manual e.bauKey menang atas pencocokan otomatis cocokBau). Entri
+      // "sprint" (catatan penutupan sprint) tidak dikirim ke mana-mana;
+      // rutinitas boleh ke topik BAU (mis. daily standup → tiket meeting).
+      const ticketKey = (e.priority !== "rutin" && e.priority !== "sprint")
+        ? (e.text.match(JIRA_RE) || [null])[0] : null;
+      const bau = (!ticketKey && e.priority !== "sprint")
+        ? (e.bauKey ? bauByKey(e.bauKey) : cocokBau(e.text)) : null;
+      const target = ticketKey || (bau && bau.key) || null;
+      const bolehKirim = !!jiraProxy() && e.priority !== "sprint" && !e.jiraLogged;
+      li.append(minsBadge(e, bolehKirim && !!target));
+      if (jiraProxy() && target && e.jiraLogged) {
+        li.append(el("span", "log-mins mono", "✓ Jira"));
+      } else if (jiraProxy() && target) {
+        const label = ticketKey ? "→ Jira" : "→ " + target;
+        const send = el("button", "btn-ghost", label);
+        send.title = "Kirim sebagai worklog ke " + target +
+          (bau ? " (" + bau.summary + ")" : "") +
+          " — durasi: " + (e.mins ? "±" + Math.round(e.mins) + " mnt" : "1 mnt minimum, klik badge menit untuk mengubah");
+        send.onclick = async () => {
+          send.disabled = true; send.textContent = "mengirim…";
+          try {
+            const r = await fetch(jiraProxy() + "/worklog", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                key: target, started: e.ts,
+                timeSpentSeconds: Math.max(60, (e.mins || 0) * 60),
+                comment: e.text,
+              }),
+            });
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+            e.jiraLogged = true; saveWorklog(); render();
+          } catch (err) {
+            alert("Gagal mengirim worklog ke " + target + ":\n" + (err && err.message ? err.message : "koneksi"));
+            send.disabled = false; send.textContent = label;
+          }
+        };
+        li.append(send);
+      }
+      // Tombol 🏢: pilih/ganti topik BAU untuk entri tanpa key eksplisit.
+      // Pilihan diingat sebagai alias teks → entri berulang (rutinitas) cukup
+      // dipilihkan sekali.
+      if (bolehKirim && !ticketKey && jira.bau.items.length) {
+        const pick = el("button", "icon-btn" + (bau ? " in-sprint" : ""), "🏢");
+        pick.title = bau ? "Topik BAU: " + bau.key + " — " + bau.summary + " (klik untuk ganti)"
+          : "Pilih topik BAU untuk worklog ini";
+        pick.setAttribute("aria-label", pick.title);
+        pick.onclick = (ev) => {
+          ev.stopPropagation();
+          bukaBauMenu(pick, (bau && bau.key) || null, (key) => {
+            const lo = e.text.trim().toLowerCase();
+            if (key) { e.bauKey = key; jira.bau.alias[lo] = key; }
+            else { delete e.bauKey; delete jira.bau.alias[lo]; }
+            saveWorklog(); saveJira(); render();
+          });
+        };
+        li.append(pick);
       }
       const del = el("button", "icon-btn danger", "✕");
       del.title = "Hapus dari log"; del.setAttribute("aria-label", "Hapus dari log");

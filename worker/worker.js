@@ -94,6 +94,31 @@ export default {
       });
     }
 
+    // GET /bau?project=TDBU — daftar tiket "topik" di project BAU (Business
+    // as Usual), untuk worklog di luar task sprint. Semua tiket yang belum
+    // Done ikut; Catet yang mencocokkan judul tugas ke topiknya.
+    if (request.method === "GET" && url.pathname === "/bau") {
+      const proj = (url.searchParams.get("project") || "").trim().toUpperCase();
+      if (!/^[A-Z][A-Z0-9]{1,9}$/.test(proj)) {
+        return json({ error: "Parameter project tidak valid (contoh: TDBU)." }, 400);
+      }
+      const jql = "project = " + proj + " AND statusCategory != Done ORDER BY key ASC";
+      const r = await fetch(
+        site + "/rest/api/3/search/jql?jql=" + encodeURIComponent(jql) +
+          "&fields=summary,issuetype&maxResults=100",
+        { headers: authHeaders }
+      );
+      if (!r.ok) return json({ error: "Jira menolak (" + r.status + "): " + (await r.text()).slice(0, 300) }, 502);
+      const data = await r.json();
+      return json({
+        items: (data.issues || []).map((i) => ({
+          key: i.key,
+          summary: (i.fields && i.fields.summary) || "",
+          type: (i.fields && i.fields.issuetype && i.fields.issuetype.name) || null,
+        })),
+      });
+    }
+
     // POST /worklog — { key, started (ISO), timeSpentSeconds, comment }
     if (request.method === "POST" && url.pathname === "/worklog") {
       let body;

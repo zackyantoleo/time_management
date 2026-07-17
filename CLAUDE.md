@@ -25,7 +25,7 @@ dependensi, tanpa framework. Data pengguna di `localStorage`.
   3. `sprints.js` — sprint (nama + tanggal selesai); `sprintPts` menekan skor anggotanya; `completeSprint` tutup + log
   4. `capture.js` — kolom catat cepat (prioritas, kapan, `addTask`)
   5. `routines.js` — rutinitas harian + render section-nya
-  6. `jira.js` — autolink kode tiket, inbox tiket, impor, sinkron via proxy
+  6. `jira.js` — autolink kode tiket, inbox tiket, impor, sinkron via proxy; topik BAU (`jira.bau`, `cocokBau`, `syncBau` — worklog non-sprint ke tiket topik, mis. project TDBU)
   7. `board.js` — render papan (kartu fokus, "Kerjakan hari ini" terurut skor, "Nanti" terlipat)
   8. `worklog.js` — render tab Log kerja, salin per hari, kirim worklog → Jira
   9. `reminders.js` — toggle pengingat, toast + bip, notifikasi, `checkDue`
