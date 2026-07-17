@@ -121,6 +121,7 @@ function completeTask(t) {
   stopFocus(t);
   t.status = "selesai";
   t.doneAt = new Date().toISOString();
+  delete t.logDihapus; // penyelesaian baru = entri log baru yang sah lagi
   if (tadinyaFokus) lanjutkanTumpukan(); // interupsi beres → balik ke semula
   const when = new Date(t.doneAt);
   worklog.push({
@@ -153,10 +154,12 @@ function arsipkanTugasSelesai() {
 }
 
 // Tugas yang sudah berstatus selesai sebelum fitur log ada ikut dicatat sekali.
+// t.logDihapus = pengguna sengaja menghapus entri lognya — hormati, jangan
+// dihidupkan lagi di sini (dulu: hapus entri → refresh → entri muncul lagi).
 function backfillWorklog() {
   let changed = false;
   for (const t of tasks) {
-    if (t.status === "selesai" && t.doneAt && !worklog.some((e) => e.taskId === t.id)) {
+    if (t.status === "selesai" && t.doneAt && !t.logDihapus && !worklog.some((e) => e.taskId === t.id)) {
       const when = new Date(t.doneAt);
       worklog.push({
         id: uid(), taskId: t.id, date: localDateStr(when), ts: t.doneAt,
