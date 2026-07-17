@@ -87,6 +87,9 @@ function terapkanRemote(stores) {
   if (stores.jira != null) {
     stores.jira.proxy = jira.proxy;
     stores.jira.key = jira.key;
+    // Data server bisa berasal dari versi lama (belum punya bau, dsb.) —
+    // lengkapi dulu, jangan sampai render crash karena struktur bolong.
+    normalisasiJira(stores.jira);
     tulis("catet.jira.v1", stores.jira);
   }
   // muat ulang state global dari localStorage

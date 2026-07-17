@@ -135,7 +135,7 @@ function renderWorklog() {
       // Tombol 🏢: pilih/ganti topik BAU untuk entri tanpa key eksplisit.
       // Pilihan diingat sebagai alias teks → entri berulang (rutinitas) cukup
       // dipilihkan sekali.
-      if (bolehKirim && !ticketKey && jira.bau.items.length) {
+      if (bolehKirim && !ticketKey && jira.bau && Array.isArray(jira.bau.items) && jira.bau.items.length) {
         const pick = el("button", "icon-btn" + (bau ? " in-sprint" : ""), "🏢");
         pick.title = bau ? "Topik BAU: " + bau.key + " — " + bau.summary + " (klik untuk ganti)"
           : "Pilih topik BAU untuk worklog ini";

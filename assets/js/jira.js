@@ -13,18 +13,27 @@ let jira = (() => {
   } catch {}
   return { site: "https://erafone.atlassian.net", items: [] };
 })();
-// Skema lama (sebelum ada sinkronisasi proxy) tidak punya field-field ini.
-jira.proxy = jira.proxy || "";
-jira.key = jira.key || "";
-jira.dismissed = jira.dismissed || [];
-// Topik BAU (Business as Usual): tiket "wadah worklog" di project khusus
-// (mis. TDBU) untuk kerjaan di luar task sprint — meeting, deployment, dst.
-// alias = pemetaan manual "teks tugas → key topik" yang diingat, supaya entri
-// berulang (mis. rutinitas "daily standup") cukup dipilihkan topiknya sekali.
-jira.bau = jira.bau || {};
-jira.bau.project = jira.bau.project || "";
-jira.bau.items = Array.isArray(jira.bau.items) ? jira.bau.items : [];
-jira.bau.alias = jira.bau.alias || {};
+// Lengkapi field yang belum ada di skema lama. WAJIB dipanggil bukan hanya
+// saat muat awal, tapi juga SETIAP objek jira diganti utuh dengan data dari
+// luar (terapkanRemote saat sinkron) — state di server bisa ditulis oleh
+// versi/perangkat lama tanpa field ini, dan render (mis. cocokBau) crash
+// kalau strukturnya bolong: tugas-tugas jadi tak tampil sama sekali.
+function normalisasiJira(j) {
+  j.proxy = j.proxy || "";
+  j.key = j.key || "";
+  j.dismissed = j.dismissed || [];
+  j.items = Array.isArray(j.items) ? j.items : [];
+  // Topik BAU (Business as Usual): tiket "wadah worklog" di project khusus
+  // (mis. TDBU) untuk kerjaan di luar task sprint — meeting, deployment, dst.
+  // alias = pemetaan manual "teks → key topik" yang diingat, supaya entri
+  // berulang (mis. rutinitas "daily standup") cukup dipilihkan sekali.
+  j.bau = j.bau || {};
+  j.bau.project = j.bau.project || "";
+  j.bau.items = Array.isArray(j.bau.items) ? j.bau.items : [];
+  j.bau.alias = j.bau.alias || {};
+  return j;
+}
+normalisasiJira(jira);
 function saveJira() { localStorage.setItem(JIRA_KEY_STORE, JSON.stringify(jira)); if (typeof syncDirty === "function") syncDirty(); }
 function jiraSite() { return (jira.site || "").trim().replace(/\/+$/, ""); }
 function jiraUrl(key) { return jiraSite() + "/browse/" + key; }
@@ -199,7 +208,7 @@ async function syncBau(manual) {
 // terpanjang). Teks yang sudah memuat key tiket eksplisit tidak dicocokkan —
 // worklognya sudah punya tujuan.
 function cocokBau(text) {
-  if (!jira.bau.items.length) return null;
+  if (!jira.bau || !Array.isArray(jira.bau.items) || !jira.bau.items.length) return null;
   if ((text.match(JIRA_RE) || []).length) return null;
   const alias = jira.bau.alias[text.trim().toLowerCase()];
   if (alias) {
@@ -216,7 +225,7 @@ function cocokBau(text) {
   }
   return best ? { key: best.key, summary: best.summary } : null;
 }
-function bauByKey(key) { return jira.bau.items.find((x) => x.key === key) || null; }
+function bauByKey(key) { return (jira.bau && Array.isArray(jira.bau.items) ? jira.bau.items : []).find((x) => x.key === key) || null; }
 
 // Menu pilih topik BAU (pola sama dengan menu sprint; memakai CSS-nya juga).
 // onPick(key) — key topik, atau null untuk "kembali ke otomatis".
