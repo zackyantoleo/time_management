@@ -217,6 +217,16 @@ function taskRow(t) {
       sb.title = "Sprint berakhir " + fmtDayName(sprint.selesai) + " (" + fmtSisaSprint(sprint) + ")";
       meta.append(sb);
     }
+    // Judul memuat nama topik BAU (mis. "Deployment ccm" → TDBU-28
+    // Deployment)? Tunjukkan nyantolnya ke mana — worklog-nya nanti bisa
+    // dikirim ke tiket itu dari tab Log kerja.
+    const bau = cocokBau(t.text);
+    if (bau) {
+      const bb = el("span", "effort-badge", "🏢 " + bau.key);
+      bb.title = "Topik BAU: " + bau.key + " — " + bau.summary +
+        ". Setelah selesai, kirim worklognya lewat tab Log kerja.";
+      meta.append(bb);
+    }
   }
   meta.append(el("span", "mono", "dicatat " + fmtStempel(t.createdAt)));
   if (t.status === "selesai" && t.doneAt) meta.append(el("span", "mono", "selesai " + fmtAgo(t.doneAt)));
