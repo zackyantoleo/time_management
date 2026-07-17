@@ -243,16 +243,43 @@ function onDocBauMenu(e) {
 function bukaBauMenu(anchor, currentKey, onPick) {
   tutupBauMenu();
   tutupSprintMenu();
-  const menu = el("div", "sprint-menu");
+  const menu = el("div", "sprint-menu bau-menu");
   bauMenuEl = menu;
   const pilih = (key) => (ev) => { ev.stopPropagation(); tutupBauMenu(); onPick(key); };
-  for (const b of jira.bau.items) {
-    const item = el("button", "sprint-menu-item" + (currentKey === b.key ? " aktif" : ""));
-    item.append(el("span", "sprint-menu-tick", currentKey === b.key ? "✓" : ""));
-    item.append(el("span", null, b.key + " — " + b.summary));
-    item.onclick = pilih(b.key);
-    menu.append(item);
-  }
+
+  // Daftar topik bisa puluhan (satu board BAU penuh) — kolom cari di atas,
+  // daftarnya di area ber-scroll, tombol reset menetap di bawah.
+  const cari = document.createElement("input");
+  cari.type = "search"; cari.placeholder = "Cari topik…";
+  cari.className = "bau-menu-cari";
+  cari.setAttribute("aria-label", "Cari topik BAU");
+  menu.append(cari);
+  const list = el("div", "bau-menu-list");
+  menu.append(list);
+  const isiDaftar = () => {
+    list.textContent = "";
+    const q = cari.value.trim().toLowerCase();
+    const cocok = jira.bau.items.filter((b) =>
+      !q || (b.key + " " + b.summary).toLowerCase().includes(q));
+    for (const b of cocok) {
+      const item = el("button", "sprint-menu-item" + (currentKey === b.key ? " aktif" : ""));
+      item.append(el("span", "sprint-menu-tick", currentKey === b.key ? "✓" : ""));
+      item.append(el("span", null, b.key + " — " + b.summary));
+      item.onclick = pilih(b.key);
+      list.append(item);
+    }
+    if (!cocok.length) list.append(el("div", "bau-menu-kosong", "Tidak ada topik yang cocok."));
+  };
+  isiDaftar();
+  cari.oninput = isiDaftar;
+  // Enter = pilih hasil teratas — ketik "deploy" ↵ selesai.
+  cari.onkeydown = (ev) => {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      const first = list.querySelector(".sprint-menu-item");
+      if (first) first.click();
+    }
+  };
   if (currentKey) {
     const reset = el("button", "sprint-menu-item danger");
     reset.append(el("span", "sprint-menu-tick", ""));
@@ -261,6 +288,9 @@ function bukaBauMenu(anchor, currentKey, onPick) {
     menu.append(reset);
   }
   document.body.append(menu);
+  // Autofokus ke kolom cari hanya di perangkat berkursor — di HP, keyboard
+  // yang langsung muncul justru menutupi daftarnya.
+  if (matchMedia("(pointer: fine)").matches) cari.focus();
   const r = anchor.getBoundingClientRect();
   const mw = menu.offsetWidth, mh = menu.offsetHeight;
   let left = r.left;
