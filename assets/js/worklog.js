@@ -217,7 +217,8 @@ function renderLogFilter(wrap) {
   bar.setAttribute("role", "group");
   bar.setAttribute("aria-label", "Filter tanggal log");
   bar.append(el("span", "cap-label", "Tampilkan"));
-  for (const [kind, label] of [["7", "7 hari terakhir"], ["30", "30 hari"], ["semua", "Semua"]]) {
+  // for (const [kind, label] of [["7", "7 hari terakhir"], ["30", "30 hari"], ["semua", "Semua"]]) {
+  for (const [kind, label] of [["7", "7 hari terakhir"], ["30", "30 hari"]]) {
     const chip = el("button", "chip time", label);
     chip.setAttribute("aria-pressed", String(logFilter.kind === kind));
     chip.onclick = () => { logFilter = { kind, dari: "", sampai: "" }; render(); };
