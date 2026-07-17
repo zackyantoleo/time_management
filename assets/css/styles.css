@@ -465,6 +465,10 @@
   /* input inline pengganti badge menit saat durasi sedang diedit */
   .log-mins-input { width: 5.5em; font-size: 12px; padding: 1px 6px; }
 
+  /* filter tanggal tab Log kerja */
+  .log-filter { margin: 0 2px 10px; }
+  .log-filter input[type="date"] { font-size: 12.5px; padding: 4px 8px; }
+
   /* laporan jam ter-log di Jira per tanggal */
   .log-jira-bar { display: flex; align-items: center; gap: 10px; margin: 0 2px 12px; }
   .jira-jam {

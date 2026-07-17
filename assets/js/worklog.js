@@ -97,6 +97,49 @@ function dayLogText(dateStr, entries) {
   return "Log kerja " + fmtDayName(dateStr) + "\n" + lines.join("\n");
 }
 
+/* ---------- filter tanggal ----------
+   Default 7 hari terakhir supaya tab tidak makin panjang seiring log
+   menumpuk. Saat sedang MENCARI, filter tanggal diabaikan — mencari entri
+   lama lalu tak ketemu karena tersembunyi filter itu menyesatkan. */
+let logFilter = { kind: "7", dari: "", sampai: "" }; // 7 | 30 | semua | custom
+
+function lolosFilterTanggal(dateStr) {
+  if (logFilter.kind === "semua") return true;
+  if (logFilter.kind === "custom") {
+    return (!logFilter.dari || dateStr >= logFilter.dari) &&
+      (!logFilter.sampai || dateStr <= logFilter.sampai);
+  }
+  const hari = logFilter.kind === "30" ? 30 : 7;
+  return dateStr >= localDateStr(new Date(Date.now() - (hari - 1) * 86400000));
+}
+
+function renderLogFilter(wrap) {
+  const bar = el("div", "log-filter cap-group");
+  bar.setAttribute("role", "group");
+  bar.setAttribute("aria-label", "Filter tanggal log");
+  bar.append(el("span", "cap-label", "Tampilkan"));
+  for (const [kind, label] of [["7", "7 hari terakhir"], ["30", "30 hari"], ["semua", "Semua"]]) {
+    const chip = el("button", "chip time", label);
+    chip.setAttribute("aria-pressed", String(logFilter.kind === kind));
+    chip.onclick = () => { logFilter = { kind, dari: "", sampai: "" }; render(); };
+    bar.append(chip);
+  }
+  const dari = document.createElement("input");
+  dari.type = "date"; dari.value = logFilter.dari;
+  dari.setAttribute("aria-label", "Dari tanggal");
+  const sampai = document.createElement("input");
+  sampai.type = "date"; sampai.value = logFilter.sampai;
+  sampai.setAttribute("aria-label", "Sampai tanggal");
+  const kustom = () => {
+    if (!dari.value && !sampai.value) return;
+    logFilter = { kind: "custom", dari: dari.value, sampai: sampai.value };
+    render();
+  };
+  dari.onchange = kustom; sampai.onchange = kustom;
+  bar.append(dari, el("span", "cap-label", "–"), sampai);
+  wrap.append(bar);
+}
+
 function renderWorklog() {
   const wrap = $("#worklog");
   wrap.innerHTML = "";
@@ -106,9 +149,16 @@ function renderWorklog() {
     return;
   }
   const q = searchQuery.trim().toLowerCase();
-  const shown = !q ? worklog : worklog.filter((e) => e.text.toLowerCase().includes(q));
+  if (!q) renderLogFilter(wrap);
+  const shown = q ? worklog.filter((e) => e.text.toLowerCase().includes(q))
+    : worklog.filter((e) => lolosFilterTanggal(e.date));
   if (q && !shown.length) {
     wrap.append(el("div", "empty-note", "Tidak ada entri log yang cocok dengan “" + searchQuery.trim() + "”."));
+    return;
+  }
+  if (!q && !shown.length) {
+    wrap.append(el("div", "empty-note",
+      "Tidak ada entri log dalam rentang tanggal ini — longgarkan filternya di atas."));
     return;
   }
   // Laporan jam ter-log di Jira (14 hari terakhir) — tarik di latar,
