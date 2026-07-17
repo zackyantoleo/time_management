@@ -310,6 +310,20 @@
   .sprint-menu-item.danger { color: var(--ink-muted); }
   .sprint-menu-item.danger:hover { color: var(--late); }
   .sprint-menu-tick { width: 12px; flex: none; color: var(--accent); }
+  /* Varian menu topik BAU: daftar panjang → area ber-scroll + kolom cari.
+     Tinggi dibatasi supaya menu selalu muat di layar; reset tetap di bawah. */
+  .bau-menu { max-width: min(320px, 92vw); }
+  .bau-menu .bau-menu-cari {
+    margin: 2px; padding: 6px 9px; font-size: 13px;
+    border: 1px solid var(--line); border-radius: 6px;
+    background: var(--surface-2); color: var(--ink);
+  }
+  .bau-menu .bau-menu-list {
+    overflow-y: auto; max-height: min(45vh, 320px);
+    display: flex; flex-direction: column; gap: 2px;
+    overscroll-behavior: contain;
+  }
+  .bau-menu .bau-menu-kosong { font-size: 12.5px; color: var(--ink-faint); padding: 8px 9px; }
 
   .empty-note {
     font-size: 13px; color: var(--ink-faint); background: var(--surface-2);
