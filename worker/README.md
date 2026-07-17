@@ -99,6 +99,7 @@ perangkat dalam hitungan detik yang sama.
 |---|---|---|
 | GET | `/tickets` | Tiket terbuka yang di-assign ke pemilik token (max 100) |
 | GET | `/bau?project=TDBU` | Daftar tiket "topik" project BAU — wadah worklog non-sprint (meeting, deployment, dst.) |
+| GET | `/worklog-report?from=…&to=…` | Total worklog pemilik token per tanggal (maks 31 hari) — panel "sudah ter-log berapa" |
 | POST | `/worklog` | Kirim worklog: `{key, started, timeSpentSeconds, comment}` |
 | GET/PUT | `/state` | Simpan/ambil state Catet untuk sinkron antar perangkat (butuh KV) |
 
