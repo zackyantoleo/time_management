@@ -79,7 +79,7 @@ export default {
       const jql = "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC";
       const r = await fetch(
         site + "/rest/api/3/search/jql?jql=" + encodeURIComponent(jql) +
-          "&fields=summary,status&maxResults=100",
+          "&fields=summary,status,created&maxResults=100",
         { headers: authHeaders }
       );
       if (!r.ok) return json({ error: "Jira menolak (" + r.status + "): " + (await r.text()).slice(0, 300) }, 502);
@@ -90,6 +90,7 @@ export default {
           key: i.key,
           summary: (i.fields && i.fields.summary) || "",
           status: (i.fields && i.fields.status && i.fields.status.name) || null,
+          created: (i.fields && i.fields.created) || null,
         })),
       });
     }
