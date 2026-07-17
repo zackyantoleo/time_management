@@ -161,15 +161,23 @@ export default {
         return { key: i.key, logs: (await r.json()).worklogs || [] };
       }));
 
+      // Teks polos dari comment ADF (dipangkas 200 huruf).
+      const adfText = (n) => !n ? "" :
+        (typeof n.text === "string" ? n.text : (n.content || []).map(adfText).join(" ").trim());
+
       const days = {};
       for (const { key, logs } of hasil) {
         for (const w of logs) {
           if (!w.author || w.author.accountId !== me) continue;
           const tgl = String(w.started || "").slice(0, 10); // tanggal lokal penulis
           if (tgl < from || tgl > to) continue;
-          const d = (days[tgl] = days[tgl] || { total: 0, items: {} });
+          const d = (days[tgl] = days[tgl] || { total: 0, items: {}, entries: [] });
           d.total += w.timeSpentSeconds || 0;
           d.items[key] = (d.items[key] || 0) + (w.timeSpentSeconds || 0);
+          d.entries.push({
+            key, started: w.started, seconds: w.timeSpentSeconds || 0,
+            comment: adfText(w.comment).replace(/\s+/g, " ").slice(0, 200),
+          });
         }
       }
       // items: objek → array tersortir jam terbesar, biar enak ditampilkan.
@@ -177,8 +185,11 @@ export default {
         days[tgl].items = Object.entries(days[tgl].items)
           .map(([key, seconds]) => ({ key, seconds }))
           .sort((a, b) => b.seconds - a.seconds);
+        days[tgl].entries.sort((a, b) => String(a.started).localeCompare(String(b.started)));
       }
-      return json({ from, to, days });
+      const summaries = {};
+      for (const i of issues) summaries[i.key] = (i.fields && i.fields.summary) || "";
+      return json({ from, to, days, summaries });
     }
 
     // POST /worklog — { key, started (ISO), timeSpentSeconds, comment }
