@@ -60,6 +60,11 @@ async function tarikLaporanJira(paksa) {
     const r = await fetch(jiraProxy() + "/worklog-report?from=" + from + "&to=" + to);
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+    // Bentuk tak dikenal (mis. Worker versi lama tanpa endpoint ini) tidak
+    // boleh disimpan — days yang bolong akan mematikan render seluruh log.
+    if (!data || typeof data.days !== "object" || data.days === null) {
+      throw new Error("Worker belum punya /worklog-report — deploy ulang worker");
+    }
     lapJira = data;
   } catch (e) {
     lapJiraMsg = "gagal: " + (e && e.message ? e.message : "koneksi");
@@ -74,7 +79,7 @@ async function tarikLaporanJira(paksa) {
 
 // Badge "☁ Jira …" untuk satu tanggal. null = tanggal di luar rentang laporan.
 function jiraJamBadge(dateStr) {
-  if (!lapJira || dateStr < lapJira.from || dateStr > lapJira.to) return null;
+  if (!lapJira || !lapJira.days || dateStr < lapJira.from || dateStr > lapJira.to) return null;
   const d = lapJira.days[dateStr];
   const total = d ? d.total : 0;
   const kurang = total < TARGET_LOG_JAM * 3600;

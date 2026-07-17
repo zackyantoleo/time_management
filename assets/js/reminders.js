@@ -97,7 +97,9 @@ function checkDue() {
       dueNow.push(t);
     }
   }
-  if (changed) save();
+  // Penanda notified = perubahan mesin — simpan tanpa mengklaim dirty,
+  // supaya tab yang cuma nunggu pengingat tidak mendorong state basi.
+  if (changed) saveTanpaSinkron();
   // Rutinitas berjam: ingatkan sekali per hari sampai dicentang.
   ensureRoutineDay();
   const nowHM = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");

@@ -34,7 +34,16 @@ function normalisasiJira(j) {
   return j;
 }
 normalisasiJira(jira);
-function saveJira() { localStorage.setItem(JIRA_KEY_STORE, JSON.stringify(jira)); if (typeof syncDirty === "function") syncDirty(); }
+// tanpaDirty=true untuk penyegaran MESIN (tarikan tiket/topik berkala,
+// rapikan inbox): tiap perangkat menariknya sendiri dari Jira, jadi tak
+// perlu mendorong state — dan tidak boleh, karena flag dirty membuat
+// perangkat mendorong seluruh state (termasuk tasks yang mungkin basi)
+// alih-alih menarik: tugas yang sudah selesai di perangkat lain bisa
+// "hidup lagi" ditimpa tab lama yang jalan di latar.
+function saveJira(tanpaDirty) {
+  localStorage.setItem(JIRA_KEY_STORE, JSON.stringify(jira));
+  if (!tanpaDirty && typeof syncDirty === "function") syncDirty();
+}
 function jiraSite() { return (jira.site || "").trim().replace(/\/+$/, ""); }
 function jiraUrl(key) { return jiraSite() + "/browse/" + key; }
 
@@ -166,7 +175,7 @@ async function syncJira(manual) {
     rapikanInbox(); // buang tiket yang sudah jadi tugas aktif
     jira.lastSync = new Date().toISOString();
     jiraSyncMsg = "";
-    saveJira();
+    saveJira(true); // penyegaran mesin — jangan klaim dirty
     syncBau(false); // topik BAU ikut segar (throttle 6 jam di dalamnya)
   } catch (e) {
     jiraSyncMsg = "gagal: " + (e && e.message ? e.message : "koneksi");
@@ -194,7 +203,7 @@ async function syncBau(manual) {
     jira.bau.items = Array.isArray(data.items) ? data.items : [];
     jira.bau.lastSync = new Date().toISOString();
     bauSyncMsg = "";
-    saveJira();
+    saveJira(true); // penyegaran mesin — jangan klaim dirty
   } catch (e) {
     bauSyncMsg = "gagal: " + (e && e.message ? e.message : "koneksi");
   }
@@ -550,7 +559,7 @@ function renderJiraInbox() {
   const wrap = $("#jiraview");
   wrap.innerHTML = "";
   wrap.append(renderSprintBar());
-  if (rapikanInbox()) saveJira(); // sembuhkan tiket yang telanjur nyangkut
+  if (rapikanInbox()) saveJira(true); // penyembuhan mesin — tanpa klaim dirty
   const q = searchQuery.trim().toLowerCase();
   const shown = !q ? jira.items : jira.items.filter((x) =>
     (x.key + " " + x.summary + " " + (x.status || "")).toLowerCase().includes(q));
