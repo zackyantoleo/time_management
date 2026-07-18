@@ -160,8 +160,8 @@ async function syncJira(manual) {
       if (jira.dismissed.includes(f.key)) continue;
       if (tasks.some((t) => t.status !== "selesai" && t.text.includes(f.key))) continue;
       const ex = jira.items.find((x) => x.key === f.key);
-      if (ex) { ex.summary = f.summary; ex.status = f.status; }
-      else jira.items.push({ id: uid(), key: f.key, summary: f.summary, status: f.status, src: "sync", addedAt: new Date().toISOString() });
+      if (ex) { ex.summary = f.summary; ex.status = f.status; ex.created = f.created || ex.created; }
+      else jira.items.push({ id: uid(), key: f.key, summary: f.summary, status: f.status, created: f.created || null, src: "sync", addedAt: new Date().toISOString() });
     }
     // Tiket hasil sinkron yang sudah tidak muncul di Jira (selesai/di-reassign)
     // ikut hilang; tiket hasil impor manual dibiarkan.
@@ -584,9 +584,29 @@ function renderJiraInbox() {
     sec.append(el("div", "empty-note", "Tidak ada tiket yang cocok dengan “" + searchQuery.trim() + "”."));
   }
   if (shown.length) {
-    const card = el("div", "routine-card");
+    // Kelompokkan per bulan dibuatnya tiket di Jira; impor manual tanpa
+    // tanggal jatuh ke bulan saat masuk Catet.
+    const NAMA_BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni",
+      "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+    const tglItem = (x) => String(x.created || x.addedAt || "");
+    const perBulan = new Map();
     for (const item of shown) {
-      const row = el("div", "jira-row");
+      const k = tglItem(item).slice(0, 7) || "0000-00";
+      if (!perBulan.has(k)) perBulan.set(k, []);
+      perBulan.get(k).push(item);
+    }
+    const bulanIni = localDateStr(new Date()).slice(0, 7);
+    for (const k of [...perBulan.keys()].sort().reverse()) {
+      const grup = perBulan.get(k).sort((a, b) => tglItem(b).localeCompare(tglItem(a)));
+      const label = k === "0000-00" ? "Tanpa tanggal"
+        : NAMA_BULAN[Number(k.slice(5, 7)) - 1] + " " + k.slice(0, 4) +
+          (k === bulanIni ? " — bulan ini" : "");
+      const bl = el("div", "bulan-label");
+      bl.append(label + " ", el("span", "count mono", String(grup.length)));
+      sec.append(bl);
+      const card = el("div", "routine-card");
+      for (const item of grup) {
+        const row = el("div", "jira-row");
       if (jiraSite()) {
         const a = el("a", "jira-key", item.key);
         a.href = jiraUrl(item.key); a.target = "_blank"; a.rel = "noopener";
@@ -620,8 +640,9 @@ function renderJiraInbox() {
       };
       row.append(del);
       card.append(row);
+      }
+      sec.append(card);
     }
-    sec.append(card);
   }
 
   const det = document.createElement("details");
