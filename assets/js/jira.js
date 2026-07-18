@@ -555,6 +555,7 @@ function sprintPtsUntukBadge(s) { return sprintPts({ sprintId: s.id }); }
 
 /* ---------- Jira inbox rendering (tab sendiri: #jiraview) ---------- */
 let jiraImportOpen = false;
+let bulanBuka = {}; // per grup bulan; default hanya bulan berjalan terbuka
 function renderJiraInbox() {
   const wrap = $("#jiraview");
   wrap.innerHTML = "";
@@ -601,9 +602,15 @@ function renderJiraInbox() {
       const label = k === "0000-00" ? "Tanpa tanggal"
         : NAMA_BULAN[Number(k.slice(5, 7)) - 1] + " " + k.slice(0, 4) +
           (k === bulanIni ? " — bulan ini" : "");
-      const bl = el("div", "bulan-label");
+      const det2 = document.createElement("details");
+      det2.className = "bulan-wrap";
+      // saat mencari semua terbuka; selain itu ingat pilihan, default bulan ini
+      det2.open = q ? true : (k in bulanBuka ? bulanBuka[k] : k === bulanIni);
+      det2.addEventListener("toggle", () => { if (!q) bulanBuka[k] = det2.open; });
+      const bl = document.createElement("summary");
+      bl.className = "bulan-label";
       bl.append(label + " ", el("span", "count mono", String(grup.length)));
-      sec.append(bl);
+      det2.append(bl);
       const card = el("div", "routine-card");
       for (const item of grup) {
         const row = el("div", "jira-row");
@@ -641,7 +648,8 @@ function renderJiraInbox() {
       row.append(del);
       card.append(row);
       }
-      sec.append(card);
+      det2.append(card);
+      sec.append(det2);
     }
   }
 
