@@ -91,7 +91,7 @@ function hitungSkor() {
   else saran = "selipkan saat senggang";
   return { skor, prio, saran };
 }
-const PRIO_LABEL_SARAN = { urgent: "Urgent", tinggi: "Tinggi", sedang: "Sedang", rendah: "Rendah" };
+const PRIO_LABEL_SARAN = { urgent: "Urgent", tinggi: "High", sedang: "Medium", rendah: "Low" };
 function updateScoreVerdict() {
   const v = $("#score-verdict");
   const s = hitungSkor();

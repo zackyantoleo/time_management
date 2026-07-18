@@ -32,7 +32,7 @@ function completeSprint(s) {
   const now = new Date();
   worklog.push({
     id: uid(), taskId: "sprint:" + s.id, date: localDateStr(now), ts: now.toISOString(),
-    text: "🏁 Sprint “" + s.nama + "” ditutup — " + beres + "/" + anggota.length + " tugas selesai",
+    text: "🏁 Sprint “" + s.nama + "” closed — " + beres + "/" + anggota.length + " tasks done",
     priority: "sprint", mins: 0,
   });
   if (sprints.aktif === s.id) sprints.aktif = (sprintAktifList()[0] || {}).id || null;
@@ -59,9 +59,9 @@ function sprintPts(t) {
 }
 function fmtSisaSprint(s) {
   const hari = Math.ceil((akhirSprint(s) - Date.now()) / 86400000);
-  if (hari < 0) return "lewat " + Math.abs(hari) + " hari";
-  if (hari === 0) return "berakhir hari ini";
-  return "sisa " + hari + " hari";
+  if (hari < 0) return "" + Math.abs(hari) + " d overdue";
+  if (hari === 0) return "ends today";
+  return hari + " d left";
 }
 function jumlahTugasSprint(id) {
   return tasks.filter((t) => t.status !== "selesai" && t.sprintId === id).length;
@@ -126,7 +126,7 @@ function bukaSprintMenu(anchor, currentId, onPick) {
   if (currentId) {
     const keluar = el("button", "sprint-menu-item danger");
     keluar.append(el("span", "sprint-menu-tick", ""));
-    keluar.append(el("span", null, "Keluarkan dari sprint"));
+    keluar.append(el("span", null, "Remove from sprint"));
     keluar.onclick = pilih(null);
     menu.append(keluar);
   }

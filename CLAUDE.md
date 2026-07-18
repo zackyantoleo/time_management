@@ -59,4 +59,6 @@ dependensi, tanpa framework. Data pengguna di `localStorage`.
    (`/opt/pw-browsers/.../chrome`): jalankan alur yang diubah lewat dua cara —
    `file://` langsung dan `python3 -m http.server` — pastikan tanpa error
    console, lalu screenshot tema terang & gelap.
-3. UI dan teks aplikasi berbahasa Indonesia.
+3. Bahasa UI: label pendek (tombol, tab, judul section, chip, badge) berbahasa
+   Inggris; teks penjelasan (hint, empty state, dialog/alert, tooltip) tetap
+   berbahasa Indonesia. Nama hari/bulan tetap format Indonesia.

@@ -4,10 +4,10 @@
 
 const STORE_KEY = "catet.tasks.v1";
 const PRIORITIES = [
-  { id: "urgent", label: "Urgent — kerjakan sekarang" },
-  { id: "tinggi", label: "Tinggi" },
-  { id: "sedang", label: "Sedang" },
-  { id: "rendah", label: "Rendah — kalau sempat" },
+  { id: "urgent", label: "Urgent — do it now" },
+  { id: "tinggi", label: "High" },
+  { id: "sedang", label: "Medium" },
+  { id: "rendah", label: "Low — when free" },
 ];
 const PR_ORDER = { urgent: 0, tinggi: 1, sedang: 2, rendah: 3 };
 

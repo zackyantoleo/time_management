@@ -58,7 +58,7 @@ function toggleRoutine(r) {
 let routineManageOpen = false;
 let newRoutineDays = new Set([1, 2, 3, 4, 5]); // default hari kerja
 function fmtDays(days) {
-  if (days.length === 7) return "setiap hari";
+  if (days.length === 7) return "every day";
   const sorted = [...days].sort();
   if (sorted.join() === "1,2,3,4,5") return "Sen–Jum";
   return sorted.map((d) => HARI_PENDEK[d]).join(", ");
@@ -69,7 +69,7 @@ function renderRoutines(frag) {
   sec.style.marginBottom = "18px";
   const head = el("div", "section-head");
   const doneCount = items.filter((r) => rday.doneIds.includes(r.id)).length;
-  head.append(el("h2", null, "Rutinitas hari ini"));
+  head.append(el("h2", null, "Today’s routines"));
   if (items.length) head.append(el("span", "count mono", doneCount + "/" + items.length));
   sec.append(head);
 
@@ -98,7 +98,7 @@ function renderRoutines(frag) {
   det.open = routineManageOpen;
   det.addEventListener("toggle", () => { routineManageOpen = det.open; });
   const sum = document.createElement("summary");
-  sum.textContent = routines.length ? "kelola rutinitas" : "+ tambah rutinitas (mis. daily standup, cek email)";
+  sum.textContent = routines.length ? "manage routines" : "+ add routine (mis. daily standup, cek email)";
   det.append(sum);
 
   const editor = el("div", "routine-editor");
@@ -126,7 +126,7 @@ function renderRoutines(frag) {
   const form = el("div", "routine-form");
   const txt = document.createElement("input");
   txt.type = "text"; txt.id = "routine-text";
-  txt.placeholder = "Rutinitas baru… mis. “daily standup”";
+  txt.placeholder = "New routine… mis. “daily standup”";
   const time = document.createElement("input");
   time.type = "time"; time.id = "routine-time";
   time.title = "Jam pengingat (opsional)";
@@ -140,7 +140,7 @@ function renderRoutines(frag) {
     };
     dayWrap.append(chip);
   }
-  const addBtn = el("button", "btn-solid", "Tambah");
+  const addBtn = el("button", "btn-solid", "Add");
   const addRoutine = () => {
     const text = txt.value.trim();
     if (!text || !newRoutineDays.size) return;

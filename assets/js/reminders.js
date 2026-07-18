@@ -20,13 +20,13 @@ function updateNotifBtn() {
   const btn = $("#notif-btn");
   let icon, label, title;
   if (!remindersOn) {
-    icon = "🔕"; label = "Pengingat mati";
+    icon = "🔕"; label = "Reminders off";
     title = "Klik untuk menyalakan pengingat waktu";
   } else if (sysNotifAvailable()) {
-    icon = "🔔"; label = "Pengingat aktif";
+    icon = "🔔"; label = "Reminders on";
     title = "Pengingat lewat notifikasi sistem + di dalam halaman. Klik untuk mematikan.";
   } else {
-    icon = "🔔"; label = "Pengingat aktif";
+    icon = "🔔"; label = "Reminders on";
     title = "Pengingat muncul di dalam halaman ini — notifikasi sistem belum diizinkan browser. Klik untuk mematikan.";
   }
   btn.textContent = icon;
@@ -64,7 +64,7 @@ function showToast(t) {
   const wrap = $("#toasts");
   const toast = el("div", "toast");
   toast.append(
-    el("div", "toast-title", "⏰ Waktunya!"),
+    el("div", "toast-title", "⏰ Time’s up!"),
     el("div", "toast-body", t.text),
     el("div", "toast-hint", "klik untuk menutup")
   );
@@ -108,7 +108,7 @@ function checkDue() {
     if (r.time && r.time <= nowHM &&
         !rday.doneIds.includes(r.id) && !rday.notifiedIds.includes(r.id)) {
       rday.notifiedIds.push(r.id); rdayChanged = true;
-      dueNow.push({ text: "Rutinitas: " + r.text });
+      dueNow.push({ text: "Routine: " + r.text });
     }
   }
   if (rdayChanged) saveRday();
@@ -116,7 +116,7 @@ function checkDue() {
     for (const t of dueNow) {
       showToast(t);
       if (sysNotifAvailable()) {
-        try { new Notification("Catet — waktunya!", { body: t.text }); } catch {}
+        try { new Notification("Catet — time’s up!", { body: t.text }); } catch {}
       }
     }
     if (dueNow.length) beep();

@@ -59,7 +59,7 @@ function kumpulkanStores() {
 
 async function pushState() {
   if (!syncAktif()) return;
-  setSyncStatus("menyimpan…");
+  setSyncStatus("saving…");
   try {
     const r = await fetch(jiraProxy() + "/state", {
       method: "PUT",
@@ -69,9 +69,9 @@ async function pushState() {
     if (!r.ok) throw new Error(((await r.json().catch(() => ({}))).error) || ("HTTP " + r.status));
     localStorage.removeItem(DIRTY_KEY); // terkirim — perangkat ini bersih lagi
     localStorage.setItem(SYNCED_KEY, "1");
-    setSyncStatus("tersinkron " + fmtClock(new Date()));
+    setSyncStatus("synced " + fmtClock(new Date()));
   } catch (e) {
-    setSyncStatus("gagal simpan: " + (e && e.message ? e.message : "koneksi"));
+    setSyncStatus("save failed: " + (e && e.message ? e.message : "koneksi"));
   }
 }
 
@@ -125,14 +125,14 @@ async function pullState(paksa) {
       terapkanRemote(data.stores);
       localStorage.removeItem(DIRTY_KEY);
       localStorage.setItem(SYNCED_KEY, "1");
-      setSyncStatus("tersinkron " + fmtClock(new Date()));
+      setSyncStatus("synced " + fmtClock(new Date()));
     } else if (tasks.length || worklog.length || routines.length) {
       pushState(); // server masih kosong — unggah data perangkat ini
     } else {
       localStorage.setItem(SYNCED_KEY, "1"); // server & lokal sama-sama kosong
     }
   } catch (e) {
-    setSyncStatus("gagal tarik: " + (e && e.message ? e.message : "koneksi"));
+    setSyncStatus("pull failed: " + (e && e.message ? e.message : "koneksi"));
   }
 }
 
