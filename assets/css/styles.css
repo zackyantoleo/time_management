@@ -495,13 +495,18 @@
     background: var(--accent-soft); color: var(--accent); white-space: nowrap;
   }
   .jira-jam.kurang { background: var(--p-urgent-soft); color: var(--late); }
-  /* label bulan pengelompokan tiket Jira */
-  .bulan-label {
+  /* grup bulan tiket Jira — bisa dilipat */
+  details.bulan-wrap { margin-top: 10px; }
+  details.bulan-wrap:first-of-type { margin-top: 2px; }
+  summary.bulan-label {
     font-size: 11px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase;
-    color: var(--ink-faint); margin: 12px 2px 6px;
+    color: var(--ink-faint); margin: 0 2px 6px; cursor: pointer; user-select: none;
     display: flex; align-items: center; gap: 6px;
   }
-  .bulan-label:first-of-type { margin-top: 4px; }
+  summary.bulan-label:hover { color: var(--ink-muted); }
+  summary.bulan-label::before { content: "▸"; font-size: 10px; }
+  details.bulan-wrap[open] summary.bulan-label::before { content: "▾"; }
+  summary.bulan-label::-webkit-details-marker { display: none; }
 
   /* baris log asal Jira: titik hampa + teks sedikit redup */
   .log-dot.p-jira { background: transparent; border: 2px solid var(--accent); }
