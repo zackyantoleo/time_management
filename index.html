@@ -19,20 +19,20 @@
       <span class="tag">catatan cepat berprioritas</span>
     </div>
     <div class="top-actions">
-      <button class="btn-ghost" id="notif-btn" title="Nyalakan/matikan pengingat waktu">🔔<span class="btn-label"> Pengingat</span></button>
-      <button class="btn-ghost" id="export-btn" title="Unduh cadangan semua data sebagai file .json">⬇<span class="btn-label"> Ekspor</span></button>
-      <button class="btn-ghost" id="import-btn" title="Pulihkan data dari file .json (mengganti data di browser ini)">⬆<span class="btn-label"> Impor</span></button>
+      <button class="btn-ghost" id="notif-btn" title="Nyalakan/matikan pengingat waktu">🔔<span class="btn-label"> Reminders</span></button>
+      <button class="btn-ghost" id="export-btn" title="Unduh cadangan semua data sebagai file .json">⬇<span class="btn-label"> Export</span></button>
+      <button class="btn-ghost" id="import-btn" title="Pulihkan data dari file .json (mengganti data di browser ini)">⬆<span class="btn-label"> Import</span></button>
       <input type="file" id="import-file" accept="application/json,.json" hidden>
     </div>
   </header>
 
   <div class="tabs-row">
     <nav class="tabs" role="tablist" aria-label="Tampilan">
-      <button class="tab" id="tab-papan" role="tab" aria-selected="true">📋 Papan</button>
+      <button class="tab" id="tab-papan" role="tab" aria-selected="true">📋 Board</button>
       <button class="tab" id="tab-jira" role="tab" aria-selected="false">🎫 Jira</button>
-      <button class="tab" id="tab-log" role="tab" aria-selected="false">🗒 Log kerja</button>
+      <button class="tab" id="tab-log" role="tab" aria-selected="false">🗒 Work log</button>
     </nav>
-    <input type="search" id="search" placeholder="Cari tugas / tiket / log…" aria-label="Cari">
+    <input type="search" id="search" placeholder="Search tasks / tickets / logs…" aria-label="Cari">
   </div>
 
   <section class="focus-card board-view" id="focus-card" aria-live="polite"></section>
@@ -40,39 +40,39 @@
   <section class="capture board-view" aria-label="Tambah catatan">
     <div class="capture-row1">
       <input type="text" id="cap-text" placeholder="Catat cepat… mis. “kabari mas Budi soal deploy” lalu Enter" autofocus>
-      <button class="btn-solid" id="cap-save">Simpan</button>
+      <button class="btn-solid" id="cap-save">Save</button>
     </div>
     <div class="capture-row2">
       <div class="cap-group" role="group" aria-label="Prioritas">
-        <span class="cap-label">Prioritas</span>
+        <span class="cap-label">Priority</span>
         <button class="chip pr-urgent" data-pr="urgent" aria-pressed="false">Urgent</button>
-        <button class="chip pr-tinggi" data-pr="tinggi" aria-pressed="false">Tinggi</button>
-        <button class="chip pr-sedang" data-pr="sedang" aria-pressed="true">Sedang</button>
-        <button class="chip pr-rendah" data-pr="rendah" aria-pressed="false">Rendah</button>
+        <button class="chip pr-tinggi" data-pr="tinggi" aria-pressed="false">High</button>
+        <button class="chip pr-sedang" data-pr="sedang" aria-pressed="true">Medium</button>
+        <button class="chip pr-rendah" data-pr="rendah" aria-pressed="false">Low</button>
       </div>
       <div class="cap-group" role="group" aria-label="Waktu">
-        <span class="cap-label">Kapan</span>
-        <button class="chip time" data-due="none" aria-pressed="true">Bebas</button>
-        <button class="chip time" data-due="today">Hari ini</button>
-        <button class="chip time" data-due="tomorrow-am">Besok pagi</button>
+        <span class="cap-label">When</span>
+        <button class="chip time" data-due="none" aria-pressed="true">Anytime</button>
+        <button class="chip time" data-due="today">Today</button>
+        <button class="chip time" data-due="tomorrow-am">Tomorrow AM</button>
         <input type="datetime-local" id="cap-due-custom" aria-label="Pilih waktu sendiri">
       </div>
       <button class="chip time hidden" id="sprint-capture" aria-pressed="false" title="Masukkan tugas baru ke sprint aktif">🏃 Sprint</button>
-      <button class="chip" id="score-toggle" aria-pressed="false" title="Bantu menilai prioritas dari dampak, usaha, dan tenggat">🧮 Bantu nilai</button>
-      <span class="cap-hint"><kbd>Enter</kbd> simpan · <kbd>Alt</kbd>+<kbd>1–4</kbd> prioritas</span>
+      <button class="chip" id="score-toggle" aria-pressed="false" title="Bantu menilai prioritas dari dampak, usaha, dan tenggat">🧮 Score</button>
+      <span class="cap-hint"><kbd>Enter</kbd> save · <kbd>Alt</kbd>+<kbd>1–4</kbd> priority</span>
     </div>
     <div class="capture-row3 hidden" id="score-panel">
       <div class="cap-group" role="group" aria-label="Dampak kalau ditunda">
-        <span class="cap-label">Kalau ditunda?</span>
-        <button class="chip sc" data-dampak="1" aria-pressed="false">Aman</button>
-        <button class="chip sc" data-dampak="2" aria-pressed="false">Mengganggu</button>
-        <button class="chip sc" data-dampak="3" aria-pressed="false">Memblokir orang/produksi</button>
+        <span class="cap-label">If delayed?</span>
+        <button class="chip sc" data-dampak="1" aria-pressed="false">Safe</button>
+        <button class="chip sc" data-dampak="2" aria-pressed="false">Disruptive</button>
+        <button class="chip sc" data-dampak="3" aria-pressed="false">Blocks people/prod</button>
       </div>
       <div class="cap-group" role="group" aria-label="Perkiraan usaha">
-        <span class="cap-label">Usaha</span>
-        <button class="chip sc" data-usaha="S" aria-pressed="false">⚡ ≤1 jam</button>
-        <button class="chip sc" data-usaha="M" aria-pressed="false">⏱ ±½ hari</button>
-        <button class="chip sc" data-usaha="L" aria-pressed="false">⏳ ≥1 hari</button>
+        <span class="cap-label">Effort</span>
+        <button class="chip sc" data-usaha="S" aria-pressed="false">⚡ ≤1 h</button>
+        <button class="chip sc" data-usaha="M" aria-pressed="false">⏱ ±½ day</button>
+        <button class="chip sc" data-usaha="L" aria-pressed="false">⏳ ≥1 day</button>
       </div>
       <div class="score-verdict" id="score-verdict">Pilih dampak (dan usaha) — saran prioritas &amp; kapan mulai muncul di sini.</div>
     </div>

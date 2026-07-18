@@ -147,7 +147,7 @@ async function syncJira(manual) {
   }
   if (jiraSyncing) return;
   jiraSyncing = true;
-  jiraSyncMsg = "menarik…";
+  jiraSyncMsg = "fetching…";
   if (view === "papan" || view === "jira") render();
   try {
     const r = await fetch(jiraProxy() + "/tickets");
@@ -178,7 +178,7 @@ async function syncJira(manual) {
     saveJira(true); // penyegaran mesin — jangan klaim dirty
     syncBau(false); // topik BAU ikut segar (throttle 6 jam di dalamnya)
   } catch (e) {
-    jiraSyncMsg = "gagal: " + (e && e.message ? e.message : "koneksi");
+    jiraSyncMsg = "failed: " + (e && e.message ? e.message : "koneksi");
   }
   jiraSyncing = false;
   if (view === "papan" || view === "jira") render();
@@ -194,7 +194,7 @@ async function syncBau(manual) {
   if (!manual && jira.bau.lastSync && Date.now() - new Date(jira.bau.lastSync) < 6 * 3600000) return;
   if (bauSyncing) return;
   bauSyncing = true;
-  bauSyncMsg = "menarik…";
+  bauSyncMsg = "fetching…";
   if (view === "jira") render();
   try {
     const r = await fetch(jiraProxy() + "/bau?project=" + encodeURIComponent(proj));
@@ -205,7 +205,7 @@ async function syncBau(manual) {
     bauSyncMsg = "";
     saveJira(true); // penyegaran mesin — jangan klaim dirty
   } catch (e) {
-    bauSyncMsg = "gagal: " + (e && e.message ? e.message : "koneksi");
+    bauSyncMsg = "failed: " + (e && e.message ? e.message : "koneksi");
   }
   bauSyncing = false;
   if (view === "jira") render();
@@ -259,7 +259,7 @@ function bukaBauMenu(anchor, currentKey, onPick) {
   // Daftar topik bisa puluhan (satu board BAU penuh) — kolom cari di atas,
   // daftarnya di area ber-scroll, tombol reset menetap di bawah.
   const cari = document.createElement("input");
-  cari.type = "search"; cari.placeholder = "Cari topik…";
+  cari.type = "search"; cari.placeholder = "Search topics…";
   cari.className = "bau-menu-cari";
   cari.setAttribute("aria-label", "Cari topik BAU");
   menu.append(cari);
@@ -292,7 +292,7 @@ function bukaBauMenu(anchor, currentKey, onPick) {
   if (currentKey) {
     const reset = el("button", "sprint-menu-item danger");
     reset.append(el("span", "sprint-menu-tick", ""));
-    reset.append(el("span", null, "↺ Kembali ke pencocokan otomatis"));
+    reset.append(el("span", null, "↺ Back to auto-match"));
     reset.onclick = pilih(null);
     menu.append(reset);
   }
@@ -319,14 +319,14 @@ function renderBauSection(wrap) {
   const sec = el("section", "section s-jira");
   sec.style.marginTop = "18px";
   const head = el("div", "section-head");
-  head.append(el("h2", null, "Topik BAU — worklog non-sprint"));
+  head.append(el("h2", null, "BAU topics — non-sprint worklog"));
   if (jira.bau.items.length) head.append(el("span", "count mono", String(jira.bau.items.length)));
   if (jiraProxy() && jira.bau.project) {
-    const refresh = el("button", "clear-done", bauSyncing ? "menarik…" : "⟳ tarik topik");
+    const refresh = el("button", "clear-done", bauSyncing ? "fetching…" : "⟳ fetch topics");
     refresh.onclick = () => syncBau(true);
     head.append(refresh);
     if (bauSyncMsg && !bauSyncing) head.append(el("span", "count", bauSyncMsg));
-    else if (jira.bau.lastSync && !bauSyncing) head.append(el("span", "count mono", "sinkron " + fmtAgo(jira.bau.lastSync)));
+    else if (jira.bau.lastSync && !bauSyncing) head.append(el("span", "count mono", "synced " + fmtAgo(jira.bau.lastSync)));
   }
   sec.append(head);
 
@@ -334,16 +334,16 @@ function renderBauSection(wrap) {
   det.className = "routine-manage";
   det.open = !jira.bau.project; // belum diset → langsung terbuka
   const sum = document.createElement("summary");
-  sum.textContent = jira.bau.project ? "pengaturan topik BAU" :
-    "+ set project BAU (mis. TDBU) — worklog meeting/deployment/dll. di luar sprint";
+  sum.textContent = jira.bau.project ? "BAU topic settings" :
+    "+ set BAU project (mis. TDBU) — worklog meeting/deployment/dll. di luar sprint";
   det.append(sum);
   const editor = el("div", "routine-editor");
   const form = el("div", "routine-form");
   const projIn = document.createElement("input");
   projIn.type = "text"; projIn.value = jira.bau.project || "";
-  projIn.placeholder = "Key project BAU… mis. TDBU";
+  projIn.placeholder = "BAU project key… mis. TDBU";
   projIn.title = "Project Jira berisi tiket topik (Team Meeting, Deployment, dst.)";
-  const setBtn = el("button", "btn-solid", "Simpan & tarik topik");
+  const setBtn = el("button", "btn-solid", "Save & fetch topics");
   setBtn.onclick = () => {
     jira.bau.project = projIn.value.trim().toUpperCase();
     jira.bau.lastSync = null;
@@ -370,7 +370,7 @@ function renderBauSection(wrap) {
     const det2 = document.createElement("details");
     det2.className = "routine-manage";
     const sum2 = document.createElement("summary");
-    sum2.append("daftar topik ", el("span", "count mono", String(jira.bau.items.length)));
+    sum2.append("topic list ", el("span", "count mono", String(jira.bau.items.length)));
     det2.append(sum2, card);
     sec.append(det2);
   }
@@ -391,7 +391,7 @@ function sprintRow(s, sec) {
     "🏁 " + fmtDayName(s.selesai) + " · " + fmtSisaSprint(s));
   row.append(badge);
   const jml = jumlahTugasSprint(s.id);
-  row.append(el("span", "jira-status", jml + " tugas"));
+  row.append(el("span", "jira-status", jml + " tasks"));
 
   const edit = el("button", "icon-btn" + (sprintEditId === s.id ? " in-sprint" : ""), "✎");
   edit.title = "Ubah sprint / lihat isinya"; edit.setAttribute("aria-label", edit.title);
@@ -407,7 +407,7 @@ function sprintRow(s, sec) {
   ed.style.paddingLeft = "10px";
 
   const grpNama = el("div", "cap-group");
-  grpNama.append(el("span", "cap-label", "Nama"));
+  grpNama.append(el("span", "cap-label", "Name"));
   const namaIn = document.createElement("input");
   namaIn.type = "text"; namaIn.value = s.nama; namaIn.className = "sprint-edit-nama";
   const simpanNama = () => { const v = namaIn.value.trim(); if (v && v !== s.nama) { s.nama = v; saveSprints(); render(); } };
@@ -417,7 +417,7 @@ function sprintRow(s, sec) {
   ed.append(grpNama);
 
   const grpTgl = el("div", "cap-group");
-  grpTgl.append(el("span", "cap-label", "Selesai"));
+  grpTgl.append(el("span", "cap-label", "Ends"));
   const tglIn = document.createElement("input");
   tglIn.type = "date"; tglIn.value = s.selesai;
   tglIn.onchange = (e) => { if (e.target.value) { s.selesai = e.target.value; saveSprints(); render(); } };
@@ -427,7 +427,7 @@ function sprintRow(s, sec) {
   // daftar task di sprint ini
   const anggota = tasks.filter((t) => t.sprintId === s.id);
   const lbl = el("div", "cap-label"); lbl.style.marginTop = "2px";
-  lbl.textContent = "Isi sprint (" + anggota.length + ")";
+  lbl.textContent = "Sprint items (" + anggota.length + ")";
   ed.append(lbl);
   if (anggota.length) {
     const ul = el("ul", "sprint-tasks");
@@ -449,7 +449,7 @@ function sprintRow(s, sec) {
   }
 
   const aksi = el("div", "cap-group");
-  const selesaiBtn = el("button", "btn-solid", "✓ Selesai sprint");
+  const selesaiBtn = el("button", "btn-solid", "✓ Complete sprint");
   selesaiBtn.title = "Tutup sprint & catat ke Log kerja";
   selesaiBtn.onclick = () => {
     const belum = anggota.filter((t) => t.status !== "selesai").length;
@@ -459,7 +459,7 @@ function sprintRow(s, sec) {
     if (confirm(pesan)) { sprintEditId = null; completeSprint(s); render(); }
   };
   aksi.append(selesaiBtn);
-  const hapusBtn = el("button", "btn-line", "Hapus sprint");
+  const hapusBtn = el("button", "btn-line", "Delete sprint");
   hapusBtn.onclick = () => {
     if (confirm("Hapus sprint “" + s.nama + "”?\nTugas-tugasnya tetap ada di papan, hanya lepas dari sprint.")) {
       sprints.list = sprints.list.filter((x) => x.id !== s.id);
@@ -495,13 +495,13 @@ function renderSprintBar() {
     const det2 = document.createElement("details");
     det2.className = "routine-manage";
     const sum2 = document.createElement("summary");
-    sum2.append("Sprint selesai ", el("span", "count mono", String(selesai.length)));
+    sum2.append("Completed sprints ", el("span", "count mono", String(selesai.length)));
     det2.append(sum2);
     const card2 = el("div", "routine-card");
     for (const s of selesai) {
       const row = el("div", "jira-row");
       row.append(el("span", "jira-summary", "🏁 " + s.nama));
-      row.append(el("span", "jira-status", "ditutup " + (s.selesaiPada ? fmtAgo(s.selesaiPada) : "")));
+      row.append(el("span", "jira-status", "closed " + (s.selesaiPada ? fmtAgo(s.selesaiPada) : "")));
       const del = el("button", "icon-btn danger", "✕");
       del.title = "Hapus dari riwayat"; del.setAttribute("aria-label", del.title);
       del.onclick = () => {
@@ -521,18 +521,18 @@ function renderSprintBar() {
   det.open = sprintFormOpen;
   det.addEventListener("toggle", () => { sprintFormOpen = det.open; });
   const sum = document.createElement("summary");
-  sum.textContent = sprints.list.length ? "+ sprint baru" :
-    "+ buat sprint (kelompokkan tiket + tanggal selesai — makin mepet, skor tiketnya makin naik)";
+  sum.textContent = sprints.list.length ? "+ new sprint" :
+    "+ create sprint (kelompokkan tiket + tanggal selesai — makin mepet, skor tiketnya makin naik)";
   det.append(sum);
   const editor = el("div", "routine-editor");
   const form = el("div", "routine-form");
   const nama = document.createElement("input");
   nama.type = "text"; nama.id = "sprint-nama";
-  nama.placeholder = "Nama sprint… mis. “Sprint 12”";
+  nama.placeholder = "Sprint name… mis. “Sprint 12”";
   const tgl = document.createElement("input");
   tgl.type = "date"; tgl.id = "sprint-tgl";
   tgl.title = "Tanggal sprint berakhir";
-  const buat = el("button", "btn-solid", "Buat sprint");
+  const buat = el("button", "btn-solid", "Create sprint");
   const buatSprint = () => {
     const n = nama.value.trim();
     if (!n || !tgl.value) { alert("Isi nama sprint dan tanggal selesainya."); return; }
@@ -568,17 +568,17 @@ function renderJiraInbox() {
 
   const sec = el("section", "section s-jira");
   const head = el("div", "section-head");
-  head.append(el("h2", null, "Tiket Jira — belum diambil"));
+  head.append(el("h2", null, "Jira tickets — not taken"));
   if (jira.items.length) {
     head.append(el("span", "count mono",
       q ? shown.length + "/" + jira.items.length : String(jira.items.length)));
   }
   if (jiraProxy()) {
-    const refresh = el("button", "clear-done", jiraSyncing ? "menarik…" : "⟳ tarik sekarang");
+    const refresh = el("button", "clear-done", jiraSyncing ? "fetching…" : "⟳ sync now");
     refresh.onclick = () => syncJira(true);
     head.append(refresh);
     if (jiraSyncMsg && !jiraSyncing) head.append(el("span", "count", jiraSyncMsg));
-    else if (jira.lastSync && !jiraSyncing) head.append(el("span", "count mono", "sinkron " + fmtAgo(jira.lastSync)));
+    else if (jira.lastSync && !jiraSyncing) head.append(el("span", "count mono", "synced " + fmtAgo(jira.lastSync)));
   }
   sec.append(head);
 
@@ -602,15 +602,15 @@ function renderJiraInbox() {
     const buka = (k) => (k in bulanBuka ? bulanBuka[k] : bulanDefaultBuka);
     if (kunci.length > 1) {
       const semuaTerbuka = kunci.every(buka);
-      const lipat = el("button", "clear-done", semuaTerbuka ? "⊟ lipat semua" : "⊞ buka semua");
+      const lipat = el("button", "clear-done", semuaTerbuka ? "⊟ collapse all" : "⊞ expand all");
       lipat.onclick = () => { bulanBuka = {}; bulanDefaultBuka = !semuaTerbuka; render(); };
       head.append(lipat);
     }
     for (const k of kunci) {
       const grup = perBulan.get(k).sort((a, b) => tglItem(b).localeCompare(tglItem(a)));
-      const label = k === "0000-00" ? "Tanpa tanggal"
+      const label = k === "0000-00" ? "No date"
         : NAMA_BULAN[Number(k.slice(5, 7)) - 1] + " " + k.slice(0, 4) +
-          (k === bulanIni ? " — bulan ini" : "");
+          (k === bulanIni ? " — this month" : "");
       const det2 = document.createElement("details");
       det2.className = "bulan-wrap";
       // saat mencari semua terbuka; selain itu ikut ingatan/default
@@ -633,7 +633,7 @@ function renderJiraInbox() {
       }
       row.append(el("span", "jira-summary", item.summary));
       if (item.status) row.append(el("span", "jira-status", item.status));
-      const take = el("button", "btn-line", "＋ Ambil");
+      const take = el("button", "btn-line", "＋ Take");
       take.title = "Pindahkan ke papan utama sebagai tugas";
       take.onclick = () => { takeJiraItem(item); render(); };
       row.append(take);
@@ -667,7 +667,7 @@ function renderJiraInbox() {
   det.open = jiraImportOpen;
   det.addEventListener("toggle", () => { jiraImportOpen = det.open; });
   const sum = document.createElement("summary");
-  sum.textContent = jira.items.length ? "impor tiket" : "+ impor tiket (tempel daftar dari Claude / Jira)";
+  sum.textContent = jira.items.length ? "import tickets" : "+ import tickets (tempel daftar dari Claude / Jira)";
   det.append(sum);
   const editor = el("div", "routine-editor");
   const ta = document.createElement("textarea");
@@ -678,7 +678,7 @@ function renderJiraInbox() {
   site.type = "url"; site.value = jira.site || "";
   site.placeholder = "https://perusahaan.atlassian.net";
   site.title = "Alamat Jira — dipakai untuk membuat link tiket";
-  const impBtn = el("button", "btn-solid", "Impor");
+  const impBtn = el("button", "btn-solid", "Import");
   impBtn.onclick = () => {
     jira.site = site.value.trim();
     const res = importJira(ta.value);
@@ -701,7 +701,7 @@ function renderJiraInbox() {
     !tasks.some((t) => t.status !== "selesai" && t.text.includes(k)));
   if (terkunci.length) {
     const pulih = el("button", "clear-done",
-      "♻ pulihkan " + terkunci.length + " tiket yang pernah dibuang/dihapus");
+      "♻ restore " + terkunci.length + " dismissed tickets");
     pulih.title = "Cabut dari daftar abaikan: " + terkunci.join(", ");
     pulih.onclick = () => {
       if (!confirm("Pulihkan " + terkunci.length + " tiket ini supaya bisa muncul lagi di tab Jira?\n\n" + terkunci.join(", "))) return;

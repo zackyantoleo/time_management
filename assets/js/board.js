@@ -10,28 +10,28 @@ function renderFocus() {
   if (t) {
     card.classList.remove("empty");
     const dot = el("span", "dot"); dot.setAttribute("aria-hidden", "true");
-    eyebrow.append(dot, "Sedang dikerjakan");
+    eyebrow.append(dot, "In progress");
     card.append(eyebrow);
     const ftext = el("div", "focus-text");
     ftext.append(linkify(t.text));
     card.append(ftext);
     const meta = el("div", "focus-meta mono");
-    meta.textContent = "fokus sejak " + fmtAgo(t.focusedAt) +
-      (t.due ? " · tenggat: " + fmtDue(t.due) : "");
+    meta.textContent = "started " + fmtAgo(t.focusedAt) +
+      (t.due ? " · due: " + fmtDue(t.due) : "");
     card.append(meta);
     const actions = el("div", "focus-actions");
-    const doneBtn = el("button", "btn-solid", "✓ Selesai");
+    const doneBtn = el("button", "btn-solid", "✓ Done");
     doneBtn.onclick = () => { completeTask(t); render(); };
-    const pauseBtn = el("button", "btn-line", "Tunda — balikin ke daftar");
+    const pauseBtn = el("button", "btn-line", "Pause — back to list");
     pauseBtn.onclick = () => { stopFocus(t); t.status = "aktif"; save(); render(); };
-    const intBtn = el("button", "btn-line", "⚡ Ada interupsi? Catat dulu");
+    const intBtn = el("button", "btn-line", "⚡ Interruption? Note it");
     intBtn.title = "Catat interupsinya di kolom bawah, lalu tekan ▶ padanya kalau harus dikerjakan sekarang — tugas ini otomatis masuk tumpukan dan kembali difokuskan begitu interupsinya selesai.";
     intBtn.onclick = () => { $("#cap-text").focus(); };
     actions.append(doneBtn, pauseBtn, intBtn);
     card.append(actions);
   } else {
     card.classList.add("empty");
-    eyebrow.textContent = "Sedang dikerjakan";
+    eyebrow.textContent = "In progress";
     card.append(eyebrow);
     card.append(el("div", "focus-text", daftarTumpukan().length
       ? "Fokus kosong, tapi masih ada kerjaan tertunda di tumpukan — lanjutkan salah satunya di bawah."
@@ -45,13 +45,13 @@ function renderFocus() {
   if (tumpukan.length) {
     const stack = el("div", "focus-stack");
     stack.append(el("div", "stack-label",
-      "⏸ Tertunda karena interupsi (" + tumpukan.length + ")"));
+      "⏸ Paused by interruption (" + tumpukan.length + ")"));
     for (const x of tumpukan) {
       const row = el("div", "stack-row");
       const tx = el("span", "stack-text");
       tx.append(linkify(x.text));
       row.append(tx);
-      row.append(el("span", "stack-meta mono", "tertunda " + fmtAgo(x.ditumpuk)));
+      row.append(el("span", "stack-meta mono", "paused " + fmtAgo(x.ditumpuk)));
       const lanjut = el("button", "icon-btn", "▶");
       lanjut.title = "Lanjutkan mengerjakan ini";
       lanjut.setAttribute("aria-label", lanjut.title);
@@ -103,7 +103,7 @@ function taskEditor(t) {
   const ed = el("div", "task-editor");
 
   const grpNama = el("div", "cap-group");
-  grpNama.append(el("span", "cap-label", "Judul"));
+  grpNama.append(el("span", "cap-label", "Title"));
   const namaIn = document.createElement("input");
   namaIn.type = "text"; namaIn.value = t.text; namaIn.className = "task-edit-nama";
   const simpanNama = () => { const v = namaIn.value.trim(); if (v && v !== t.text) { t.text = v; save(); render(); } };
@@ -113,7 +113,7 @@ function taskEditor(t) {
   ed.append(grpNama);
 
   const grpPrio = el("div", "cap-group");
-  grpPrio.append(el("span", "cap-label", "Prioritas"));
+  grpPrio.append(el("span", "cap-label", "Priority"));
   for (const p of PRIORITIES) {
     const chip = el("button", "chip pr-" + p.id, PR_LABEL[p.id]);
     chip.setAttribute("aria-pressed", String(t.priority === p.id));
@@ -123,7 +123,7 @@ function taskEditor(t) {
   ed.append(grpPrio);
 
   const grpDue = el("div", "cap-group");
-  grpDue.append(el("span", "cap-label", "Kapan"));
+  grpDue.append(el("span", "cap-label", "When"));
   const kind = dueKind(t);
   const dueChip = (label, k, setter) => {
     const chip = el("button", "chip time", label);
@@ -132,9 +132,9 @@ function taskEditor(t) {
     return chip;
   };
   grpDue.append(
-    dueChip("Bebas", "none", () => null),
-    dueChip("Hari ini", "today", tenggatHariIni),
-    dueChip("Besok pagi", "tomorrow-am", tenggatBesokPagi),
+    dueChip("Anytime", "none", () => null),
+    dueChip("Today", "today", tenggatHariIni),
+    dueChip("Tomorrow AM", "tomorrow-am", tenggatBesokPagi),
   );
   const custom = document.createElement("input");
   custom.type = "datetime-local";
@@ -145,8 +145,8 @@ function taskEditor(t) {
   ed.append(grpDue);
 
   const grpUsaha = el("div", "cap-group");
-  grpUsaha.append(el("span", "cap-label", "Usaha"));
-  const usahaOpts = [["", "—"], ["S", "⚡ ≤1 jam"], ["M", "⏱ ±½ hari"], ["L", "⏳ ≥1 hari"]];
+  grpUsaha.append(el("span", "cap-label", "Effort"));
+  const usahaOpts = [["", "—"], ["S", "⚡ ≤1 h"], ["M", "⏱ ±½ day"], ["L", "⏳ ≥1 day"]];
   for (const [val, label] of usahaOpts) {
     const chip = el("button", "chip sc", label);
     chip.setAttribute("aria-pressed", String((t.usaha || "") === val));
@@ -158,7 +158,7 @@ function taskEditor(t) {
   // Sprint diatur lewat tombol 🏃 di baris tugas (menu pilih sprint), bukan
   // di sini — biar panel edit tetap ringkas.
 
-  const tutup = el("button", "btn-line", "Selesai edit");
+  const tutup = el("button", "btn-line", "Done");
   tutup.onclick = () => { editingTaskId = null; render(); };
   ed.append(tutup);
   return ed;
@@ -206,9 +206,9 @@ function taskRow(t) {
   }
   if (t.status !== "selesai") {
     meta.append(el("span", "pr-tag pr-" + t.priority, PR_LABEL[t.priority]));
-    meta.append(el("span", "effort-badge mono", "skor " + skorTugas(t) + "/10"));
+    meta.append(el("span", "effort-badge mono", "score " + skorTugas(t) + "/10"));
     if (t.usaha) {
-      const usahaLabel = { S: "⚡ ≤1 jam", M: "⏱ ±½ hari", L: "⏳ ≥1 hari" };
+      const usahaLabel = { S: "⚡ ≤1 h", M: "⏱ ±½ day", L: "⏳ ≥1 day" };
       meta.append(el("span", "effort-badge", usahaLabel[t.usaha]));
     }
     const sprint = t.sprintId ? sprintById(t.sprintId) : null;
@@ -228,8 +228,8 @@ function taskRow(t) {
       meta.append(bb);
     }
   }
-  meta.append(el("span", "mono", "dicatat " + fmtStempel(t.createdAt)));
-  if (t.status === "selesai" && t.doneAt) meta.append(el("span", "mono", "selesai " + fmtAgo(t.doneAt)));
+  meta.append(el("span", "mono", "added " + fmtStempel(t.createdAt)));
+  if (t.status === "selesai" && t.doneAt) meta.append(el("span", "mono", "done " + fmtAgo(t.doneAt)));
   body.append(meta);
 
   const actions = el("div", "task-actions");
@@ -308,7 +308,7 @@ function renderSections() {
   const sec = el("section", "section s-today");
   sec.style.marginBottom = "18px";
   const head = el("div", "section-head");
-  head.append(el("h2", null, q ? "Hasil pencarian" : "🎯 Kerjakan hari ini"));
+  head.append(el("h2", null, q ? "Search results" : "🎯 Do today"));
   if (hariIni.length) head.append(el("span", "count mono", String(hariIni.length)));
   sec.append(head);
   if (hariIni.length) {
@@ -330,7 +330,7 @@ function renderSections() {
     det.open = nantiOpen;
     det.addEventListener("toggle", () => { nantiOpen = det.open; });
     const sum = document.createElement("summary");
-    sum.append("Nanti — belum perlu hari ini ", el("span", "count mono", String(nanti.length)));
+    sum.append("Later — not needed today ", el("span", "count mono", String(nanti.length)));
     det.append(sum);
     const ul = el("ul", "tasks");
     nanti.forEach((t) => ul.append(taskRow(t)));
@@ -345,8 +345,8 @@ function renderSections() {
     det.className = "done-wrap section s-selesai";
     det.style.marginTop = "6px";
     const sum = document.createElement("summary");
-    sum.append("Selesai ", el("span", "count mono", String(done.length)));
-    const clear = el("button", "clear-done", "bersihkan");
+    sum.append("Done ", el("span", "count mono", String(done.length)));
+    const clear = el("button", "clear-done", "clear");
     clear.onclick = (e) => {
       e.preventDefault();
       if (confirm("Hapus semua " + done.length + " catatan yang sudah selesai?")) {

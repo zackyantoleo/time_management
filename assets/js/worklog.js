@@ -2,7 +2,7 @@
 // dan kirim worklog ke Jira lewat proxy (tombol "→ Jira").
 "use strict";
 
-const PR_LABEL = { urgent: "urgent", tinggi: "tinggi", sedang: "sedang", rendah: "rendah", rutin: "rutin", sprint: "sprint" };
+const PR_LABEL = { urgent: "urgent", tinggi: "high", sedang: "medium", rendah: "low", rutin: "routine", sprint: "sprint" };
 
 // Badge menit fokus. Saat editable (belum terkirim ke Jira & proxy aktif),
 // jadi tombol: klik → input angka, supaya durasi worklog bisa dikoreksi atau
@@ -11,9 +11,9 @@ const PR_LABEL = { urgent: "urgent", tinggi: "tinggi", sedang: "sedang", rendah:
 function minsBadge(e, editable) {
   const m = fmtMins(e.mins);
   if (!editable) {
-    return m ? el("span", "log-mins mono", "fokus ±" + m) : document.createDocumentFragment();
+    return m ? el("span", "log-mins mono", "focus ±" + m) : document.createDocumentFragment();
   }
-  const b = el("button", "log-mins mono", m ? "±" + m + " ✎" : "＋ menit");
+  const b = el("button", "log-mins mono", m ? "±" + m + " ✎" : "＋ min");
   b.title = "Ubah durasi — dipakai saat worklog dikirim ke Jira";
   b.onclick = () => {
     const input = document.createElement("input");
@@ -84,7 +84,7 @@ function jiraJamBadge(dateStr) {
   const total = d ? d.total : 0;
   const kurang = total < TARGET_LOG_JAM * 3600;
   const b = el("span", "jira-jam mono" + (kurang ? " kurang" : ""),
-    "☁ Jira " + (fmtMins(Math.round(total / 60)) || "0 j"));
+    "☁ Jira " + (fmtMins(Math.round(total / 60)) || "0 h"));
   const rincian = d && d.items.length
     ? d.items.map((x) => x.key + " " + (fmtMins(Math.round(x.seconds / 60)) || "<1 mnt")).join(" · ")
     : "belum ada worklog";
@@ -134,7 +134,7 @@ function jiraRowLog(j) {
   } else t.append(j.key + " ");
   t.append(teksEntriJira(j));
   li.append(t);
-  li.append(el("span", "log-mins mono", "±" + (fmtMins(Math.round(j.seconds / 60)) || "<1 mnt")));
+  li.append(el("span", "log-mins mono", "±" + (fmtMins(Math.round(j.seconds / 60)) || "<1 min")));
   li.append(el("span", "log-mins mono", "☁ Jira"));
   return li;
 }
@@ -153,10 +153,10 @@ function dayLogText(dateStr, entries, jEntri) {
     const e = g.e;
     let line = "- " + fmtClock(new Date(e.ts)) + " " + e.text + " [" + PR_LABEL[e.priority] + "]";
     const m = fmtMins(e.mins);
-    if (m) line += " (fokus ±" + m + ")";
+    if (m) line += " (focus ±" + m + ")";
     return line;
   });
-  return "Log kerja " + fmtDayName(dateStr) + "\n" + lines.join("\n");
+  return "Work log " + fmtDayName(dateStr) + "\n" + lines.join("\n");
 }
 
 /* ---------- filter tanggal ----------
@@ -278,9 +278,9 @@ function renderLogFilter(wrap) {
   const bar = el("div", "log-filter cap-group");
   bar.setAttribute("role", "group");
   bar.setAttribute("aria-label", "Filter tanggal log");
-  bar.append(el("span", "cap-label", "Tampilkan"));
+  bar.append(el("span", "cap-label", "Show"));
   // for (const [kind, label] of [["7", "7 hari terakhir"], ["30", "30 hari"], ["semua", "Semua"]]) {
-  for (const [kind, label] of [["7", "7 hari terakhir"], ["30", "30 hari"]]) {
+  for (const [kind, label] of [["7", "Last 7 days"], ["30", "30 days"]]) {
     const chip = el("button", "chip time", label);
     chip.setAttribute("aria-pressed", String(logFilter.kind === kind));
     chip.onclick = () => { logFilter = { kind, dari: "", sampai: "" }; render(); };
@@ -289,7 +289,7 @@ function renderLogFilter(wrap) {
   // Satu kontrol rentang: buka kalender, klik tanggal awal lalu akhir.
   const rentang = el("button", "chip time", logFilter.kind === "custom"
     ? "📅 " + fmtRentangLog(logFilter.dari, logFilter.sampai)
-    : "📅 rentang…");
+    : "📅 range…");
   rentang.setAttribute("aria-pressed", String(logFilter.kind === "custom"));
   rentang.title = "Pilih rentang tanggal — klik tanggal awal, lalu tanggal akhir";
   rentang.onclick = (ev) => { ev.stopPropagation(); bukaKalender(rentang); };
@@ -328,13 +328,13 @@ function renderWorklog() {
   if (jiraProxy()) {
     const bar = el("div", "log-jira-bar");
     const ref = el("button", "clear-done",
-      lapJiraLoading ? "menarik laporan Jira…" : "⟳ segarkan laporan Jira");
+      lapJiraLoading ? "fetching Jira report…" : "⟳ refresh Jira report");
     ref.disabled = lapJiraLoading;
     ref.onclick = () => tarikLaporanJira(true);
     bar.append(ref);
     if (lapJiraMsg) bar.append(el("span", "count", lapJiraMsg));
     else if (lapJira) bar.append(el("span", "count mono",
-      "target " + TARGET_LOG_JAM + " j/hari · laporan " + fmtAgo(new Date(lapJiraAt).toISOString())));
+      "target " + TARGET_LOG_JAM + " h/day · report " + fmtAgo(new Date(lapJiraAt).toISOString())));
     wrap.append(bar);
   }
 
@@ -363,12 +363,12 @@ function renderWorklog() {
     const head = el("div", "log-day-head");
     head.append(el("h3", null, fmtDayHeading(dateStr)));
     const totalMins = Math.round(entries.reduce((s, e) => s + (e.mins || 0), 0));
-    let sum = entries.length ? entries.length + " tugas" : jEntri.length + " worklog Jira";
-    if (fmtMins(totalMins)) sum += " · fokus " + fmtMins(totalMins);
+    let sum = entries.length ? entries.length + " tasks" : jEntri.length + " Jira worklogs";
+    if (fmtMins(totalMins)) sum += " · focus " + fmtMins(totalMins);
     head.append(el("span", "log-sum mono", sum));
     const jb = jiraJamBadge(dateStr);
     if (jb) head.append(jb);
-    const copyBtn = el("button", "btn-ghost", "Salin");
+    const copyBtn = el("button", "btn-ghost", "Copy");
     copyBtn.title = "Salin log hari ini sebagai teks";
     copyBtn.onclick = () => copyText(dayLogText(dateStr, entries, jEntri), copyBtn);
     head.append(copyBtn);
@@ -411,7 +411,7 @@ function renderWorklog() {
           (bau ? " (" + bau.summary + ")" : "") +
           " — durasi: " + (e.mins ? "±" + Math.round(e.mins) + " mnt" : "1 mnt minimum, klik badge menit untuk mengubah");
         send.onclick = async () => {
-          send.disabled = true; send.textContent = "mengirim…";
+          send.disabled = true; send.textContent = "sending…";
           try {
             const r = await fetch(jiraProxy() + "/worklog", {
               method: "POST",

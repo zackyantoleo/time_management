@@ -40,12 +40,12 @@ function fmtDue(iso) {
   const tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
   if (d < now) {
     const mins = Math.round((now - d) / 60000);
-    if (mins < 60) return "terlambat " + mins + " mnt";
-    if (mins < 60 * 24) return "terlambat " + Math.round(mins / 60) + " jam";
-    return "terlambat " + Math.round(mins / 1440) + " hari";
+    if (mins < 60) return "late " + mins + " min";
+    if (mins < 60 * 24) return "late " + Math.round(mins / 60) + " h";
+    return "late " + Math.round(mins / 1440) + " d";
   }
-  if (sameDay(d, now)) return "hari ini " + fmtClock(d);
-  if (sameDay(d, tomorrow)) return "besok " + fmtClock(d);
+  if (sameDay(d, now)) return "today " + fmtClock(d);
+  if (sameDay(d, tomorrow)) return "tomorrow " + fmtClock(d);
   return HARI[d.getDay()] + " " + d.getDate() + "/" + (d.getMonth() + 1) + " " + fmtClock(d);
 }
 // Stempel waktu absolut ("kapan"), bukan relatif ("berapa lama lalu") —
@@ -53,19 +53,19 @@ function fmtDue(iso) {
 function fmtStempel(iso) {
   const d = new Date(iso), now = new Date();
   const kemarin = new Date(now); kemarin.setDate(kemarin.getDate() - 1);
-  if (sameDay(d, now)) return "hari ini " + fmtClock(d);
-  if (sameDay(d, kemarin)) return "kemarin " + fmtClock(d);
+  if (sameDay(d, now)) return "today " + fmtClock(d);
+  if (sameDay(d, kemarin)) return "yesterday " + fmtClock(d);
   return HARI[d.getDay()] + " " + d.getDate() + "/" + (d.getMonth() + 1) + " " + fmtClock(d);
 }
 function fmtAgo(iso) {
   const mins = Math.round((Date.now() - new Date(iso)) / 60000);
-  if (mins < 1) return "baru saja";
-  if (mins < 60) return mins + " mnt lalu";
+  if (mins < 1) return "just now";
+  if (mins < 60) return mins + " min ago";
   const h = Math.floor(mins / 60);
   // Selalu berakhiran "lalu" — tanpa itu, "selesai 2 jam 0 mnt" terbaca
   // seperti durasi, padahal maksudnya "2 jam yang lalu".
-  if (h < 24) return h + " jam" + (mins % 60 ? " " + (mins % 60) + " mnt" : "") + " lalu";
-  return Math.floor(h / 24) + " hari lalu";
+  if (h < 24) return h + " h" + (mins % 60 ? " " + (mins % 60) + " min" : "") + " ago";
+  return Math.floor(h / 24) + " d ago";
 }
 
 const HARI_PENDEK = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
@@ -79,20 +79,20 @@ function fmtDayName(dateStr) {
 function fmtDayHeading(dateStr) {
   const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
   let label = fmtDayName(dateStr);
-  if (dateStr === localDateStr(new Date())) label = "Hari ini — " + label;
-  else if (dateStr === localDateStr(yesterday)) label = "Kemarin — " + label;
+  if (dateStr === localDateStr(new Date())) label = "Today — " + label;
+  else if (dateStr === localDateStr(yesterday)) label = "Yesterday — " + label;
   return label;
 }
 function fmtMins(mins) {
   if (!mins || mins < 1) return null;
-  if (mins < 60) return mins + " mnt";
-  return Math.floor(mins / 60) + " j " + (mins % 60) + " mnt";
+  if (mins < 60) return mins + " min";
+  return Math.floor(mins / 60) + " h " + (mins % 60) + " min";
 }
 
 function copyText(text, btn) {
   const done = () => {
     const old = btn.textContent;
-    btn.textContent = "Tersalin ✓";
+    btn.textContent = "Copied ✓";
     setTimeout(() => { btn.textContent = old; }, 1500);
   };
   if (navigator.clipboard && navigator.clipboard.writeText) {
