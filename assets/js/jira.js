@@ -555,7 +555,8 @@ function sprintPtsUntukBadge(s) { return sprintPts({ sprintId: s.id }); }
 
 /* ---------- Jira inbox rendering (tab sendiri: #jiraview) ---------- */
 let jiraImportOpen = false;
-let bulanBuka = {}; // per grup bulan; default hanya bulan berjalan terbuka
+let bulanBuka = {};        // ingatan buka/tutup per grup bulan
+let bulanDefaultBuka = true; // default semua terbuka; diubah tombol lipat/buka semua
 function renderJiraInbox() {
   const wrap = $("#jiraview");
   wrap.innerHTML = "";
@@ -597,15 +598,23 @@ function renderJiraInbox() {
       perBulan.get(k).push(item);
     }
     const bulanIni = localDateStr(new Date()).slice(0, 7);
-    for (const k of [...perBulan.keys()].sort().reverse()) {
+    const kunci = [...perBulan.keys()].sort().reverse();
+    const buka = (k) => (k in bulanBuka ? bulanBuka[k] : bulanDefaultBuka);
+    if (kunci.length > 1) {
+      const semuaTerbuka = kunci.every(buka);
+      const lipat = el("button", "clear-done", semuaTerbuka ? "⊟ lipat semua" : "⊞ buka semua");
+      lipat.onclick = () => { bulanBuka = {}; bulanDefaultBuka = !semuaTerbuka; render(); };
+      head.append(lipat);
+    }
+    for (const k of kunci) {
       const grup = perBulan.get(k).sort((a, b) => tglItem(b).localeCompare(tglItem(a)));
       const label = k === "0000-00" ? "Tanpa tanggal"
         : NAMA_BULAN[Number(k.slice(5, 7)) - 1] + " " + k.slice(0, 4) +
           (k === bulanIni ? " — bulan ini" : "");
       const det2 = document.createElement("details");
       det2.className = "bulan-wrap";
-      // saat mencari semua terbuka; selain itu ingat pilihan, default bulan ini
-      det2.open = q ? true : (k in bulanBuka ? bulanBuka[k] : k === bulanIni);
+      // saat mencari semua terbuka; selain itu ikut ingatan/default
+      det2.open = q ? true : buka(k);
       det2.addEventListener("toggle", () => { if (!q) bulanBuka[k] = det2.open; });
       const bl = document.createElement("summary");
       bl.className = "bulan-label";
