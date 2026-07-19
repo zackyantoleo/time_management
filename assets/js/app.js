@@ -4,10 +4,22 @@
 "use strict";
 
 let view = "papan"; // papan | jira | log
-let searchQuery = ""; // filter untuk view yang sedang aktif
+// Pencarian per tab — query Board tidak ikut memfilter Jira/Log, dan
+// sebaliknya. Kotaknya satu; isinya mengikuti tab aktif.
+let searchPerTab = { papan: "", jira: "", log: "" };
+let searchQuery = ""; // query tab aktif (dibaca para renderer)
+const SEARCH_PLACEHOLDER = {
+  papan: "Search tasks…",
+  jira: "Search tickets / sprints / topics…",
+  log: "Search work log…",
+};
 
 function setView(v) {
   view = v;
+  searchQuery = searchPerTab[v] || "";
+  const s = $("#search");
+  s.value = searchQuery;
+  s.placeholder = SEARCH_PLACEHOLDER[v];
   $("#tab-papan").setAttribute("aria-selected", String(v === "papan"));
   $("#tab-jira").setAttribute("aria-selected", String(v === "jira"));
   $("#tab-log").setAttribute("aria-selected", String(v === "log"));
@@ -34,8 +46,10 @@ function initApp() {
   $("#tab-log").onclick = () => setView("log");
   $("#search").addEventListener("input", (e) => {
     searchQuery = e.target.value;
+    searchPerTab[view] = searchQuery;
     render();
   });
+  $("#search").placeholder = SEARCH_PLACEHOLDER[view];
   initCapture();
   initReminders();
   initBackup();
