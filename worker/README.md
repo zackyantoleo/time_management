@@ -70,20 +70,26 @@ worklog (durasi diambil dari waktu fokus).
 
 ## Sinkronisasi antar perangkat (opsional, gratis)
 
-Supaya data Catet di laptop dan HP sama, Worker yang sama bisa jadi tempat
-penitipan state lewat Cloudflare KV:
+Supaya data Catet di laptop dan HP sama, Worker yang sama jadi tempat
+penitipan state. Penyimpanannya **Cloudflare D1** (SQLite; kuota tulis
+gratis 100rb/hari — cukup untuk banyak pengguna):
 
 ```bash
 cd worker
-wrangler kv namespace create CATET_KV
+wrangler d1 create catet-db
 ```
 
-Salin `id` dari output-nya, buka `wrangler.toml`, buka komentar blok
-`[[kv_namespaces]]` dan tempel id-nya, lalu:
+Salin `database_id` dari output-nya, buka `wrangler.toml`, buka komentar
+blok `[[d1_databases]]` dan tempel id-nya, lalu:
 
 ```bash
 wrangler deploy
 ```
+
+Tabelnya dibuat otomatis saat pertama dipakai. Instalasi lama yang memakai
+KV tidak perlu langkah ekstra: data di KV dimigrasi otomatis ke D1 saat
+akses pertama, dan setelah itu blok `[[kv_namespaces]]` di `wrangler.toml`
+boleh dihapus. (Tanpa D1, Worker tetap jalan memakai KV seperti dulu.)
 
 Selesai — tidak ada pengaturan tambahan di aplikasi (Catet memakai alamat
 proxy bawaan). Status sinkron tampil kecil di footer
