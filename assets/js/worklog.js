@@ -57,7 +57,7 @@ async function tarikLaporanJira(paksa) {
   try {
     const to = localDateStr(new Date());
     const from = localDateStr(new Date(Date.now() - (LAPORAN_HARI - 1) * 86400000));
-    const r = await fetch(jiraProxy() + "/worklog-report?from=" + from + "&to=" + to);
+    const r = await fetch(jiraProxy() + "/worklog-report?from=" + from + "&to=" + to, { headers: headerAkses() });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
     // Bentuk tak dikenal (mis. Worker versi lama tanpa endpoint ini) tidak
@@ -415,7 +415,7 @@ function renderWorklog() {
           try {
             const r = await fetch(jiraProxy() + "/worklog", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: { "Content-Type": "application/json", ...headerAkses() },
               body: JSON.stringify({
                 key: target, started: e.ts,
                 timeSpentSeconds: Math.max(60, (e.mins || 0) * 60),

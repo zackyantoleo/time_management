@@ -20,8 +20,8 @@ const CORS = {
   "Access-Control-Allow-Origin": "*",
   // PUT wajib ada di sini — sinkronisasi state pakai PUT /state; tanpa PUT,
   // preflight CORS gagal dan browser memblokir permintaannya.
-  "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, X-Catet-Key, X-Admin-Key",
   "Access-Control-Max-Age": "86400",
 };
 
@@ -56,21 +56,39 @@ function toJiraDate(iso) {
   return d.toISOString().replace("Z", "+0000");
 }
 
-// Query D1 dengan auto-buat tabel saat pertama dipakai (tanpa langkah
-// migrasi manual). mode: "first" | "run".
-const SKEMA_STATES =
-  "CREATE TABLE IF NOT EXISTS states (user_id TEXT PRIMARY KEY, blob TEXT NOT NULL, updated_at TEXT NOT NULL)";
-async function d1State(env, sql, params, mode) {
+// Query D1 dengan auto-buat tabel saat pertama dipakai. mode: first|run|all.
+const SKEMA = [
+  "CREATE TABLE IF NOT EXISTS states (user_id TEXT PRIMARY KEY, blob TEXT NOT NULL, updated_at TEXT NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL, jira_site TEXT, jira_email TEXT, jira_token TEXT, created_at TEXT NOT NULL)",
+];
+async function d1q(env, sql, params, mode) {
   const jalan = () => {
     const st = env.CATET_DB.prepare(sql).bind(...params);
-    return mode === "first" ? st.first() : st.run();
+    return mode === "first" ? st.first() : mode === "all" ? st.all() : st.run();
   };
   try { return await jalan(); }
   catch (e) {
     if (!/no such table/i.test(String(e && e.message))) throw e;
-    await env.CATET_DB.exec(SKEMA_STATES);
+    for (const s of SKEMA) await env.CATET_DB.exec(s);
     return await jalan();
   }
+}
+
+async function sha256hex(s) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+function kodeAcak() {
+  return [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+// Pemilik kode akses di header X-Catet-Key, atau null.
+async function userDariKode(env, request) {
+  if (!env.CATET_DB) return null;
+  const kode = (request.headers.get("X-Catet-Key") || "").trim();
+  if (!kode) return null;
+  return await d1q(env,
+    "SELECT id, name, jira_site, jira_email, jira_token FROM users WHERE token_hash = ?1",
+    [await sha256hex(kode)], "first");
 }
 
 export default {
@@ -80,9 +98,51 @@ export default {
     if (!env.JIRA_SITE || !env.JIRA_EMAIL || !env.JIRA_API_TOKEN) {
       return json({ error: "Worker belum dikonfigurasi — set secrets JIRA_SITE, JIRA_EMAIL, JIRA_API_TOKEN." }, 500);
     }
+    const url0 = new URL(request.url);
+
+    // /admin/users — kelola kode akses (POST buat, GET daftar, DELETE hapus).
+    // Dilindungi ADMIN_KEY sendiri & dipakai lewat curl (tanpa Origin), jadi
+    // sengaja SEBELUM pagar originOk.
+    if (url0.pathname === "/admin/users" || url0.pathname.startsWith("/admin/users/")) {
+      if (!env.ADMIN_KEY) return json({ error: "Set secret ADMIN_KEY dulu (wrangler secret put ADMIN_KEY)." }, 500);
+      if (request.headers.get("X-Admin-Key") !== env.ADMIN_KEY) return json({ error: "X-Admin-Key salah." }, 401);
+      if (!env.CATET_DB) return json({ error: "Multi-user butuh D1 (lihat worker/README.md)." }, 500);
+      if (request.method === "POST" && url0.pathname === "/admin/users") {
+        let b; try { b = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
+        const name = (b && typeof b.name === "string" ? b.name.trim() : "").slice(0, 60);
+        if (!name) return json({ error: "Field name wajib." }, 400);
+        const id = crypto.randomUUID();
+        const code = kodeAcak();
+        await d1q(env, "INSERT INTO users (id, name, token_hash, created_at) VALUES (?1, ?2, ?3, ?4)",
+          [id, name, await sha256hex(code), new Date().toISOString()], "run");
+        return json({ id, name, code }); // kode hanya ditampilkan sekali ini
+      }
+      if (request.method === "GET" && url0.pathname === "/admin/users") {
+        const rs = await d1q(env,
+          "SELECT id, name, created_at, jira_site, CASE WHEN jira_token IS NULL OR jira_token = '' THEN 0 ELSE 1 END AS punya_jira FROM users ORDER BY created_at",
+          [], "all");
+        return json({ users: (rs && rs.results) || [] });
+      }
+      if (request.method === "DELETE" && url0.pathname.startsWith("/admin/users/")) {
+        const id = decodeURIComponent(url0.pathname.slice("/admin/users/".length));
+        await d1q(env, "DELETE FROM states WHERE user_id = ?1", [id], "run");
+        await d1q(env, "DELETE FROM users WHERE id = ?1", [id], "run");
+        return json({ ok: true });
+      }
+      return json({ error: "Rute admin tidak dikenal." }, 404);
+    }
+
     if (!originOk(request.headers.get("Origin"), env)) {
       return json({ error: "Origin tidak diizinkan untuk mengakses proxy ini." }, 403);
     }
+
+    // Identitas: kode akses → user. Saat REQUIRE_AUTH=1, semua endpoint data
+    // wajib kode valid; tanpa mode itu, tanpa kode = user "default" (mode lama).
+    const user = await userDariKode(env, request);
+    if (env.REQUIRE_AUTH === "1" && !user) {
+      return json({ error: "Kode akses tidak valid atau belum diisi — masukkan kode dari admin (tab Jira → Access)." }, 401);
+    }
+    const uid = user ? user.id : "default";
 
     const site = env.JIRA_SITE.trim().replace(/\/+$/, "");
     const authHeaders = {
@@ -244,14 +304,13 @@ export default {
       if (!env.CATET_DB && !env.CATET_KV) {
         return json({ error: "Storage belum dikonfigurasi — buat D1 (wrangler d1 create catet-db), isi database_id di wrangler.toml, deploy ulang. Lihat worker/README.md." }, 500);
       }
-      const uid = "default"; // per-user via kode akses menyusul
       if (request.method === "GET") {
         if (env.CATET_DB) {
-          let row = await d1State(env, "SELECT blob FROM states WHERE user_id = ?1", [uid], "first");
-          if (!row && env.CATET_KV) {
+          let row = await d1q(env, "SELECT blob FROM states WHERE user_id = ?1", [uid], "first");
+          if (!row && env.CATET_KV && uid === "default") {
             const raw = await env.CATET_KV.get("state"); // migrasi sekali dari KV
             if (raw) {
-              await d1State(env,
+              await d1q(env,
                 "INSERT INTO states (user_id, blob, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(user_id) DO UPDATE SET blob = ?2, updated_at = ?3",
                 [uid, raw, new Date().toISOString()], "run");
               row = { blob: raw };
@@ -271,7 +330,7 @@ export default {
         const raw = JSON.stringify({ updatedAt: body.updatedAt, stores: body.stores });
         if (raw.length > 512 * 1024) return json({ error: "Data terlalu besar (maks 512 KB)." }, 413);
         if (env.CATET_DB) {
-          await d1State(env,
+          await d1q(env,
             "INSERT INTO states (user_id, blob, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(user_id) DO UPDATE SET blob = ?2, updated_at = ?3",
             [uid, raw, body.updatedAt], "run");
         } else {

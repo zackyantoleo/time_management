@@ -47,12 +47,15 @@ function syncDirty() {
 
 function kumpulkanStores() {
   const ambil = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
+  const j = ambil("catet.jira.v1");
+  // kredensial per perangkat tidak ikut diunggah ke server
+  if (j) { delete j.key; delete j.proxy; }
   return {
     tasks: ambil("catet.tasks.v1"),
     worklog: ambil("catet.worklog.v1"),
     routines: ambil("catet.routines.v1"),
     routineday: ambil("catet.routineday.v1"),
-    jira: ambil("catet.jira.v1"),
+    jira: j,
     sprints: ambil("catet.sprints.v1"),
   };
 }
@@ -63,7 +66,7 @@ async function pushState() {
   try {
     const r = await fetch(jiraProxy() + "/state", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...headerAkses() },
       body: JSON.stringify({ updatedAt: new Date().toISOString(), stores: kumpulkanStores() }),
     });
     if (!r.ok) throw new Error(((await r.json().catch(() => ({}))).error) || ("HTTP " + r.status));
@@ -114,7 +117,7 @@ async function pullState(paksa) {
   if (!paksa && now - syncLastPull < 30000) return; // throttle
   syncLastPull = now;
   try {
-    const r = await fetch(jiraProxy() + "/state");
+    const r = await fetch(jiraProxy() + "/state", { headers: headerAkses() });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
     if (data.stores) {
