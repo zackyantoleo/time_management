@@ -2,10 +2,19 @@ name = "catet-jira-proxy"
 main = "worker.js"
 compatibility_date = "2026-01-01"
 
-# Sinkronisasi data antar perangkat (opsional). Buat namespace dulu:
-#   wrangler kv namespace create CATET_KV
-# lalu buka komentar 3 baris di bawah dan isi id dari output perintah itu,
-# terakhir `wrangler deploy` ulang.
+# Penyimpanan state sinkronisasi: D1 (disarankan — kuota tulis gratisnya
+# 100rb/hari vs KV 1rb/hari, dan siap multi-user). Buat database dulu:
+#   wrangler d1 create catet-db
+# lalu buka komentar blok di bawah, isi database_id dari output perintah itu,
+# dan `wrangler deploy` ulang. Tabel dibuat otomatis saat pertama dipakai;
+# data dari KV lama ikut pindah otomatis saat akses pertama.
+# [[d1_databases]]
+# binding = "CATET_DB"
+# database_name = "catet-db"
+# database_id = "ISI-DATABASE-ID-DI-SINI"
+
+# KV lama — masih dipakai sebagai fallback & sumber migrasi. Setelah D1 aktif
+# dan data terlihat normal, blok ini boleh dihapus.
  [[kv_namespaces]]
  binding = "CATET_KV"
  id = "fed6a17c52f34a6ebb79c60ac742648c"

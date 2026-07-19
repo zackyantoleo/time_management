@@ -56,6 +56,23 @@ function toJiraDate(iso) {
   return d.toISOString().replace("Z", "+0000");
 }
 
+// Query D1 dengan auto-buat tabel saat pertama dipakai (tanpa langkah
+// migrasi manual). mode: "first" | "run".
+const SKEMA_STATES =
+  "CREATE TABLE IF NOT EXISTS states (user_id TEXT PRIMARY KEY, blob TEXT NOT NULL, updated_at TEXT NOT NULL)";
+async function d1State(env, sql, params, mode) {
+  const jalan = () => {
+    const st = env.CATET_DB.prepare(sql).bind(...params);
+    return mode === "first" ? st.first() : st.run();
+  };
+  try { return await jalan(); }
+  catch (e) {
+    if (!/no such table/i.test(String(e && e.message))) throw e;
+    await env.CATET_DB.exec(SKEMA_STATES);
+    return await jalan();
+  }
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
@@ -219,13 +236,29 @@ export default {
       return json({ ok: true });
     }
 
-    // GET/PUT /state — sinkronisasi data Catet antar perangkat lewat KV.
-    // Satu blob JSON per pengguna; strategi last-write-wins di sisi klien.
+    // GET/PUT /state — sinkronisasi data antar perangkat. Satu blob JSON per
+    // pengguna, last-write-wins di klien. Penyimpanan: D1 (kuota tulis besar,
+    // siap multi-user); KV lama tetap didukung dan datanya dimigrasi otomatis
+    // saat akses pertama.
     if (url.pathname === "/state") {
-      if (!env.CATET_KV) {
-        return json({ error: "KV belum dikonfigurasi — buat namespace (wrangler kv namespace create CATET_KV), isi id-nya di wrangler.toml, lalu deploy ulang. Lihat worker/README.md." }, 500);
+      if (!env.CATET_DB && !env.CATET_KV) {
+        return json({ error: "Storage belum dikonfigurasi — buat D1 (wrangler d1 create catet-db), isi database_id di wrangler.toml, deploy ulang. Lihat worker/README.md." }, 500);
       }
+      const uid = "default"; // per-user via kode akses menyusul
       if (request.method === "GET") {
+        if (env.CATET_DB) {
+          let row = await d1State(env, "SELECT blob FROM states WHERE user_id = ?1", [uid], "first");
+          if (!row && env.CATET_KV) {
+            const raw = await env.CATET_KV.get("state"); // migrasi sekali dari KV
+            if (raw) {
+              await d1State(env,
+                "INSERT INTO states (user_id, blob, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(user_id) DO UPDATE SET blob = ?2, updated_at = ?3",
+                [uid, raw, new Date().toISOString()], "run");
+              row = { blob: raw };
+            }
+          }
+          return json(row ? JSON.parse(row.blob) : { updatedAt: null, stores: null });
+        }
         const raw = await env.CATET_KV.get("state");
         return json(raw ? JSON.parse(raw) : { updatedAt: null, stores: null });
       }
@@ -237,7 +270,13 @@ export default {
         }
         const raw = JSON.stringify({ updatedAt: body.updatedAt, stores: body.stores });
         if (raw.length > 512 * 1024) return json({ error: "Data terlalu besar (maks 512 KB)." }, 413);
-        await env.CATET_KV.put("state", raw);
+        if (env.CATET_DB) {
+          await d1State(env,
+            "INSERT INTO states (user_id, blob, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(user_id) DO UPDATE SET blob = ?2, updated_at = ?3",
+            [uid, raw, body.updatedAt], "run");
+        } else {
+          await env.CATET_KV.put("state", raw);
+        }
         return json({ ok: true, updatedAt: body.updatedAt });
       }
     }
