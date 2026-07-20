@@ -56,11 +56,14 @@ function toJiraDate(iso) {
   return d.toISOString().replace("Z", "+0000");
 }
 
-// Query D1 dengan auto-buat tabel saat pertama dipakai. mode: first|run|all.
+// Query D1 dengan auto-buat tabel & auto-tambah kolom baru saat pertama
+// dipakai (tanpa langkah migrasi manual). mode: first|run|all.
 const SKEMA = [
   "CREATE TABLE IF NOT EXISTS states (user_id TEXT PRIMARY KEY, blob TEXT NOT NULL, updated_at TEXT NOT NULL)",
-  "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL, jira_site TEXT, jira_email TEXT, jira_token TEXT, created_at TEXT NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL, jira_site TEXT, jira_email TEXT, jira_token TEXT, cal_ics_url TEXT, created_at TEXT NOT NULL)",
 ];
+// Kolom yang ditambahkan setelah tabel pertama dibuat (instalasi lama).
+const MIGRASI = ["ALTER TABLE users ADD COLUMN cal_ics_url TEXT"];
 async function d1q(env, sql, params, mode) {
   const jalan = () => {
     const st = env.CATET_DB.prepare(sql).bind(...params);
@@ -68,8 +71,12 @@ async function d1q(env, sql, params, mode) {
   };
   try { return await jalan(); }
   catch (e) {
-    if (!/no such table/i.test(String(e && e.message))) throw e;
-    for (const s of SKEMA) await env.CATET_DB.exec(s);
+    const m = String(e && e.message);
+    if (/no such table/i.test(m)) {
+      for (const s of SKEMA) await env.CATET_DB.exec(s);
+    } else if (/no such column/i.test(m)) {
+      for (const s of MIGRASI) { try { await env.CATET_DB.exec(s); } catch { /* sudah ada */ } }
+    } else throw e;
     return await jalan();
   }
 }
@@ -87,8 +94,165 @@ async function userDariKode(env, request) {
   const kode = (request.headers.get("X-Catet-Key") || "").trim();
   if (!kode) return null;
   return await d1q(env,
-    "SELECT id, name, jira_site, jira_email, jira_token FROM users WHERE token_hash = ?1",
+    "SELECT id, name, jira_site, jira_email, jira_token, cal_ics_url FROM users WHERE token_hash = ?1",
     [await sha256hex(kode)], "first");
+}
+
+/* ---------- iCalendar (Google Calendar "secret iCal URL") ---------- */
+// Validasi URL iCal Google — hanya host calendar.google.com & path /ical/…ics
+// (mencegah proxy dipakai fetch alamat sembarang/SSRF). → URL bersih | null.
+function gcalUrlOk(raw) {
+  let u; try { u = new URL(raw.trim()); } catch { return null; }
+  if (u.protocol !== "https:") return null;
+  if (u.hostname !== "calendar.google.com") return null;
+  if (!u.pathname.startsWith("/calendar/ical/") || !u.pathname.endsWith(".ics")) return null;
+  return u.toString();
+}
+// Buang line-folding RFC5545 (baris lanjutan diawali spasi/tab).
+function unfoldICS(t) { return t.replace(/\r?\n[ \t]/g, ""); }
+// Pisah properti "NAME;PARAM=VAL:VALUE" → {name, params, value}.
+function parseProp(line) {
+  const c = line.indexOf(":");
+  if (c < 0) return null;
+  const kiri = line.slice(0, c), value = line.slice(c + 1);
+  const bagian = kiri.split(";");
+  const name = bagian[0].toUpperCase();
+  const params = {};
+  for (const b of bagian.slice(1)) {
+    const eq = b.indexOf("=");
+    if (eq > 0) params[b.slice(0, eq).toUpperCase()] = b.slice(eq + 1).replace(/^"|"$/g, "");
+  }
+  return { name, params, value };
+}
+function unescapeText(s) {
+  return s.replace(/\\n/gi, " ").replace(/\\,/g, ",").replace(/\\;/g, ";").replace(/\\\\/g, "\\").trim();
+}
+// Wall-clock (di zona tz) → instant UTC. Koreksi offset sekali; zona tanpa DST
+// (mis. Asia/Jakarta) selalu tepat.
+function wallToUTC(y, mo, d, h, mi, s, tz) {
+  const guess = Date.UTC(y, mo - 1, d, h, mi, s);
+  try {
+    const dtf = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour12: false,
+      year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const p = {}; for (const x of dtf.formatToParts(new Date(guess))) p[x.type] = x.value;
+    const asIf = Date.UTC(+p.year, +p.month - 1, +p.day, p.hour === "24" ? 0 : +p.hour, +p.minute, +p.second);
+    return new Date(guess - (asIf - guess));
+  } catch { return new Date(guess); }
+}
+// Parse nilai DTSTART/DTEND. tzFallback dipakai untuk waktu "mengambang".
+// → { allDay, date:"YYYY-MM-DD", instant:Date, wall:{y,mo,d,h,mi,s} }
+function parseDT(prop, tzFallback) {
+  const v = prop.value.trim();
+  if (prop.params.VALUE === "DATE" || /^\d{8}$/.test(v)) {
+    const y = +v.slice(0, 4), mo = +v.slice(4, 6), d = +v.slice(6, 8);
+    return { allDay: true, date: v.slice(0, 4) + "-" + v.slice(4, 6) + "-" + v.slice(6, 8),
+      instant: new Date(Date.UTC(y, mo - 1, d)), wall: { y, mo, d, h: 0, mi: 0, s: 0 } };
+  }
+  const m = v.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/);
+  if (!m) return null;
+  const [, ys, mos, ds, hs, mis, ss, z] = m;
+  const wall = { y: +ys, mo: +mos, d: +ds, h: +hs, mi: +mis, s: +ss };
+  let instant;
+  if (z) instant = new Date(Date.UTC(wall.y, wall.mo - 1, wall.d, wall.h, wall.mi, wall.s));
+  else instant = wallToUTC(wall.y, wall.mo, wall.d, wall.h, wall.mi, wall.s, prop.params.TZID || tzFallback);
+  return { allDay: false, date: null, instant, wall };
+}
+function ymd(dt) { return dt.getUTCFullYear() * 10000 + (dt.getUTCMonth() + 1) * 100 + dt.getUTCDate(); }
+// Perluas satu VEVENT (termasuk RRULE sederhana) ke daftar occurrence dalam
+// [winA, winB]. Menangani FREQ DAILY/WEEKLY/MONTHLY/YEARLY, INTERVAL, COUNT,
+// UNTIL, BYDAY (WEEKLY), dan EXDATE. Cukup untuk meeting rutin lazim.
+const HARI_KODE = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
+function expandEvent(ev, winA, winB, tz) {
+  const durMs = ev.end && ev.start ? (ev.end.instant - ev.start.instant) : 0;
+  const buat = (inst, wall) => ({
+    summary: ev.summary, location: ev.location, allDay: ev.start.allDay,
+    start: inst.toISOString(), date: ev.start.allDay ? isoDate(wall) : null,
+    end: new Date(inst.getTime() + durMs).toISOString(),
+  });
+  const isoDate = (w) => String(w.y).padStart(4, "0") + "-" + String(w.mo).padStart(2, "0") + "-" + String(w.d).padStart(2, "0");
+  const dalam = (inst) => inst >= winA && inst <= winB;
+  if (!ev.rrule) {
+    return dalam(ev.start.instant) ? [buat(ev.start.instant, ev.start.wall)] : [];
+  }
+  const R = {}; for (const kv of ev.rrule.split(";")) { const [k, v] = kv.split("="); if (k) R[k.toUpperCase()] = v; }
+  const freq = R.FREQ, interval = Math.max(1, +R.INTERVAL || 1);
+  const count = R.COUNT ? +R.COUNT : Infinity;
+  const until = R.UNTIL ? parseDT({ value: R.UNTIL, params: {} }, tz).instant : null;
+  const byday = R.BYDAY ? R.BYDAY.split(",").map((x) => HARI_KODE[x.slice(-2).toUpperCase()]).filter((x) => x != null) : null;
+  const exdate = new Set(ev.exdate.map((s) => s.slice(0, 8)));
+  const out = []; const w0 = ev.start.wall; let n = 0, dibuat = 0;
+  const maxIter = 1000;
+  for (let i = 0; i < maxIter && dibuat < count; i++) {
+    // tanggal dasar untuk langkah ke-i
+    let dates = [];
+    if (freq === "WEEKLY" && byday) {
+      const base = new Date(Date.UTC(w0.y, w0.mo - 1, w0.d));
+      const senin = new Date(base); senin.setUTCDate(base.getUTCDate() - ((base.getUTCDay() + 6) % 7)); // awal minggu (Senin)
+      senin.setUTCDate(senin.getUTCDate() + i * interval * 7);
+      for (const wd of byday) {
+        const dd = new Date(senin); dd.setUTCDate(senin.getUTCDate() + ((wd + 6) % 7));
+        dates.push({ y: dd.getUTCFullYear(), mo: dd.getUTCMonth() + 1, d: dd.getUTCDate() });
+      }
+    } else {
+      const base = new Date(Date.UTC(w0.y, w0.mo - 1, w0.d));
+      if (freq === "DAILY") base.setUTCDate(base.getUTCDate() + i * interval);
+      else if (freq === "WEEKLY") base.setUTCDate(base.getUTCDate() + i * interval * 7);
+      else if (freq === "MONTHLY") base.setUTCMonth(base.getUTCMonth() + i * interval);
+      else if (freq === "YEARLY") base.setUTCFullYear(base.getUTCFullYear() + i * interval);
+      else if (i > 0) break; // FREQ tak dikenal → anggap sekali saja
+      dates.push({ y: base.getUTCFullYear(), mo: base.getUTCMonth() + 1, d: base.getUTCDate() });
+    }
+    for (const dt of dates) {
+      if (dibuat >= count) break;
+      const key = String(dt.y).padStart(4, "0") + String(dt.mo).padStart(2, "0") + String(dt.d).padStart(2, "0");
+      const inst = ev.start.allDay
+        ? new Date(Date.UTC(dt.y, dt.mo - 1, dt.d))
+        : wallToUTC(dt.y, dt.mo, dt.d, w0.h, w0.mi, w0.s, ev.tzid || tz);
+      if (until && inst > until) { i = maxIter; break; }
+      dibuat++;
+      if (exdate.has(key)) continue;
+      if (dalam(inst)) out.push(buat(inst, { ...w0, y: dt.y, mo: dt.mo, d: dt.d }));
+    }
+    // berhenti kalau sudah jauh melewati jendela
+    const cek = new Date(Date.UTC(w0.y, w0.mo - 1, w0.d));
+    cek.setUTCDate(cek.getUTCDate() + i * interval * (freq === "WEEKLY" ? 7 : 1));
+    if (cek > winB && freq !== "MONTHLY" && freq !== "YEARLY") break;
+    if ((freq === "MONTHLY" || freq === "YEARLY") && new Date(Date.UTC(w0.y + (freq === "YEARLY" ? i : 0), w0.mo - 1 + (freq === "MONTHLY" ? i : 0), w0.d)) > winB) break;
+  }
+  return out;
+}
+// Parse ICS penuh → daftar occurrence dalam [from,to] (tanggal lokal tz).
+function acaraDalamJendela(icsText, from, to, tz) {
+  const lines = unfoldICS(icsText).split(/\r?\n/);
+  const winA = wallToUTC(+from.slice(0, 4), +from.slice(5, 7), +from.slice(8, 10), 0, 0, 0, tz);
+  const winB = wallToUTC(+to.slice(0, 4), +to.slice(5, 7), +to.slice(8, 10), 23, 59, 59, tz);
+  const winApad = new Date(winA.getTime() - 2 * 86400000); // margin utk all-day/timezone
+  const events = [];
+  let cur = null;
+  for (const line of lines) {
+    if (line === "BEGIN:VEVENT") { cur = { exdate: [], summary: "", location: "" }; continue; }
+    if (line === "END:VEVENT") {
+      if (cur && cur.start && cur.status !== "CANCELLED") events.push(cur);
+      cur = null; continue;
+    }
+    if (!cur) continue;
+    const p = parseProp(line); if (!p) continue;
+    if (p.name === "DTSTART") { cur.start = parseDT(p, tz); cur.tzid = p.params.TZID || null; }
+    else if (p.name === "DTEND") cur.end = parseDT(p, tz);
+    else if (p.name === "SUMMARY") cur.summary = unescapeText(p.value).slice(0, 200);
+    else if (p.name === "LOCATION") cur.location = unescapeText(p.value).slice(0, 200);
+    else if (p.name === "RRULE") cur.rrule = p.value.trim();
+    else if (p.name === "EXDATE") cur.exdate.push(...p.value.split(",").map((s) => s.trim()));
+    else if (p.name === "STATUS") cur.status = p.value.trim().toUpperCase();
+  }
+  const out = [];
+  for (const ev of events) {
+    if (!ev.rrule && ev.start.instant < winApad) continue;
+    for (const oc of expandEvent(ev, winA, winB, tz)) out.push(oc);
+    if (out.length > 500) break;
+  }
+  out.sort((a, b) => a.start.localeCompare(b.start));
+  return out;
 }
 
 export default {
@@ -141,12 +305,13 @@ export default {
     }
     const uid = user ? user.id : "default";
 
-    // GET /me · POST /me/jira — profil & kredensial Jira milik user.
-    if (url0.pathname === "/me" || url0.pathname === "/me/jira") {
+    // GET /me · POST /me/jira · POST /me/calendar — profil & kredensial user.
+    if (url0.pathname.startsWith("/me")) {
       if (!user) return json({ error: "Butuh kode akses (tab Jira → Access)." }, 401);
       if (request.method === "GET" && url0.pathname === "/me") {
         return json({ name: user.name, jira_site: user.jira_site || "",
-          jira_email: user.jira_email || "", jira_tersimpan: !!user.jira_token });
+          jira_email: user.jira_email || "", jira_tersimpan: !!user.jira_token,
+          cal_tersimpan: !!user.cal_ics_url });
       }
       if (request.method === "POST" && url0.pathname === "/me/jira") {
         let b; try { b = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
@@ -162,7 +327,37 @@ export default {
           [user.id, s, email, token], "run");
         return json({ ok: true });
       }
+      if (request.method === "POST" && url0.pathname === "/me/calendar") {
+        let b; try { b = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
+        const raw = (b && String(b.url || "")).trim();
+        const url = raw ? gcalUrlOk(raw) : ""; // "" = hapus; null = tidak valid
+        if (raw && url === null) {
+          return json({ error: "URL harus 'secret iCal URL' Google Calendar (calendar.google.com/.../basic.ics)." }, 400);
+        }
+        await d1q(env, "UPDATE users SET cal_ics_url = ?2 WHERE id = ?1", [user.id, url || null], "run");
+        return json({ ok: true });
+      }
       return json({ error: "Rute tidak dikenal." }, 404);
+    }
+
+    // GET /calendar?from=&to=&tz= — acara kalender user dalam rentang tanggal.
+    if (request.method === "GET" && url0.pathname === "/calendar") {
+      const icsUrl = user ? user.cal_ics_url : env.CAL_ICS_URL;
+      if (!icsUrl) return json({ error: "Kalender belum diisi (tab Jira → Access → Google Calendar)." }, 400);
+      const from = url0.searchParams.get("from") || "";
+      const to = url0.searchParams.get("to") || "";
+      const tz = url0.searchParams.get("tz") || "UTC";
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) {
+        return json({ error: "from/to harus YYYY-MM-DD dan from ≤ to." }, 400);
+      }
+      if ((new Date(to) - new Date(from)) / 86400000 > 62) return json({ error: "Rentang maks 62 hari." }, 400);
+      if (!gcalUrlOk(icsUrl)) return json({ error: "URL kalender tersimpan tidak valid." }, 400);
+      const r = await fetch(icsUrl, { headers: { Accept: "text/calendar" } });
+      if (!r.ok) return json({ error: "Google menolak (" + r.status + ") — URL iCal mungkin sudah diganti." }, 502);
+      let text = await r.text();
+      if (text.length > 4 * 1024 * 1024) text = text.slice(0, 4 * 1024 * 1024); // batasi kalender raksasa
+      const events = acaraDalamJendela(text, from, to, tz);
+      return json({ from, to, events });
     }
 
     // Kredensial Jira: user ber-kode WAJIB punya kredensial sendiri (fallback
