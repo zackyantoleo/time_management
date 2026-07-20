@@ -351,9 +351,14 @@ async function tangani(request, env) {
       return json({ error: "Rute tidak dikenal." }, 404);
     }
 
-    // GET /calendar?from=&to=&tz= — acara kalender user dalam rentang tanggal.
+    // GET /calendar?from=&to=&tz=&ics= — acara kalender dalam rentang tanggal.
     if (request.method === "GET" && url0.pathname === "/calendar") {
-      const icsUrl = user ? user.cal_ics_url : env.CAL_ICS_URL;
+      // Mode pribadi kirim URL lewat ?ics= (disimpan di perangkat); user ber-kode
+      // pakai yang tersimpan di server. Keduanya tetap divalidasi gcalUrlOk.
+      const icsParam = url0.searchParams.get("ics");
+      const icsParamOk = icsParam ? gcalUrlOk(icsParam) : null;
+      if (icsParam && !icsParamOk) return json({ error: "URL iCal tidak valid (harus calendar.google.com/.../basic.ics)." }, 400);
+      const icsUrl = (user && user.cal_ics_url) || icsParamOk || env.CAL_ICS_URL;
       if (!icsUrl) return json({ error: "Kalender belum diisi (tab Jira → Access → Google Calendar)." }, 400);
       const from = url0.searchParams.get("from") || "";
       const to = url0.searchParams.get("to") || "";

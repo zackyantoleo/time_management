@@ -21,6 +21,7 @@ let jira = (() => {
 function normalisasiJira(j) {
   j.proxy = j.proxy || "";
   j.key = j.key || "";
+  j.calIcs = j.calIcs || ""; // secret iCal URL, disimpan per perangkat
   j.dismissed = j.dismissed || [];
   j.items = Array.isArray(j.items) ? j.items : [];
   // Topik BAU (Business as Usual): tiket "wadah worklog" di project khusus
@@ -452,8 +453,9 @@ function renderAksesSection(wrap) {
     editor.append(fj);
     editor.append(el("div", "cap-hint",
       "Isi sekali (tersimpan di server, bukan di perangkat). Token dibuat sendiri di id.atlassian.com → Security → API tokens."));
-    if (typeof calSettingsForm === "function") editor.append(calSettingsForm());
   }
+  // Kalender jalan tanpa kode (mode pribadi) — URL iCal disimpan di perangkat.
+  if (typeof calSettingsForm === "function") editor.append(calSettingsForm());
   det.append(editor);
   sec.append(det);
   wrap.append(sec);

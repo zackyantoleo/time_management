@@ -18,8 +18,10 @@ async function tarikKalender(paksa) {
   try {
     const from = localDateStr(new Date());
     const to = localDateStr(new Date(Date.now() + 6 * 86400000)); // hari ini + 6
+    // mode pribadi: URL iCal disimpan di perangkat, dikirim sebagai ?ics=
+    const ics = jira.calIcs ? "&ics=" + encodeURIComponent(jira.calIcs) : "";
     const r = await fetch(jiraProxy() + "/calendar?from=" + from + "&to=" + to +
-      "&tz=" + encodeURIComponent(CAL_TZ), { headers: headerAkses() });
+      "&tz=" + encodeURIComponent(CAL_TZ) + ics, { headers: headerAkses() });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
     if (!data || !Array.isArray(data.events)) throw new Error("format tak dikenal");
@@ -90,25 +92,34 @@ function calSettingsForm() {
   wrap.append(el("div", "cap-label", "Google Calendar"));
   const form = el("div", "routine-form");
   const urlIn = document.createElement("input");
-  urlIn.type = "url";
+  urlIn.type = "url"; urlIn.value = jira.calIcs || "";
   urlIn.placeholder = "Secret iCal URL (…/basic.ics)";
   urlIn.title = "Google Calendar → Settings → kalendermu → Integrasikan kalender → Secret address in iCal format";
   const simpan = el("button", "btn-solid", "Save calendar");
   simpan.onclick = async () => {
+    const val = urlIn.value.trim();
+    if (val && !/^https:\/\/calendar\.google\.com\/calendar\/ical\/.+\.ics$/.test(val)) {
+      alert("URL harus 'secret iCal URL' Google Calendar (calendar.google.com/…/basic.ics).");
+      return;
+    }
     simpan.disabled = true;
+    // Disimpan di perangkat; user ber-kode juga menyimpan di server.
+    jira.calIcs = val; saveJira(true);
     try {
-      const r = await fetch(jiraProxy() + "/me/calendar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...headerAkses() },
-        body: JSON.stringify({ url: urlIn.value.trim() }),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
-      calAt = 0; // paksa tarik ulang
-      alert("Tersimpan. Jadwal meeting muncul di Board.");
-      await tarikKalender(true);
+      if (jira.key) {
+        const r = await fetch(jiraProxy() + "/me/calendar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...headerAkses() },
+          body: JSON.stringify({ url: val }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+      }
+      calAt = 0; calAktif = false; // paksa tarik ulang
+      alert(val ? "Tersimpan. Jadwal meeting muncul di Board." : "Kalender dihapus.");
+      if (val) await tarikKalender(true);
     } catch (e) {
-      alert("Gagal menyimpan: " + (e && e.message ? e.message : "koneksi"));
+      alert("Gagal menyimpan ke server: " + (e && e.message ? e.message : "koneksi"));
     }
     simpan.disabled = false;
     render();
@@ -116,6 +127,6 @@ function calSettingsForm() {
   form.append(urlIn, simpan);
   wrap.append(form);
   wrap.append(el("div", "cap-hint",
-    "Ambil di Google Calendar → Settings → pilih kalendermu → “Integrate calendar” → “Secret address in iCal format”. Read-only, disimpan di server. Jadwal bisa telat beberapa menit (cache Google)."));
+    "Ambil di Google Calendar → Settings → pilih kalendermu → “Integrate calendar” → “Secret address in iCal format”. Read-only, disimpan di perangkat ini. Jadwal bisa telat beberapa menit (cache Google)."));
   return wrap;
 }
