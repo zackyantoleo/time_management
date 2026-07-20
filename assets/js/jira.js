@@ -138,6 +138,9 @@ function rapikanInbox() {
 // sendiri dan mengisinya lewat konsol.)
 const DEFAULT_PROXY = "https://catet-jira-proxy.zackyanto-leo.workers.dev";
 function jiraProxy() { return (jira.proxy || DEFAULT_PROXY).trim().replace(/\/+$/, ""); }
+// Kode akses (multi-user; per perangkat, tidak ikut sinkron) — dikirim di
+// semua permintaan ke Worker. Kosong = mode lama tanpa auth.
+function headerAkses() { return jira.key ? { "X-Catet-Key": jira.key } : {}; }
 let jiraSyncMsg = "";
 let jiraSyncing = false;
 async function syncJira(manual) {
@@ -150,7 +153,7 @@ async function syncJira(manual) {
   jiraSyncMsg = "fetching…";
   if (view === "papan" || view === "jira") render();
   try {
-    const r = await fetch(jiraProxy() + "/tickets");
+    const r = await fetch(jiraProxy() + "/tickets", { headers: headerAkses() });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
     if (typeof data.site === "string" && data.site) jira.site = data.site;
@@ -197,7 +200,7 @@ async function syncBau(manual) {
   bauSyncMsg = "fetching…";
   if (view === "jira") render();
   try {
-    const r = await fetch(jiraProxy() + "/bau?project=" + encodeURIComponent(proj));
+    const r = await fetch(jiraProxy() + "/bau?project=" + encodeURIComponent(proj), { headers: headerAkses() });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
     jira.bau.items = Array.isArray(data.items) ? data.items : [];
@@ -374,6 +377,45 @@ function renderBauSection(wrap) {
     det2.append(sum2, card);
     sec.append(det2);
   }
+  wrap.append(sec);
+}
+
+// Section "Access": kode akses multi-user (disimpan per perangkat).
+function renderAksesSection(wrap) {
+  const sec = el("section", "section s-jira");
+  sec.style.marginTop = "18px";
+  const head = el("div", "section-head");
+  head.append(el("h2", null, "Access — sync"));
+  if (jira.key) head.append(el("span", "count mono", "✓ code set"));
+  sec.append(head);
+
+  const det = document.createElement("details");
+  det.className = "routine-manage";
+  const sum = document.createElement("summary");
+  sum.textContent = jira.key ? "access settings" : "+ set access code";
+  det.append(sum);
+  const editor = el("div", "routine-editor");
+  const form = el("div", "routine-form");
+  const kodeIn = document.createElement("input");
+  kodeIn.type = "password"; kodeIn.value = jira.key || "";
+  kodeIn.placeholder = "Access code";
+  kodeIn.title = "Kode akses dari admin — identitas kamu di server sinkronisasi";
+  const simpan = el("button", "btn-solid", "Save");
+  simpan.onclick = async () => {
+    jira.key = kodeIn.value.trim();
+    saveJira(true); // kredensial perangkat, bukan perubahan data
+    setSyncStatus("");
+    await pullState(true);
+    syncJira(true);
+    render();
+  };
+  kodeIn.onkeydown = (e) => { if (e.key === "Enter") simpan.onclick(); };
+  form.append(kodeIn, simpan);
+  editor.append(form);
+  editor.append(el("div", "cap-hint",
+    "Dipakai kalau Worker disetel multi-user (REQUIRE_AUTH): tiap orang dapat kode dari admin, datanya terpisah per kode. Kosongkan kalau Worker-mu mode pribadi."));
+  det.append(editor);
+  sec.append(det);
   wrap.append(sec);
 }
 
@@ -718,4 +760,5 @@ function renderJiraInbox() {
   sec.append(det);
   wrap.append(sec);
   renderBauSection(wrap);
+  renderAksesSection(wrap);
 }

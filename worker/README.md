@@ -99,6 +99,38 @@ kemudian, dan data terbaru ditarik saat aplikasi dibuka/kembali aktif.
 Konflik ditangani last-write-wins — hindari mengedit bersamaan di dua
 perangkat dalam hitungan detik yang sama.
 
+## Multi-user: kode akses (opsional, untuk dipakai bersama)
+
+Satu Worker + satu D1 bisa dipakai ±20 orang; data tiap orang terpisah per
+kode akses.
+
+1. Set kunci admin dan wajibkan kode:
+   ```bash
+   wrangler secret put ADMIN_KEY      # string acak, pegangan admin saja
+   ```
+   Di `wrangler.toml` tambahkan:
+   ```toml
+   [vars]
+   REQUIRE_AUTH = "1"
+   ```
+   lalu `wrangler deploy`.
+2. Buat kode per orang (kode hanya ditampilkan sekali — langsung kirim ke
+   orangnya):
+   ```bash
+   curl -s -X POST https://<worker-mu>.workers.dev/admin/users \
+     -H "X-Admin-Key: ADMIN_KEY_KAMU" -H "Content-Type: application/json" \
+     -d '{"name":"Budi"}'
+   ```
+   Daftar user: `curl -s .../admin/users -H "X-Admin-Key: …"`.
+   Hapus (beserta datanya): `curl -X DELETE .../admin/users/<id> -H "X-Admin-Key: …"`.
+3. Tiap orang membuka aplikasi → tab **Jira** → **Access — sync** → isi kode
+   → Save. Data lokal yang sudah ada terunggah otomatis ke akunnya.
+   (Pemilik lama: buat kode untuk dirimu juga; begitu diisi, state lokalmu
+   pindah ke akun itu.)
+
+Catatan: tiket & worklog Jira masih memakai kredensial global di secrets —
+versi per-user menyusul.
+
 ## Endpoint (untuk referensi)
 
 | Method | Path | Fungsi |
