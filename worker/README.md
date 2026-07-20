@@ -128,8 +128,13 @@ kode akses.
    (Pemilik lama: buat kode untuk dirimu juga; begitu diisi, state lokalmu
    pindah ke akun itu.)
 
-Catatan: tiket & worklog Jira masih memakai kredensial global di secrets —
-versi per-user menyusul.
+4. Kredensial Jira per orang: setelah kode terisi, di section **Access**
+   muncul kolom **Jira credentials** — isi alamat Jira Cloud
+   (`https://….atlassian.net`), email Atlassian, dan API token milik
+   masing-masing (buat di id.atlassian.com → Security → API tokens).
+   Tiket yang tampil dan worklog yang terkirim jadi atas nama tiap orang.
+   Jira antar orang boleh beda instance; hanya Jira Cloud yang didukung.
+   Secrets `JIRA_*` global jadi fallback untuk mode pribadi tanpa kode.
 
 ## Endpoint (untuk referensi)
 

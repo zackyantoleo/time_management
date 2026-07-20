@@ -95,9 +95,6 @@ export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
 
-    if (!env.JIRA_SITE || !env.JIRA_EMAIL || !env.JIRA_API_TOKEN) {
-      return json({ error: "Worker belum dikonfigurasi — set secrets JIRA_SITE, JIRA_EMAIL, JIRA_API_TOKEN." }, 500);
-    }
     const url0 = new URL(request.url);
 
     // /admin/users — kelola kode akses (POST buat, GET daftar, DELETE hapus).
@@ -144,12 +141,45 @@ export default {
     }
     const uid = user ? user.id : "default";
 
-    const site = env.JIRA_SITE.trim().replace(/\/+$/, "");
+    // GET /me · POST /me/jira — profil & kredensial Jira milik user.
+    if (url0.pathname === "/me" || url0.pathname === "/me/jira") {
+      if (!user) return json({ error: "Butuh kode akses (tab Jira → Access)." }, 401);
+      if (request.method === "GET" && url0.pathname === "/me") {
+        return json({ name: user.name, jira_site: user.jira_site || "",
+          jira_email: user.jira_email || "", jira_tersimpan: !!user.jira_token });
+      }
+      if (request.method === "POST" && url0.pathname === "/me/jira") {
+        let b; try { b = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
+        const s = (b && String(b.site || "")).trim().replace(/\/+$/, "");
+        const email = (b && String(b.email || "")).trim();
+        const token = (b && String(b.token || "")).trim();
+        // hanya Jira Cloud — mencegah proxy dipakai fetch alamat sembarang
+        if (!/^https:\/\/[a-z0-9-]+\.atlassian\.net$/.test(s)) {
+          return json({ error: "Site harus https://<nama>.atlassian.net (Jira Cloud)." }, 400);
+        }
+        if (!email || !token) return json({ error: "Field email dan token wajib." }, 400);
+        await d1q(env, "UPDATE users SET jira_site = ?2, jira_email = ?3, jira_token = ?4 WHERE id = ?1",
+          [user.id, s, email, token], "run");
+        return json({ ok: true });
+      }
+      return json({ error: "Rute tidak dikenal." }, 404);
+    }
+
+    // Kredensial Jira: user ber-kode WAJIB punya kredensial sendiri (fallback
+    // ke secrets global akan membocorkan tiket/worklog pemilik); secrets
+    // global hanya untuk mode pribadi tanpa kode.
+    const pakaiUser = !!(user && user.jira_site && user.jira_email && user.jira_token);
+    const jiraSiap = user ? pakaiUser : !!(env.JIRA_SITE && env.JIRA_EMAIL && env.JIRA_API_TOKEN);
+    const url = new URL(request.url);
+    if (!jiraSiap && url.pathname !== "/state") {
+      return json({ error: "Kredensial Jira belum diisi — tab Jira → Access → Jira credentials." }, 400);
+    }
+    const site = (pakaiUser ? user.jira_site : (env.JIRA_SITE || "")).trim().replace(/\/+$/, "");
     const authHeaders = {
-      Authorization: "Basic " + btoa(env.JIRA_EMAIL + ":" + env.JIRA_API_TOKEN),
+      Authorization: "Basic " + btoa(
+        (pakaiUser ? user.jira_email : env.JIRA_EMAIL) + ":" + (pakaiUser ? user.jira_token : env.JIRA_API_TOKEN)),
       Accept: "application/json",
     };
-    const url = new URL(request.url);
 
     // GET /tickets — tiket terbuka yang di-assign ke pemilik token.
     if (request.method === "GET" && url.pathname === "/tickets") {

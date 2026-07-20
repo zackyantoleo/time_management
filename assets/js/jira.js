@@ -414,6 +414,45 @@ function renderAksesSection(wrap) {
   editor.append(form);
   editor.append(el("div", "cap-hint",
     "Dipakai kalau Worker disetel multi-user (REQUIRE_AUTH): tiap orang dapat kode dari admin, datanya terpisah per kode. Kosongkan kalau Worker-mu mode pribadi."));
+
+  if (jira.key) {
+    // Kredensial Jira milik user — tiket & worklog atas nama masing-masing.
+    editor.append(el("div", "cap-label", "Jira credentials"));
+    const fj = el("div", "routine-form");
+    const siteIn = document.createElement("input");
+    siteIn.type = "url"; siteIn.placeholder = "https://kantormu.atlassian.net";
+    siteIn.title = "Alamat Jira Cloud kamu";
+    const emailIn = document.createElement("input");
+    emailIn.type = "email"; emailIn.placeholder = "Email Atlassian";
+    const tokenIn = document.createElement("input");
+    tokenIn.type = "password"; tokenIn.placeholder = "API token";
+    tokenIn.title = "Buat di id.atlassian.com/manage-profile/security/api-tokens";
+    const kirimJ = el("button", "btn-solid", "Save Jira credentials");
+    kirimJ.onclick = async () => {
+      kirimJ.disabled = true;
+      try {
+        const r = await fetch(jiraProxy() + "/me/jira", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...headerAkses() },
+          body: JSON.stringify({ site: siteIn.value, email: emailIn.value, token: tokenIn.value }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+        jira.site = siteIn.value.trim().replace(/\/+$/, "");
+        saveJira(true);
+        alert("Tersimpan. Tiket & worklog Jira sekarang memakai akunmu sendiri.");
+        syncJira(true);
+      } catch (e) {
+        alert("Gagal menyimpan: " + (e && e.message ? e.message : "koneksi"));
+      }
+      kirimJ.disabled = false;
+      render();
+    };
+    fj.append(siteIn, emailIn, tokenIn, kirimJ);
+    editor.append(fj);
+    editor.append(el("div", "cap-hint",
+      "Isi sekali (tersimpan di server, bukan di perangkat). Token dibuat sendiri di id.atlassian.com → Security → API tokens."));
+  }
   det.append(editor);
   sec.append(det);
   wrap.append(sec);
