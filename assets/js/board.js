@@ -300,6 +300,7 @@ function renderSections() {
   const active = tasks.filter((t) => t.status === "aktif" && !t.ditumpuk && cocok(t)).sort(bandingkanTugas);
 
   const frag = document.createDocumentFragment();
+  if (!q && typeof renderMeetings === "function") renderMeetings(frag); // jadwal Google Calendar
   if (!q) renderRoutines(frag); // saat mencari, fokus ke hasil tugas saja
 
   const hariIni = q ? active : active.filter(masukHariIni);

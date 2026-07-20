@@ -452,6 +452,7 @@ function renderAksesSection(wrap) {
     editor.append(fj);
     editor.append(el("div", "cap-hint",
       "Isi sekali (tersimpan di server, bukan di perangkat). Token dibuat sendiri di id.atlassian.com → Security → API tokens."));
+    if (typeof calSettingsForm === "function") editor.append(calSettingsForm());
   }
   det.append(editor);
   sec.append(det);
