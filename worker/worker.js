@@ -258,7 +258,18 @@ function acaraDalamJendela(icsText, from, to, tz) {
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+    // Pagar terluar: exception apa pun harus tetap balik lewat json() (yang
+    // membawa header CORS). Tanpa ini, error mentah → 500 default Cloudflare
+    // TANPA CORS → browser salah lapor sebagai "CORS error".
+    try {
+      return await tangani(request, env);
+    } catch (e) {
+      return json({ error: "Worker error: " + (e && e.message ? e.message : String(e)) }, 500);
+    }
+  },
+};
 
+async function tangani(request, env) {
     const url0 = new URL(request.url);
 
     // /admin/users — kelola kode akses (POST buat, GET daftar, DELETE hapus).
@@ -566,5 +577,4 @@ export default {
     }
 
     return json({ error: "Endpoint tidak dikenal. Yang ada: GET /tickets, POST /worklog, GET/PUT /state." }, 404);
-  },
-};
+}
