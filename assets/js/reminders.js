@@ -112,6 +112,14 @@ function checkDue() {
     }
   }
   if (rdayChanged) saveRday();
+  // Meeting kalender yang baru mulai — pengingat "sudah jam meeting".
+  // Tarik berkala (throttle di dalam) supaya notif jalan di tab mana pun.
+  if (typeof tarikKalender === "function") tarikKalender(false);
+  if (typeof checkMeetingsDue === "function") {
+    for (const e of checkMeetingsDue()) {
+      dueNow.push({ text: "📅 " + (e.summary || "(tanpa judul)") + " — " + fmtClock(new Date(e.start)) });
+    }
+  }
   if (remindersOn) {
     for (const t of dueNow) {
       showToast(t);

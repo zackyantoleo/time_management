@@ -49,10 +49,43 @@ function jamAcara(e) {
   return e.end ? t + "–" + fmtClock(new Date(e.end)) : t;
 }
 
+// Acara yang sudah selesai (waktu berakhir < sekarang). All-day tetap tampil
+// sepanjang hari.
+function acaraLewat(e) {
+  if (e.allDay) return false;
+  const akhir = e.end ? new Date(e.end) : new Date(e.start);
+  return akhir.getTime() < Date.now();
+}
+
+// Acara yang sudah dinotifikasi (in-memory; reset saat reload — dijaga oleh
+// jendela waktu di checkMeetingsDue supaya reload tak membangkitkan yang lama).
+const meetingNotified = new Set();
+function meetingKey(e) { return (e.start || "") + "|" + (e.summary || ""); }
+
+// Meeting (timed) yang baru saja mulai & belum dinotifikasi. Jendela 5 menit
+// supaya tab yang baru dibuka tak memunculkan pengingat meeting jam-jam lalu.
+function checkMeetingsDue() {
+  if (!calEvents || !Array.isArray(calEvents.events)) return [];
+  const now = Date.now();
+  const due = [];
+  for (const e of calEvents.events) {
+    if (e.allDay || !e.start) continue;
+    const mulai = new Date(e.start).getTime();
+    if (isNaN(mulai)) continue;
+    const k = meetingKey(e);
+    if (mulai <= now && now - mulai < 5 * 60 * 1000 && !meetingNotified.has(k)) {
+      meetingNotified.add(k);
+      due.push(e);
+    }
+  }
+  return due;
+}
+
 // Section "Meeting" di Board (dipanggil dari renderSections via frag).
 function renderMeetings(frag) {
   if (jiraProxy()) tarikKalender(false);
   const hari = acaraTanggal(localDateStr(new Date()))
+    .filter((e) => !acaraLewat(e)) // sembunyikan meeting yang sudah lewat
     .sort((a, b) => (a.allDay ? -1 : b.allDay ? 1 : a.start.localeCompare(b.start)));
   if (!calAktif && !hari.length) return; // kalender tak dipakai → jangan tampil
 
@@ -67,7 +100,7 @@ function renderMeetings(frag) {
   if (!hari.length) {
     sec.append(el("div", "empty-note", calMsg
       ? "Gagal menarik kalender: " + calMsg
-      : "Tidak ada meeting terjadwal hari ini 🎉"));
+      : "Tidak ada meeting lagi hari ini 🎉"));
   } else {
     const card = el("div", "routine-card");
     for (const e of hari) {
@@ -103,23 +136,27 @@ function calSettingsForm() {
       return;
     }
     simpan.disabled = true;
-    // Disimpan di perangkat; user ber-kode juga menyimpan di server.
+    // Sumber utama: perangkat + ?ics=. Ini yang membuat kalender jalan.
     jira.calIcs = val; saveJira(true);
-    try {
-      if (jira.key) {
-        const r = await fetch(jiraProxy() + "/me/calendar", {
+    // Best-effort: user multi-user yang kodenya dikenal Worker ikut simpan di
+    // server (biar sinkron antar perangkat). Gagal (mode pribadi / kode tak
+    // dikenal) diabaikan — ?ics= tetap jalan, jadi jangan tampilkan error.
+    if (jira.key) {
+      try {
+        await fetch(jiraProxy() + "/me/calendar", {
           method: "POST",
           headers: { "Content-Type": "application/json", ...headerAkses() },
           body: JSON.stringify({ url: val }),
         });
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
-      }
-      calAt = 0; calAktif = false; // paksa tarik ulang
+      } catch {}
+    }
+    calAt = 0; calAktif = false; // paksa tarik ulang
+    if (val) await tarikKalender(true);
+    // tarikKalender menaruh galat di calMsg; sukses kalau ada acara/aktif
+    if (val && calMsg && !calAktif) {
+      alert("Tersimpan, tapi jadwal gagal ditarik: " + calMsg);
+    } else {
       alert(val ? "Tersimpan. Jadwal meeting muncul di Board." : "Kalender dihapus.");
-      if (val) await tarikKalender(true);
-    } catch (e) {
-      alert("Gagal menyimpan ke server: " + (e && e.message ? e.message : "koneksi"));
     }
     simpan.disabled = false;
     render();
