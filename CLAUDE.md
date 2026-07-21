@@ -22,7 +22,7 @@ dependensi, tanpa framework. Data pengguna di `localStorage`.
   di `index.html` penting:
   1. `util.js` — helper DOM (`$`, `el`), `uid`, format tanggal/waktu, salin teks
   2. `tasks.js` — state `tasks` + `worklog`; skor dinamis (`skorTugas`, `masukHariIni`); selesai/batal/fokus; tumpukan interupsi (`fokuskan`, `lanjutkanTumpukan` — field `ditumpuk` di tugas)
-  3. `sprints.js` — sprint (nama + tanggal selesai); `sprintPts` menekan skor anggotanya; `completeSprint` tutup + log
+  3. `sprints.js` — sprint (nama + tanggal selesai); `sprintPts` menekan skor anggotanya (sadar-beban); `sprintKuotaHariIni` = jatah harian burn-down untuk "Do today"; `completeSprint` tutup + log
   4. `capture.js` — kolom catat cepat (prioritas, kapan, `addTask`)
   5. `routines.js` — rutinitas harian + render section-nya
   6. `jira.js` — autolink kode tiket, inbox tiket, impor, sinkron via proxy; topik BAU (`jira.bau`, `cocokBau`, `syncBau` — worklog non-sprint ke tiket topik, mis. project TDBU)

@@ -206,7 +206,9 @@ function taskRow(t) {
   }
   if (t.status !== "selesai") {
     meta.append(el("span", "pr-tag pr-" + t.priority, PR_LABEL[t.priority]));
-    meta.append(el("span", "effort-badge mono", "score " + skorTugas(t) + "/10"));
+    const skorBadge = el("span", "effort-badge mono", "score " + skorTugas(t) + "/10");
+    skorBadge.title = rincianSkor(t);
+    meta.append(skorBadge);
     if (t.usaha) {
       const usahaLabel = { S: "⚡ ≤1 h", M: "⏱ ±½ day", L: "⏳ ≥1 day" };
       meta.append(el("span", "effort-badge", usahaLabel[t.usaha]));
@@ -215,6 +217,11 @@ function taskRow(t) {
     if (sprint) {
       const sb = el("span", "effort-badge" + (sprintPts(t) >= 3 ? " sprint-mepet" : ""), "🏃 " + sprint.nama);
       sb.title = "Sprint berakhir " + fmtDayName(sprint.selesai) + " (" + fmtSisaSprint(sprint) + ")";
+      if (!sprintSelesai(sprint)) {
+        const sisa = sisaTugasSprint(sprint.id).length;
+        const sisaHari = Math.max((akhirSprint(sprint) - Date.now()) / 86400000, 0.5);
+        sb.title += " · sisa " + sisa + " tiket ≈ cicil " + Math.ceil(sisa / sisaHari) + "/hari";
+      }
       meta.append(sb);
     }
     // Judul memuat nama topik BAU (mis. "Deployment ccm" → TDBU-28
@@ -303,8 +310,10 @@ function renderSections() {
   if (!q && typeof renderMeetings === "function") renderMeetings(frag); // jadwal Google Calendar
   if (!q) renderRoutines(frag); // saat mencari, fokus ke hasil tugas saja
 
-  const hariIni = q ? active : active.filter(masukHariIni);
-  const nanti = q ? [] : active.filter((t) => !masukHariIni(t));
+  // Jatah sprint dihitung sekali per render, dipakai kedua filter di bawah.
+  const kuotaSet = typeof sprintKuotaHariIni === "function" ? sprintKuotaHariIni() : null;
+  const hariIni = q ? active : active.filter((t) => masukHariIni(t, kuotaSet));
+  const nanti = q ? [] : active.filter((t) => !masukHariIni(t, kuotaSet));
 
   const sec = el("section", "section s-today");
   sec.style.marginBottom = "18px";

@@ -43,19 +43,41 @@ function akhirSprint(s) {
   const [y, m, d] = s.selesai.split("-").map(Number);
   return new Date(y, m - 1, d, 23, 59, 59);
 }
+// Sisa anggota sprint yang belum selesai (fokus/tumpukan ikut dihitung).
+function sisaTugasSprint(id) {
+  return tasks.filter((t) => t.status !== "selesai" && t.sprintId === id);
+}
 // Poin tekanan sprint, skala sama dengan poin tenggat di tasks.js (0–4).
 // Sengaja mulai menekan lebih awal daripada tenggat per-tugas, karena satu
-// sprint berisi banyak tiket yang harus dicicil.
+// sprint berisi banyak tiket yang harus dicicil. Sadar-beban: sprint gemuk
+// (perlu ≥1,5 tiket/hari agar selesai) menekan satu tingkat lebih awal.
 function sprintPts(t) {
   if (!t.sprintId) return 0;
   const s = sprintById(t.sprintId);
   if (!s || sprintSelesai(s)) return 0; // sprint dihapus/ditutup — tak menekan lagi
   const h = (akhirSprint(s) - Date.now()) / 3600000;
   if (h < 0) return 4;    // sprint lewat
-  if (h <= 24) return 4;  // hari terakhir
-  if (h <= 72) return 3;  // ≤3 hari lagi
-  if (h <= 168) return 2; // ≤1 minggu
-  return 1;
+  let pts = h <= 24 ? 4 : h <= 72 ? 3 : h <= 168 ? 2 : 1;
+  const perHari = sisaTugasSprint(s.id).length / Math.max(h / 24, 0.5);
+  if (perHari >= 1.5) pts = Math.min(4, pts + 1);
+  return pts;
+}
+// Jatah harian sprint (burn-down otomatis): supaya selesai tepat waktu, tiap
+// hari perlu dicicil ceil(sisaTugas / sisaHari) tiket. Kembalikan Set id
+// anggota yang masuk jatah HARI INI — diambil dari skor tertinggi (tugas yang
+// sudah dicicil/menua otomatis naik lewat bonusOtomatis). Sisanya menunggu di
+// "Nanti" dan naik sendiri begitu jatah hari berikutnya menghitung ulang.
+// Sprint di hari terakhir/terlambat: kuota ≥ sisa, jadi semua anggota masuk.
+function sprintKuotaHariIni() {
+  const set = new Set();
+  for (const s of sprintAktifList()) {
+    const anggota = sisaTugasSprint(s.id);
+    if (!anggota.length) continue;
+    const sisaHari = Math.max((akhirSprint(s) - Date.now()) / 86400000, 0.5);
+    const kuota = Math.ceil(anggota.length / sisaHari);
+    anggota.sort(bandingkanTugas).slice(0, kuota).forEach((t) => set.add(t.id));
+  }
+  return set;
 }
 function fmtSisaSprint(s) {
   const hari = Math.ceil((akhirSprint(s) - Date.now()) / 86400000);
