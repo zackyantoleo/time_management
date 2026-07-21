@@ -81,18 +81,36 @@ function checkMeetingsDue() {
   return due;
 }
 
+// Satu baris acara kalender.
+function calRow(e) {
+  const row = el("div", "cal-row" + (acaraLewat(e) ? " lewat" : ""));
+  if (acaraLewat(e)) row.title = "Sudah lewat";
+  row.append(el("span", "cal-time mono", jamAcara(e)));
+  row.append(el("span", "cal-text", e.summary || "(tanpa judul)"));
+  if (e.location) {
+    const loc = el("span", "cal-loc");
+    loc.textContent = /^https?:\/\//.test(e.location) ? "🔗 link" : "· " + e.location;
+    row.append(loc);
+  }
+  return row;
+}
+
 // Section "Meeting" di Board (dipanggil dari renderSections via frag).
+// Fokus ke yang masih akan datang; meeting yang sudah lewat dilipat supaya
+// tidak memenuhi layar (masih bisa dibuka).
 function renderMeetings(frag) {
   if (jiraProxy()) tarikKalender(false);
   const hari = acaraTanggal(localDateStr(new Date()))
     .sort((a, b) => (a.allDay ? -1 : b.allDay ? 1 : a.start.localeCompare(b.start)));
   if (!calAktif && !hari.length) return; // kalender tak dipakai → jangan tampil
+  const lewat = hari.filter(acaraLewat);
+  const aktif = hari.filter((e) => !acaraLewat(e)); // all-day + sedang/akan datang
 
   const sec = el("section", "section s-cal");
   sec.style.marginBottom = "18px";
   const head = el("div", "section-head");
   head.append(el("h2", null, "📅 Today’s meetings"));
-  if (hari.length) head.append(el("span", "count mono", String(hari.length)));
+  if (aktif.length) head.append(el("span", "count mono", String(aktif.length))); // hitung sisa hari saja
   if (calLoading) head.append(el("span", "count", "…"));
   sec.append(head);
 
@@ -102,18 +120,15 @@ function renderMeetings(frag) {
       : "Tidak ada meeting terjadwal hari ini 🎉"));
   } else {
     const card = el("div", "routine-card");
-    for (const e of hari) {
-      // Meeting yang sudah lewat tetap tampil tapi diredupkan.
-      const row = el("div", "cal-row" + (acaraLewat(e) ? " lewat" : ""));
-      if (acaraLewat(e)) row.title = "Sudah lewat";
-      row.append(el("span", "cal-time mono", jamAcara(e)));
-      row.append(el("span", "cal-text", e.summary || "(tanpa judul)"));
-      if (e.location) {
-        const loc = el("span", "cal-loc");
-        loc.textContent = /^https?:\/\//.test(e.location) ? "🔗 link" : "· " + e.location;
-        row.append(loc);
-      }
-      card.append(row);
+    if (aktif.length) for (const e of aktif) card.append(calRow(e));
+    else card.append(el("div", "cal-empty", "Tidak ada meeting lagi hari ini 🎉"));
+    if (lewat.length) {
+      const det = el("details", "cal-past");
+      det.append(el("summary", null, lewat.length + " earlier"));
+      const list = el("div", "cal-past-list");
+      for (const e of lewat) list.append(calRow(e));
+      det.append(list);
+      card.append(det);
     }
     sec.append(card);
   }
