@@ -195,70 +195,23 @@ function fmtRentangLog(dari, sampai) {
    Klik tanggal pertama = awal rentang, klik kedua = akhir (dibalik otomatis
    kalau kebalik). Klik tanggal yang sama dua kali = satu hari itu saja.
    Pola popup sama dengan menu sprint/topik; memakai CSS .sprint-menu. */
-let kalEl = null;
-let kalDari = null; // tanggal awal yang sedang menunggu pasangan
-function tutupKalender() {
-  if (kalEl) { kalEl.remove(); kalEl = null; }
-  kalDari = null;
-  document.removeEventListener("mousedown", onDocKal, true);
-  document.removeEventListener("keydown", onDocKal, true);
+let popupEl = null, popupReset = null;
+function tutupPopup() {
+  if (popupEl) { popupEl.remove(); popupEl = null; }
+  if (popupReset) { popupReset(); popupReset = null; }
+  document.removeEventListener("mousedown", onDocPopup, true);
+  document.removeEventListener("keydown", onDocPopup, true);
 }
-function onDocKal(e) {
+function onDocPopup(e) {
   if (e.type === "keydown" && e.key !== "Escape") return;
-  if (e.type === "mousedown" && kalEl && kalEl.contains(e.target)) return;
-  tutupKalender();
+  if (e.type === "mousedown" && popupEl && popupEl.contains(e.target)) return;
+  tutupPopup();
 }
-function bukaKalender(anchor) {
-  tutupKalender();
-  const menu = el("div", "sprint-menu kal");
-  kalEl = menu;
-  const adaLog = new Set(worklog.map((e) => e.date));
-  const hariIni = localDateStr(new Date());
-  // mulai dari bulan rentang aktif (kalau ada), selain itu bulan berjalan
-  const awal = logFilter.kind === "custom" && logFilter.dari ? new Date(logFilter.dari) : new Date();
-  let cur = new Date(awal.getFullYear(), awal.getMonth(), 1);
-
-  const isi = () => {
-    menu.textContent = "";
-    const head = el("div", "kal-head");
-    const prev = el("button", "icon-btn", "‹");
-    prev.setAttribute("aria-label", "Bulan sebelumnya");
-    prev.onclick = (ev) => { ev.stopPropagation(); cur = new Date(cur.getFullYear(), cur.getMonth() - 1, 1); isi(); };
-    const next = el("button", "icon-btn", "›");
-    next.setAttribute("aria-label", "Bulan berikutnya");
-    next.onclick = (ev) => { ev.stopPropagation(); cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1); isi(); };
-    head.append(prev, el("span", "kal-bulan", BULAN[cur.getMonth()] + " " + cur.getFullYear()), next);
-    menu.append(head);
-
-    const grid = el("div", "kal-grid");
-    for (const d of [1, 2, 3, 4, 5, 6, 0]) grid.append(el("span", "kal-dow", HARI_PENDEK[d]));
-    const offset = (new Date(cur.getFullYear(), cur.getMonth(), 1).getDay() + 6) % 7; // Senin = kolom 1
-    for (let i = 0; i < offset; i++) grid.append(el("span"));
-    const jml = new Date(cur.getFullYear(), cur.getMonth() + 1, 0).getDate();
-    for (let d = 1; d <= jml; d++) {
-      const tgl = localDateStr(new Date(cur.getFullYear(), cur.getMonth(), d));
-      const btn = el("button", "kal-hari" +
-        (tgl === hariIni ? " hari-ini" : "") +
-        (adaLog.has(tgl) ? " ada" : "") +
-        (tgl === kalDari ? " pilih" : ""), String(d));
-      btn.dataset.tgl = tgl;
-      btn.onclick = (ev) => {
-        ev.stopPropagation();
-        if (!kalDari) { kalDari = tgl; isi(); return; } // klik pertama: awal
-        let dari = kalDari, sampai = tgl;               // klik kedua: akhir
-        if (sampai < dari) [dari, sampai] = [sampai, dari];
-        logFilter = { kind: "custom", dari, sampai };
-        tutupKalender();
-        render();
-      };
-      grid.append(btn);
-    }
-    menu.append(grid);
-    menu.append(el("div", "kal-hint", kalDari
-      ? "Awal: " + fmtRentangLog(kalDari, kalDari) + " — sekarang klik tanggal AKHIR."
-      : "Klik tanggal awal, lalu tanggal akhir. Titik = ada catatan log."));
-  };
-  isi();
+// Tempel popup ke body, posisikan di bawah/atas anchor, pasang penutup luar.
+// reset() dipanggil saat popup ditutup (mis. bersihkan state sementara).
+function pasangPopup(menu, anchor, reset) {
+  tutupPopup();
+  popupEl = menu; popupReset = reset || null;
   document.body.append(menu);
   const r = anchor.getBoundingClientRect();
   const mw = menu.offsetWidth, mh = menu.offsetHeight;
@@ -269,9 +222,91 @@ function bukaKalender(anchor) {
     ? r.top - mh - 4 : r.bottom + 4;
   menu.style.top = top + "px";
   setTimeout(() => {
-    document.addEventListener("mousedown", onDocKal, true);
-    document.addEventListener("keydown", onDocKal, true);
+    document.addEventListener("mousedown", onDocPopup, true);
+    document.addEventListener("keydown", onDocPopup, true);
   }, 0);
+}
+
+// Header navigasi bulan; ubah(delta) menggeser bulan.
+function kalHead(cur, ubah) {
+  const head = el("div", "kal-head");
+  const prev = el("button", "icon-btn", "‹");
+  prev.setAttribute("aria-label", "Bulan sebelumnya");
+  prev.onclick = (ev) => { ev.stopPropagation(); ubah(-1); };
+  const next = el("button", "icon-btn", "›");
+  next.setAttribute("aria-label", "Bulan berikutnya");
+  next.onclick = (ev) => { ev.stopPropagation(); ubah(1); };
+  head.append(prev, el("span", "kal-bulan", BULAN[cur.getMonth()] + " " + cur.getFullYear()), next);
+  return head;
+}
+// Grid tanggal satu bulan. sorot(tgl)=true → sel disorot; onHari(tgl) saat klik.
+function kalGrid(cur, sorot, onHari) {
+  const adaLog = new Set(worklog.map((e) => e.date));
+  const hariIni = localDateStr(new Date());
+  const grid = el("div", "kal-grid");
+  for (const d of [1, 2, 3, 4, 5, 6, 0]) grid.append(el("span", "kal-dow", HARI_PENDEK[d]));
+  const offset = (new Date(cur.getFullYear(), cur.getMonth(), 1).getDay() + 6) % 7; // Senin = kolom 1
+  for (let i = 0; i < offset; i++) grid.append(el("span"));
+  const jml = new Date(cur.getFullYear(), cur.getMonth() + 1, 0).getDate();
+  for (let d = 1; d <= jml; d++) {
+    const tgl = localDateStr(new Date(cur.getFullYear(), cur.getMonth(), d));
+    const btn = el("button", "kal-hari" +
+      (tgl === hariIni ? " hari-ini" : "") +
+      (adaLog.has(tgl) ? " ada" : "") +
+      (sorot(tgl) ? " pilih" : ""), String(d));
+    btn.dataset.tgl = tgl;
+    btn.onclick = (ev) => { ev.stopPropagation(); onHari(tgl); };
+    grid.append(btn);
+  }
+  return grid;
+}
+
+let kalDari = null; // tanggal awal yang sedang menunggu pasangan (filter rentang)
+function bukaKalender(anchor) {
+  const menu = el("div", "sprint-menu kal");
+  const awal = logFilter.kind === "custom" && logFilter.dari ? new Date(logFilter.dari) : new Date();
+  let cur = new Date(awal.getFullYear(), awal.getMonth(), 1);
+  const isi = () => {
+    menu.textContent = "";
+    menu.append(kalHead(cur, (delta) => { cur = new Date(cur.getFullYear(), cur.getMonth() + delta, 1); isi(); }));
+    menu.append(kalGrid(cur, (tgl) => tgl === kalDari, (tgl) => {
+      if (!kalDari) { kalDari = tgl; isi(); return; } // klik pertama: awal
+      let dari = kalDari, sampai = tgl;               // klik kedua: akhir
+      if (sampai < dari) [dari, sampai] = [sampai, dari];
+      logFilter = { kind: "custom", dari, sampai };
+      tutupPopup();
+      render();
+    }));
+    menu.append(el("div", "kal-hint", kalDari
+      ? "Awal: " + fmtRentangLog(kalDari, kalDari) + " — sekarang klik tanggal AKHIR."
+      : "Klik tanggal awal, lalu tanggal akhir. Titik = ada catatan log."));
+  };
+  isi();
+  pasangPopup(menu, anchor, () => { kalDari = null; });
+}
+
+// Pilih satu tanggal tujuan untuk memindahkan entri log; onPick(tgl) saat dipilih.
+function bukaPindahTanggal(anchor, tglSekarang, onPick) {
+  const menu = el("div", "sprint-menu kal");
+  const awal = tglSekarang ? new Date(tglSekarang) : new Date();
+  let cur = new Date(awal.getFullYear(), awal.getMonth(), 1);
+  const isi = () => {
+    menu.textContent = "";
+    menu.append(kalHead(cur, (delta) => { cur = new Date(cur.getFullYear(), cur.getMonth() + delta, 1); isi(); }));
+    menu.append(kalGrid(cur, (tgl) => tgl === tglSekarang, (tgl) => { tutupPopup(); onPick(tgl); }));
+    menu.append(el("div", "kal-hint", "Pilih tanggal tujuan. Titik = sudah ada catatan log."));
+  };
+  isi();
+  pasangPopup(menu, anchor);
+}
+
+// Pindahkan entri ke tanggal lain: geser date + ts (jam-menit dipertahankan).
+function pindahTanggalLog(e, tglBaru) {
+  const lama = new Date(e.ts);
+  const [y, m, d] = tglBaru.split("-").map(Number);
+  const baru = new Date(y, m - 1, d, lama.getHours(), lama.getMinutes(), lama.getSeconds());
+  e.ts = baru.toISOString();
+  e.date = tglBaru;
 }
 
 function renderLogFilter(wrap) {
@@ -451,6 +486,19 @@ function renderWorklog() {
         };
         li.append(pick);
       }
+      // Pindah ke tanggal lain — mis. tugas sebenarnya selesai kemarin tapi
+      // baru ditandai ✓ hari ini.
+      const move = el("button", "icon-btn", "📆");
+      move.title = "Pindahkan ke tanggal lain";
+      move.setAttribute("aria-label", "Pindahkan tanggal");
+      move.onclick = (ev) => {
+        ev.stopPropagation();
+        bukaPindahTanggal(move, e.date, (tgl) => {
+          if (tgl === e.date) return;
+          pindahTanggalLog(e, tgl); saveWorklog(); render();
+        });
+      };
+      li.append(move);
       const del = el("button", "icon-btn danger", "✕");
       del.title = "Hapus dari log"; del.setAttribute("aria-label", "Hapus dari log");
       del.onclick = () => {
