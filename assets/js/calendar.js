@@ -103,23 +103,27 @@ function calSettingsForm() {
       return;
     }
     simpan.disabled = true;
-    // Disimpan di perangkat; user ber-kode juga menyimpan di server.
+    // Sumber utama: perangkat + ?ics=. Ini yang membuat kalender jalan.
     jira.calIcs = val; saveJira(true);
-    try {
-      if (jira.key) {
-        const r = await fetch(jiraProxy() + "/me/calendar", {
+    // Best-effort: user multi-user yang kodenya dikenal Worker ikut simpan di
+    // server (biar sinkron antar perangkat). Gagal (mode pribadi / kode tak
+    // dikenal) diabaikan — ?ics= tetap jalan, jadi jangan tampilkan error.
+    if (jira.key) {
+      try {
+        await fetch(jiraProxy() + "/me/calendar", {
           method: "POST",
           headers: { "Content-Type": "application/json", ...headerAkses() },
           body: JSON.stringify({ url: val }),
         });
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
-      }
-      calAt = 0; calAktif = false; // paksa tarik ulang
+      } catch {}
+    }
+    calAt = 0; calAktif = false; // paksa tarik ulang
+    if (val) await tarikKalender(true);
+    // tarikKalender menaruh galat di calMsg; sukses kalau ada acara/aktif
+    if (val && calMsg && !calAktif) {
+      alert("Tersimpan, tapi jadwal gagal ditarik: " + calMsg);
+    } else {
       alert(val ? "Tersimpan. Jadwal meeting muncul di Board." : "Kalender dihapus.");
-      if (val) await tarikKalender(true);
-    } catch (e) {
-      alert("Gagal menyimpan ke server: " + (e && e.message ? e.message : "koneksi"));
     }
     simpan.disabled = false;
     render();
