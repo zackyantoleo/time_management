@@ -49,7 +49,7 @@ function kumpulkanStores() {
   const ambil = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
   const j = ambil("catet.jira.v1");
   // kredensial per perangkat tidak ikut diunggah ke server
-  if (j) { delete j.key; delete j.proxy; }
+  if (j) { delete j.key; delete j.proxy; delete j.calIcs; }
   return {
     tasks: ambil("catet.tasks.v1"),
     worklog: ambil("catet.worklog.v1"),
@@ -90,6 +90,7 @@ function terapkanRemote(stores) {
   if (stores.jira != null) {
     stores.jira.proxy = jira.proxy;
     stores.jira.key = jira.key;
+    stores.jira.calIcs = jira.calIcs;
     // Data server bisa berasal dari versi lama (belum punya bau, dsb.) —
     // lengkapi dulu, jangan sampai render crash karena struktur bolong.
     normalisasiJira(stores.jira);
