@@ -8,10 +8,10 @@ compatibility_date = "2026-01-01"
 # lalu buka komentar blok di bawah, isi database_id dari output perintah itu,
 # dan `wrangler deploy` ulang. Tabel dibuat otomatis saat pertama dipakai;
 # data dari KV lama ikut pindah otomatis saat akses pertama.
-# [[d1_databases]]
-# binding = "CATET_DB"
-# database_name = "catet-db"
-# database_id = "ISI-DATABASE-ID-DI-SINI"
+[[d1_databases]]
+binding = "CATET_DB"
+database_name = "catet-db"
+database_id = "1992b51e-1972-482f-9ccb-7d6d9dc83d3e"
 
 # KV lama — masih dipakai sebagai fallback & sumber migrasi. Setelah D1 aktif
 # dan data terlihat normal, blok ini boleh dihapus.
