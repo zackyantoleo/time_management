@@ -85,7 +85,6 @@ function checkMeetingsDue() {
 function renderMeetings(frag) {
   if (jiraProxy()) tarikKalender(false);
   const hari = acaraTanggal(localDateStr(new Date()))
-    .filter((e) => !acaraLewat(e)) // sembunyikan meeting yang sudah lewat
     .sort((a, b) => (a.allDay ? -1 : b.allDay ? 1 : a.start.localeCompare(b.start)));
   if (!calAktif && !hari.length) return; // kalender tak dipakai → jangan tampil
 
@@ -100,11 +99,13 @@ function renderMeetings(frag) {
   if (!hari.length) {
     sec.append(el("div", "empty-note", calMsg
       ? "Gagal menarik kalender: " + calMsg
-      : "Tidak ada meeting lagi hari ini 🎉"));
+      : "Tidak ada meeting terjadwal hari ini 🎉"));
   } else {
     const card = el("div", "routine-card");
     for (const e of hari) {
-      const row = el("div", "cal-row");
+      // Meeting yang sudah lewat tetap tampil tapi diredupkan.
+      const row = el("div", "cal-row" + (acaraLewat(e) ? " lewat" : ""));
+      if (acaraLewat(e)) row.title = "Sudah lewat";
       row.append(el("span", "cal-time mono", jamAcara(e)));
       row.append(el("span", "cal-text", e.summary || "(tanpa judul)"));
       if (e.location) {
