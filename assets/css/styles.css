@@ -20,6 +20,8 @@
     --p-rendah-soft: #edf0f3;
     --late: #c2362b;
     --shadow: 0 1px 2px rgba(27,37,48,.06), 0 4px 16px rgba(27,37,48,.06);
+    /* token gerak & radius — dipakai lintas komponen supaya konsisten */
+    --ease: cubic-bezier(.2,.6,.2,1);
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -76,6 +78,8 @@
     color: var(--ink);
     font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Ubuntu", "Cantarell", sans-serif;
     padding: 24px 16px 80px;
+    overscroll-behavior-y: none;
+    -webkit-text-size-adjust: 100%;
   }
   .mono { font-family: ui-monospace, "SF Mono", "Cascadia Mono", "Ubuntu Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
 
@@ -91,11 +95,32 @@
   @media (max-width: 560px) {
     .top-actions .btn-label { display: none; }
     .top-actions .btn-ghost { font-size: 16px; padding: 6px 10px; }
+    /* Lebih banyak lebar konten + target sentuh lebih besar di HP. */
+    body { padding: 16px 12px 72px; }
+    .app { gap: 16px; }
+    .icon-btn { width: 36px; height: 36px; font-size: 15px; }
+    .log-entry .icon-btn { width: 32px; height: 32px; font-size: 13px; }
+    .task-actions { gap: 4px; }
+    .check { width: 22px; height: 22px; }
+    .cap-hint { display: none; } /* pintasan keyboard tak relevan di sentuh */
+    #search { flex: 1 1 100%; order: 2; } /* kotak cari full-width di bawah tab */
   }
 
   button { font: inherit; color: inherit; cursor: pointer; border: none; background: none; }
   button:focus-visible, input:focus-visible, select:focus-visible {
     outline: 2px solid var(--focus-ring); outline-offset: 2px;
+  }
+  /* Hilangkan jeda tap 300ms + cegah pull-to-refresh tak sengaja di HP. */
+  button, input, select, textarea, a, .chip, .tab { touch-action: manipulation; }
+  /* Transisi halus + umpan-balik tekan. Dimatikan bila pengguna minta reduce-motion. */
+  @media (prefers-reduced-motion: no-preference) {
+    .btn-solid, .btn-line, .btn-ghost, .chip, .day-chip, .tab, .icon-btn,
+    li.task, .check, a.jira-key, .routine-row, .sprint-menu-item {
+      transition: background-color .14s var(--ease), border-color .14s var(--ease),
+        color .14s var(--ease), box-shadow .14s var(--ease), transform .1s var(--ease);
+    }
+    .btn-solid:active, .btn-line:active, .btn-ghost:active,
+    .chip:active, .tab:active, .day-chip:active, .icon-btn:active { transform: translateY(1px); }
   }
   .btn-ghost {
     font-size: 12.5px; color: var(--ink-muted);
@@ -236,7 +261,9 @@
   li.task.p-tinggi { border-left-color: var(--p-tinggi); }
   li.task.p-sedang { border-left-color: var(--p-sedang); }
   li.task.p-rendah { border-left-color: var(--p-rendah); }
+  li.task:hover { border-color: var(--ink-faint); box-shadow: var(--shadow); }
   li.task.done { opacity: .6; border-left-color: var(--line); }
+  li.task.done:hover { box-shadow: none; }
   li.task.done .task-text { text-decoration: line-through; }
 
   .check {
@@ -257,9 +284,9 @@
   }
   .due-badge.late { background: var(--p-urgent-soft); color: var(--late); }
 
-  .task-actions { display: flex; gap: 2px; flex: none; }
+  .task-actions { display: flex; gap: 3px; flex: none; }
   .icon-btn {
-    width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center;
+    width: 30px; height: 30px; border-radius: 7px; display: grid; place-items: center;
     color: var(--ink-faint); font-size: 14px;
   }
   .icon-btn:hover { background: var(--surface-2); color: var(--ink); }
@@ -414,7 +441,11 @@
   .jira-import input[type="password"] { flex: 0 1 180px; min-width: 120px; }
 
   /* ---- View tabs ---- */
-  .tabs-row { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  /* Sticky: tab + kotak cari selalu terjangkau walau daftar tugas panjang. */
+  .tabs-row {
+    display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap;
+    position: sticky; top: 0; z-index: 20; background: var(--bg); padding: 8px 0;
+  }
   #search {
     font: inherit; font-size: 13px; color: var(--ink);
     background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
