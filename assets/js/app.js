@@ -3,15 +3,17 @@
 // dipasang di sini.
 "use strict";
 
-let view = "papan"; // papan | jira | log
+let view = "papan"; // papan | jira | log | settings
 // Pencarian per tab — query Board tidak ikut memfilter Jira/Log, dan
-// sebaliknya. Kotaknya satu; isinya mengikuti tab aktif.
-let searchPerTab = { papan: "", jira: "", log: "" };
+// sebaliknya. Kotaknya satu; isinya mengikuti tab aktif. Settings tak punya
+// isi yang bisa dicari, jadi kotaknya disembunyikan di tab itu.
+let searchPerTab = { papan: "", jira: "", log: "", settings: "" };
 let searchQuery = ""; // query tab aktif (dibaca para renderer)
 const SEARCH_PLACEHOLDER = {
   papan: "Search tasks…",
   jira: "Search tickets / sprints / topics…",
   log: "Search work log…",
+  settings: "",
 };
 
 function setView(v) {
@@ -20,18 +22,22 @@ function setView(v) {
   const s = $("#search");
   s.value = searchQuery;
   s.placeholder = SEARCH_PLACEHOLDER[v];
+  s.classList.toggle("hidden", v === "settings");
   $("#tab-papan").setAttribute("aria-selected", String(v === "papan"));
   $("#tab-jira").setAttribute("aria-selected", String(v === "jira"));
   $("#tab-log").setAttribute("aria-selected", String(v === "log"));
+  $("#tab-settings").setAttribute("aria-selected", String(v === "settings"));
   document.querySelectorAll(".board-view").forEach((n) => n.classList.toggle("hidden", v !== "papan"));
   $("#jiraview").classList.toggle("hidden", v !== "jira");
   $("#worklog").classList.toggle("hidden", v !== "log");
+  $("#settingsview").classList.toggle("hidden", v !== "settings");
   render();
 }
 
 function render() {
   if (view === "papan") { renderFocus(); renderSections(); }
   else if (view === "jira") renderJiraInbox();
+  else if (view === "settings") renderSettings();
   else renderWorklog();
   $("#tab-jira").textContent = "🎫 Jira" + (jira.items.length ? " (" + jira.items.length + ")" : "");
   updateSprintChip();
@@ -44,6 +50,7 @@ function initApp() {
   $("#tab-papan").onclick = () => setView("papan");
   $("#tab-jira").onclick = () => setView("jira");
   $("#tab-log").onclick = () => setView("log");
+  $("#tab-settings").onclick = () => setView("settings");
   $("#search").addEventListener("input", (e) => {
     searchQuery = e.target.value;
     searchPerTab[view] = searchQuery;
