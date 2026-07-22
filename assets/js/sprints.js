@@ -13,6 +13,52 @@ let sprints = (() => {
   return { list: [], aktif: null };
 })();
 function saveSprints() { localStorage.setItem(SPRINT_KEY, JSON.stringify(sprints)); if (typeof syncDirty === "function") syncDirty(); }
+// Tanpa klaim dirty — untuk sprint OTOMATIS dari Jira: deterministik, tiap
+// perangkat menghitungnya sendiri dari feed (jangan dorong state basi).
+function saveSprintsTanpaSinkron() { localStorage.setItem(SPRINT_KEY, JSON.stringify(sprints)); }
+// Sprint yang boleh ditetapkan MANUAL (bukan sprint otomatis Jira — itu
+// keanggotaannya dikontrol Jira, tak bisa ditambah tugas sembarang dari sini).
+function sprintManualAktifList() { return sprintAktifList().filter((s) => !s.auto); }
+
+// Rekonsiliasi sprint otomatis dari feed /tickets (dipanggil di syncJira):
+// tiap sprint aktif Jira → sprint Catet ber-id "jira:<id>" (nama & tanggal dari
+// Jira); tugas papan yang tiketnya di sprint itu ikut ditautkan otomatis.
+function rekonsiliasiSprintJira(feed) {
+  const jiraSprints = new Map(); // jiraId -> {name,endDate}
+  const sprintByKey = new Map(); // KEY tiket -> jiraId
+  for (const f of feed) {
+    if (!f.sprint || f.sprint.jiraId == null) continue;
+    jiraSprints.set(f.sprint.jiraId, f.sprint);
+    sprintByKey.set(f.key, f.sprint.jiraId);
+  }
+  let ubahS = false, ubahT = false;
+  for (const [jid, sp] of jiraSprints) {
+    const id = "jira:" + jid;
+    const selesai = (sp.endDate || "").slice(0, 10) || localDateStr(new Date());
+    const s = sprintById(id);
+    if (!s) { sprints.list.push({ id, jiraId: jid, nama: sp.name || ("Sprint " + jid), selesai, auto: true }); ubahS = true; }
+    else if (s.nama !== (sp.name || s.nama) || s.selesai !== selesai) { s.nama = sp.name || s.nama; s.selesai = selesai; ubahS = true; }
+  }
+  // tautkan/lepas tugas papan (hanya menyentuh yang belum bersprint / di sprint auto)
+  for (const t of tasks) {
+    if (t.status === "selesai") continue;
+    const m = t.text.match(JIRA_RE);
+    if (!m) continue;
+    const jid = sprintByKey.get(m[0]);
+    const cur = t.sprintId ? sprintById(t.sprintId) : null;
+    if (jid != null) {
+      const id = "jira:" + jid;
+      if (t.sprintId !== id && (!t.sprintId || (cur && cur.auto))) { t.sprintId = id; ubahT = true; }
+    } else if (cur && cur.auto) { t.sprintId = null; ubahT = true; } // tiket keluar sprint
+  }
+  // buang sprint otomatis yang tak lagi aktif di Jira & tak berisi tugas
+  const n = sprints.list.length;
+  sprints.list = sprints.list.filter((s) =>
+    !s.auto || jiraSprints.has(s.jiraId) || tasks.some((t) => t.status !== "selesai" && t.sprintId === s.id));
+  if (sprints.list.length !== n) ubahS = true;
+  if (ubahS) saveSprintsTanpaSinkron();
+  if (ubahT) saveTanpaSinkron();
+}
 
 function sprintById(id) { return sprints.list.find((s) => s.id === id) || null; }
 function sprintSelesai(s) { return !!(s && s.status === "selesai"); }
@@ -145,7 +191,7 @@ function bukaSprintMenu(anchor, currentId, onPick) {
   const menu = el("div", "sprint-menu");
   sprintMenuEl = menu;
   const pilih = (id) => (ev) => { ev.stopPropagation(); tutupSprintMenu(); onPick(id); };
-  for (const s of sprintAktifList()) {
+  for (const s of sprintManualAktifList()) {
     const item = el("button", "sprint-menu-item" + (currentId === s.id ? " aktif" : ""));
     item.append(el("span", "sprint-menu-tick", currentId === s.id ? "✓" : ""));
     item.append(el("span", null, s.nama + " · " + fmtSisaSprint(s)));

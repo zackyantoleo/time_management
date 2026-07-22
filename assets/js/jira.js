@@ -246,6 +246,8 @@ async function syncJira(manual) {
       }
       if (selaras) saveTanpaSinkron();
     }
+    // Sprint otomatis dari Jira (tak perlu dibuat manual lagi).
+    if (feed.length && typeof rekonsiliasiSprintJira === "function") rekonsiliasiSprintJira(feed);
     jira.lastSync = new Date().toISOString();
     jiraSyncMsg = "";
     saveJira(true); // penyegaran mesin — jangan klaim dirty
@@ -540,6 +542,11 @@ function sprintRow(s, sec) {
   const row = el("div", "jira-row");
   const body = el("span", "jira-summary");
   body.append(el("strong", null, s.nama));
+  if (s.auto) {
+    const tag = el("span", "effort-badge dep-ready", "🔄 Jira");
+    tag.title = "Sprint otomatis dari Jira — nama, tanggal, & isinya ikut Jira.";
+    body.append(" ", tag);
+  }
   row.append(body);
   const badge = el("span", "due-badge mono" + (sprintPtsUntukBadge(s) >= 3 ? " late" : ""),
     "🏁 " + fmtDayName(s.selesai) + " · " + fmtSisaSprint(s));
@@ -560,23 +567,30 @@ function sprintRow(s, sec) {
   ed.style.borderLeft = "3px solid var(--p-tinggi)";
   ed.style.paddingLeft = "10px";
 
-  const grpNama = el("div", "cap-group");
-  grpNama.append(el("span", "cap-label", "Name"));
-  const namaIn = document.createElement("input");
-  namaIn.type = "text"; namaIn.value = s.nama; namaIn.className = "sprint-edit-nama";
-  const simpanNama = () => { const v = namaIn.value.trim(); if (v && v !== s.nama) { s.nama = v; saveSprints(); render(); } };
-  namaIn.onblur = simpanNama;
-  namaIn.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); namaIn.blur(); } };
-  grpNama.append(namaIn);
-  ed.append(grpNama);
+  if (s.auto) {
+    // Sprint otomatis: nama & tanggal dari Jira, tak bisa diedit di sini.
+    const info = el("div", "cap-hint");
+    info.textContent = "Ends " + fmtDayName(s.selesai) + " · nama & isi disinkron dari Jira.";
+    ed.append(info);
+  } else {
+    const grpNama = el("div", "cap-group");
+    grpNama.append(el("span", "cap-label", "Name"));
+    const namaIn = document.createElement("input");
+    namaIn.type = "text"; namaIn.value = s.nama; namaIn.className = "sprint-edit-nama";
+    const simpanNama = () => { const v = namaIn.value.trim(); if (v && v !== s.nama) { s.nama = v; saveSprints(); render(); } };
+    namaIn.onblur = simpanNama;
+    namaIn.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); namaIn.blur(); } };
+    grpNama.append(namaIn);
+    ed.append(grpNama);
 
-  const grpTgl = el("div", "cap-group");
-  grpTgl.append(el("span", "cap-label", "Ends"));
-  const tglIn = document.createElement("input");
-  tglIn.type = "date"; tglIn.value = s.selesai;
-  tglIn.onchange = (e) => { if (e.target.value) { s.selesai = e.target.value; saveSprints(); render(); } };
-  grpTgl.append(tglIn);
-  ed.append(grpTgl);
+    const grpTgl = el("div", "cap-group");
+    grpTgl.append(el("span", "cap-label", "Ends"));
+    const tglIn = document.createElement("input");
+    tglIn.type = "date"; tglIn.value = s.selesai;
+    tglIn.onchange = (e) => { if (e.target.value) { s.selesai = e.target.value; saveSprints(); render(); } };
+    grpTgl.append(tglIn);
+    ed.append(grpTgl);
+  }
 
   // daftar task di sprint ini
   const anggota = tasks.filter((t) => t.sprintId === s.id);
@@ -594,40 +608,50 @@ function sprintRow(s, sec) {
       // Status tiket dev (ready to test / menunggu dev) — sama seperti di Board.
       const dep = t.status !== "selesai" ? depsTugas(t) : null;
       if (dep) li.append(depBadge(dep));
-      const keluar = el("button", "icon-btn danger", "✕");
-      keluar.title = "Keluarkan dari sprint"; keluar.setAttribute("aria-label", keluar.title);
-      keluar.onclick = () => { setTaskSprint(t, null); render(); };
-      li.append(keluar);
+      if (!s.auto) { // keanggotaan sprint otomatis dikontrol Jira
+        const keluar = el("button", "icon-btn danger", "✕");
+        keluar.title = "Keluarkan dari sprint"; keluar.setAttribute("aria-label", keluar.title);
+        keluar.onclick = () => { setTaskSprint(t, null); render(); };
+        li.append(keluar);
+      }
       ul.append(li);
     });
     ed.append(ul);
   } else {
-    ed.append(el("div", "cap-hint", "Belum ada tugas. Tambahkan lewat panel edit tugas (tombol ✎) atau tombol 🏃 di tiket Jira."));
+    ed.append(el("div", "cap-hint", s.auto
+      ? "Belum ada tugas dari sprint ini yang kamu ambil ke papan."
+      : "Belum ada tugas. Tambahkan lewat panel edit tugas (tombol ✎) atau tombol 🏃 di tiket Jira."));
   }
 
-  const aksi = el("div", "cap-group");
-  const selesaiBtn = el("button", "btn-solid", "✓ Complete sprint");
-  selesaiBtn.title = "Tutup sprint & catat ke Log kerja";
-  selesaiBtn.onclick = () => {
-    const belum = anggota.filter((t) => t.status !== "selesai").length;
-    const pesan = "Tutup sprint “" + s.nama + "”?" +
-      (belum ? "\n\nMasih ada " + belum + " tugas belum selesai (tetap di papan, hanya lepas tekanan sprint)." : "") +
-      "\n\nAkan dicatat di Log kerja.";
-    if (confirm(pesan)) { sprintEditId = null; completeSprint(s); render(); }
-  };
-  aksi.append(selesaiBtn);
-  const hapusBtn = el("button", "btn-line", "Delete sprint");
-  hapusBtn.onclick = () => {
-    if (confirm("Hapus sprint “" + s.nama + "”?\nTugas-tugasnya tetap ada di papan, hanya lepas dari sprint.")) {
-      sprints.list = sprints.list.filter((x) => x.id !== s.id);
-      if (sprints.aktif === s.id) sprints.aktif = null;
-      tasks.forEach((t) => { if (t.sprintId === s.id) t.sprintId = null; });
-      sprintEditId = null;
-      saveSprints(); save(); render();
-    }
-  };
-  aksi.append(hapusBtn);
-  ed.append(aksi);
+  if (s.auto) {
+    // Sprint otomatis ditutup/dihapus lewat Jira, bukan dari sini.
+    ed.append(el("div", "cap-hint",
+      "Sprint ini otomatis ikut Jira — akan hilang sendiri begitu sprint-nya ditutup di Jira."));
+  } else {
+    const aksi = el("div", "cap-group");
+    const selesaiBtn = el("button", "btn-solid", "✓ Complete sprint");
+    selesaiBtn.title = "Tutup sprint & catat ke Log kerja";
+    selesaiBtn.onclick = () => {
+      const belum = anggota.filter((t) => t.status !== "selesai").length;
+      const pesan = "Tutup sprint “" + s.nama + "”?" +
+        (belum ? "\n\nMasih ada " + belum + " tugas belum selesai (tetap di papan, hanya lepas tekanan sprint)." : "") +
+        "\n\nAkan dicatat di Log kerja.";
+      if (confirm(pesan)) { sprintEditId = null; completeSprint(s); render(); }
+    };
+    aksi.append(selesaiBtn);
+    const hapusBtn = el("button", "btn-line", "Delete sprint");
+    hapusBtn.onclick = () => {
+      if (confirm("Hapus sprint “" + s.nama + "”?\nTugas-tugasnya tetap ada di papan, hanya lepas dari sprint.")) {
+        sprints.list = sprints.list.filter((x) => x.id !== s.id);
+        if (sprints.aktif === s.id) sprints.aktif = null;
+        tasks.forEach((t) => { if (t.sprintId === s.id) t.sprintId = null; });
+        sprintEditId = null;
+        saveSprints(); save(); render();
+      }
+    };
+    aksi.append(hapusBtn);
+    ed.append(aksi);
+  }
   sec.append(ed);
 }
 
@@ -796,7 +820,7 @@ function renderJiraInbox() {
       take.title = "Pindahkan ke papan utama sebagai tugas";
       take.onclick = () => { takeJiraItem(item); render(); };
       row.append(take);
-      if (sprintAktifList().length) {
+      if (sprintManualAktifList().length) {
         const takeSprint = el("button", "btn-line", "🏃 Sprint");
         takeSprint.title = "Ambil ke papan + pilih sprint";
         takeSprint.onclick = (e) => {

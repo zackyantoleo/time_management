@@ -64,6 +64,22 @@ const SKEMA = [
 ];
 // Kolom yang ditambahkan setelah tabel pertama dibuat (instalasi lama).
 const MIGRASI = ["ALTER TABLE users ADD COLUMN cal_ics_url TEXT"];
+
+// Id custom field "Sprint" (gh-sprint) — beda-beda per instance Jira, jadi
+// ditemukan sekali lalu di-cache per site (multi-user bisa beda site).
+const SPRINT_FIELD = new Map();
+async function sprintFieldId(site, authHeaders) {
+  if (SPRINT_FIELD.has(site)) return SPRINT_FIELD.get(site) || null;
+  try {
+    const r = await fetch(site + "/rest/api/3/field", { headers: authHeaders });
+    if (!r.ok) { SPRINT_FIELD.set(site, ""); return null; }
+    const fields = await r.json();
+    const f = (Array.isArray(fields) ? fields : []).find(
+      (x) => x.schema && x.schema.custom === "com.pyxis.greenhopper.jira:gh-sprint");
+    SPRINT_FIELD.set(site, f ? f.id : "");
+    return f ? f.id : null;
+  } catch { SPRINT_FIELD.set(site, ""); return null; }
+}
 async function d1q(env, sql, params, mode) {
   const jalan = () => {
     const st = env.CATET_DB.prepare(sql).bind(...params);
@@ -398,9 +414,11 @@ async function tangani(request, env) {
     // key sebutan-description ditanya sekali via bulkfetch (toleran key salah).
     if (request.method === "GET" && url.pathname === "/tickets") {
       const jql = "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC";
+      const sf = await sprintFieldId(site, authHeaders); // id field Sprint (bisa null)
       const r = await fetch(
         site + "/rest/api/3/search/jql?jql=" + encodeURIComponent(jql) +
-          "&fields=summary,status,created,issuelinks,description&maxResults=100",
+          "&fields=summary,status,created,issuelinks,description" + (sf ? "," + sf : "") +
+          "&maxResults=100",
         { headers: authHeaders }
       );
       if (!r.ok) return json({ error: "Jira menolak (" + r.status + "): " + (await r.text()).slice(0, 300) }, 502);
@@ -470,6 +488,11 @@ async function tangani(request, env) {
             ? [...set].filter((k) => statusByKey.has(k)).map((k) => ({ key: k, ...statusByKey.get(k) }))
             : [];
           if (deps.length) it.deps = deps;
+          // Sprint aktif tiket ini (kalau ada) — klien memakainya untuk
+          // memunculkan sprint otomatis tanpa dibuat manual.
+          const arr = sf && i.fields ? i.fields[sf] : null;
+          const aktif = Array.isArray(arr) ? arr.find((x) => x && x.state === "active") : null;
+          if (aktif) it.sprint = { jiraId: aktif.id, name: aktif.name || "", endDate: aktif.endDate || null };
           return it;
         }),
       };
