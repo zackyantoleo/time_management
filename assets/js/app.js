@@ -26,7 +26,7 @@ function setView(v) {
   $("#tab-papan").setAttribute("aria-selected", String(v === "papan"));
   $("#tab-jira").setAttribute("aria-selected", String(v === "jira"));
   $("#tab-log").setAttribute("aria-selected", String(v === "log"));
-  $("#tab-settings").setAttribute("aria-selected", String(v === "settings"));
+  $("#settings-btn").setAttribute("aria-pressed", String(v === "settings"));
   document.querySelectorAll(".board-view").forEach((n) => n.classList.toggle("hidden", v !== "papan"));
   $("#jiraview").classList.toggle("hidden", v !== "jira");
   $("#worklog").classList.toggle("hidden", v !== "log");
@@ -50,7 +50,7 @@ function initApp() {
   $("#tab-papan").onclick = () => setView("papan");
   $("#tab-jira").onclick = () => setView("jira");
   $("#tab-log").onclick = () => setView("log");
-  $("#tab-settings").onclick = () => setView("settings");
+  $("#settings-btn").onclick = () => setView("settings");
   $("#search").addEventListener("input", (e) => {
     searchQuery = e.target.value;
     searchPerTab[view] = searchQuery;

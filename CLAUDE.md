@@ -33,13 +33,15 @@ dependensi, tanpa framework. Data pengguna di `localStorage`.
   10. `sync.js` — sinkron antar perangkat via Worker+KV (`syncDirty` dipanggil
       semua `save*()`); `backup.js` — ekspor/impor data ke file .json
       semua `save*()`; push debounce, pull saat buka/visible; last-write-wins)
-  11. `settings.js` — render tab Settings (`renderSettings`); hanya me-mount
-      `renderAksesSection` (kode akses + kredensial Jira + Google Calendar,
-      didefinisikan di `jira.js`/`calendar.js`) ke `#settings-access`. Baris
-      Reminders & Backup di tab ini markup-nya statis di `index.html` (tombol
-      `#notif-btn`/`#export-btn`/`#import-btn` sama persis, cuma pindah lokasi
-      dari header lama) supaya binding sekali di `initReminders()`/`initBackup()`
-      tidak perlu diulang saat tab dirender ulang.
+  11. `settings.js` — render panel Settings (`renderSettings`), dibuka lewat
+      tombol kecil ⚙️ di pojok kanan atas header (`#settings-btn`), bukan tab
+      di `.tabs`. Hanya me-mount `renderAksesSection` (kode akses + kredensial
+      Jira + Google Calendar, didefinisikan di `jira.js`/`calendar.js`) ke
+      `#settings-access`. Baris Reminders & Backup di panel ini markup-nya
+      statis di `index.html` (tombol `#notif-btn`/`#export-btn`/`#import-btn`
+      sama persis, cuma pindah lokasi dari header lama) supaya binding sekali
+      di `initReminders()`/`initBackup()` tidak perlu diulang saat panel
+      dirender ulang.
   12. `app.js` — `view`/`render()`/`setView()` + `initApp()` (semua binding & timer)
 - `sw.js` — service worker network-first + auto-update (reload saat SW baru aktif); **tambahkan file baru ke `ASSETS`
   dan naikkan versi `CACHE`** setiap daftar aset berubah
