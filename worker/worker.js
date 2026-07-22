@@ -439,13 +439,20 @@ async function tangani(request, env) {
         const rb = await fetch(site + "/rest/api/3/issue/bulkfetch", {
           method: "POST",
           headers: { ...authHeaders, "Content-Type": "application/json" },
-          body: JSON.stringify({ issueIdsOrKeys: tanya, fields: ["status"] }),
+          body: JSON.stringify({ issueIdsOrKeys: tanya,
+            fields: ["status", "resolutiondate", "statuscategorychangedate"] }),
         });
         if (rb.ok) {
           const db = await rb.json();
           for (const bi of db.issues || []) {
-            const st = bi.fields && bi.fields.status;
-            if (st) statusByKey.set(bi.key, { status: st.name || "?", done: beres(st) });
+            const f = bi.fields || {};
+            const st = f.status;
+            if (!st) continue;
+            const done = beres(st);
+            // Tanggal Done sebenarnya — supaya penutupan otomatis di klien
+            // mencatat log di hari yang benar, bukan hari sinkronnya.
+            const doneAt = done ? (f.resolutiondate || f.statuscategorychangedate || null) : null;
+            statusByKey.set(bi.key, { status: st.name || "?", done, doneAt });
           }
         }
       }

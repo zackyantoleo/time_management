@@ -160,11 +160,13 @@ function lanjutkanTumpukan() {
 
 // mesin=true saat penutupan dilakukan otomatis (tiket sudah Done di Jira):
 // simpan tanpa klaim dirty — tiap perangkat mendeteksinya sendiri dari feed.
-function completeTask(t, mesin) {
+// kapanIso: tanggal Done sebenarnya (resolutiondate Jira) — log jatuh di hari
+// itu, bukan di hari sinkronnya.
+function completeTask(t, mesin, kapanIso) {
   const tadinyaFokus = t.status === "fokus";
   stopFocus(t);
   t.status = "selesai";
-  t.doneAt = new Date().toISOString();
+  t.doneAt = kapanIso || new Date().toISOString();
   delete t.logDihapus; // penyelesaian baru = entri log baru yang sah lagi
   if (tadinyaFokus) lanjutkanTumpukan(); // interupsi beres → balik ke semula
   const when = new Date(t.doneAt);

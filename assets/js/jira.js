@@ -219,13 +219,32 @@ async function syncJira(manual) {
     rapikanInbox(); // buang tiket yang sudah jadi tugas aktif
     // Tugas papan yang tiketnya sudah Done di Jira → tandai selesai otomatis
     // (masuk lipatan Done + tercatat di log kerja), tanpa klaim dirty.
+    // Tanggal selesai memakai resolutiondate Jira — tiket lama yang baru
+    // terdeteksi tidak boleh menumpuk di log "hari ini".
     if (data.keyStatus) {
+      let selaras = false;
       for (const t of [...tasks]) {
-        if (t.status === "selesai") continue;
         const m = t.text.match(JIRA_RE);
         const st = m ? data.keyStatus[m[0]] : null;
-        if (st && st.done) completeTask(t, true);
+        if (!st || !st.done) continue;
+        if (t.status !== "selesai") {
+          completeTask(t, true, st.doneAt || null);
+          t.logSelaras = true; selaras = true;
+        } else if (!t.logSelaras && st.doneAt) {
+          // Perbaikan satu kali untuk korban penutupan bertanggal salah:
+          // entri log tanpa menit fokus dipindah ke tanggal Done Jira.
+          // Sekali saja (logSelaras) — jangan melawan editan manual pengguna.
+          const e = worklog.find((x) => x.taskId === t.id);
+          const tglJira = localDateStr(new Date(st.doneAt));
+          if (e && !e.mins && e.date !== tglJira) {
+            e.ts = st.doneAt; e.date = tglJira;
+            t.doneAt = st.doneAt;
+            saveWorklogTanpaSinkron();
+          }
+          t.logSelaras = true; selaras = true;
+        }
       }
+      if (selaras) saveTanpaSinkron();
     }
     jira.lastSync = new Date().toISOString();
     jiraSyncMsg = "";
