@@ -392,24 +392,69 @@ async function tangani(request, env) {
       Accept: "application/json",
     };
 
-    // GET /tickets — tiket terbuka yang di-assign ke pemilik token.
+    // GET /tickets — tiket terbuka yang di-assign ke pemilik token, plus
+    // dependensi tiket dev-nya (deps): dari issue link DAN key yang disebut di
+    // description (smart link/teks). Status link sudah terbawa gratis; status
+    // key sebutan-description ditanya sekali via bulkfetch (toleran key salah).
     if (request.method === "GET" && url.pathname === "/tickets") {
       const jql = "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC";
       const r = await fetch(
         site + "/rest/api/3/search/jql?jql=" + encodeURIComponent(jql) +
-          "&fields=summary,status,created&maxResults=100",
+          "&fields=summary,status,created,issuelinks,description&maxResults=100",
         { headers: authHeaders }
       );
       if (!r.ok) return json({ error: "Jira menolak (" + r.status + "): " + (await r.text()).slice(0, 300) }, 502);
       const data = await r.json();
+      const KEY_G = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/g;
+      const beres = (st) => !!st && ((st.statusCategory && st.statusCategory.key === "done") || /^done$/i.test(st.name || ""));
+      const statusByKey = new Map(); // key → { status, done }
+      const depsByTiket = new Map(); // key tiket → Set(key dependensi)
+      for (const i of data.issues || []) {
+        const f = i.fields || {};
+        const set = new Set();
+        for (const l of f.issuelinks || []) {
+          const lain = l.outwardIssue || l.inwardIssue;
+          if (!lain || !lain.key) continue;
+          set.add(lain.key);
+          const st = lain.fields && lain.fields.status;
+          if (st) statusByKey.set(lain.key, { status: st.name || "?", done: beres(st) });
+        }
+        for (const m of JSON.stringify(f.description || "").matchAll(KEY_G)) set.add(m[0]);
+        set.delete(i.key);
+        if (set.size) depsByTiket.set(i.key, set);
+      }
+      const tanya = [...new Set([...depsByTiket.values()].flatMap((s) => [...s]))]
+        .filter((k) => !statusByKey.has(k)).slice(0, 100);
+      if (tanya.length) {
+        const rb = await fetch(site + "/rest/api/3/issue/bulkfetch", {
+          method: "POST",
+          headers: { ...authHeaders, "Content-Type": "application/json" },
+          body: JSON.stringify({ issueIdsOrKeys: tanya, fields: ["status"] }),
+        });
+        if (rb.ok) {
+          const db = await rb.json();
+          for (const bi of db.issues || []) {
+            const st = bi.fields && bi.fields.status;
+            if (st) statusByKey.set(bi.key, { status: st.name || "?", done: beres(st) });
+          }
+        }
+      }
       return json({
         site,
-        items: (data.issues || []).map((i) => ({
-          key: i.key,
-          summary: (i.fields && i.fields.summary) || "",
-          status: (i.fields && i.fields.status && i.fields.status.name) || null,
-          created: (i.fields && i.fields.created) || null,
-        })),
+        items: (data.issues || []).map((i) => {
+          const it = {
+            key: i.key,
+            summary: (i.fields && i.fields.summary) || "",
+            status: (i.fields && i.fields.status && i.fields.status.name) || null,
+            created: (i.fields && i.fields.created) || null,
+          };
+          const set = depsByTiket.get(i.key);
+          const deps = set
+            ? [...set].filter((k) => statusByKey.has(k)).map((k) => ({ key: k, ...statusByKey.get(k) }))
+            : [];
+          if (deps.length) it.deps = deps;
+          return it;
+        }),
       });
     }
 

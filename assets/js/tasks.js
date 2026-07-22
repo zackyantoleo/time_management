@@ -100,6 +100,9 @@ function rincianSkor(t) {
 function masukHariIni(t, kuotaSet) {
   if (t.priority === "urgent" || t.dampak === 3) return true;
   if (duePtsTugas(t) >= 3) return true; // tenggat eksplisit menang atas kuota
+  // Tiket QA yang tiket dev-nya baru saja Done → siap dites, kerjakan hari ini.
+  const dep = typeof depsTugas === "function" ? depsTugas(t) : null;
+  if (dep && dep.ready) return true;
   const s = t.sprintId && typeof sprintById === "function" ? sprintById(t.sprintId) : null;
   if (s && !sprintSelesai(s)) {
     return (kuotaSet || sprintKuotaHariIni()).has(t.id);

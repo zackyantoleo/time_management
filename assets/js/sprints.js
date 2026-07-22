@@ -70,12 +70,19 @@ function sprintPts(t) {
 // Sprint di hari terakhir/terlambat: kuota ≥ sisa, jadi semua anggota masuk.
 function sprintKuotaHariIni() {
   const set = new Set();
+  // Tiket yang masih menunggu dev (belum bisa dites) mundur ke akhir antrean —
+  // jatah hari ini diberikan ke tiket yang benar-benar bisa dikerjakan.
+  const terblokir = (t) => {
+    const d = typeof depsTugas === "function" ? depsTugas(t) : null;
+    return d && !d.ready ? 1 : 0;
+  };
   for (const s of sprintAktifList()) {
     const anggota = sisaTugasSprint(s.id);
     if (!anggota.length) continue;
     const sisaHari = Math.max((akhirSprint(s) - Date.now()) / 86400000, 0.5);
     const kuota = Math.ceil(anggota.length / sisaHari);
-    anggota.sort(bandingkanTugas).slice(0, kuota).forEach((t) => set.add(t.id));
+    anggota.sort((a, b) => terblokir(a) - terblokir(b) || bandingkanTugas(a, b))
+      .slice(0, kuota).forEach((t) => set.add(t.id));
   }
   return set;
 }

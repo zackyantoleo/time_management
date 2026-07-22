@@ -224,6 +224,9 @@ function taskRow(t) {
       }
       meta.append(sb);
     }
+    // Status tiket dev (QA menunggu / siap dites) — dari peta jira.deps.
+    const dep = typeof depsTugas === "function" ? depsTugas(t) : null;
+    if (dep) meta.append(depBadge(dep));
     // Judul memuat nama topik BAU (mis. "Deployment ccm" → TDBU-28
     // Deployment)? Tunjukkan nyantolnya ke mana — worklog-nya nanti bisa
     // dikirim ke tiket itu dari tab Log kerja.
