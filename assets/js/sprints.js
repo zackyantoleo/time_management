@@ -22,7 +22,8 @@ function sprintManualAktifList() { return sprintAktifList().filter((s) => !s.aut
 
 // Rekonsiliasi sprint otomatis dari feed /tickets (dipanggil di syncJira):
 // tiap sprint aktif Jira → sprint Catet ber-id "jira:<id>" (nama & tanggal dari
-// Jira); tugas papan yang tiketnya di sprint itu ikut ditautkan otomatis.
+// Jira); tiket sprint yang belum ada di papan otomatis diambil jadi tugas
+// (tanpa perlu "Take" manual), lalu tugas papan ditautkan/dilepas mengikuti Jira.
 function rekonsiliasiSprintJira(feed) {
   const jiraSprints = new Map(); // jiraId -> {name,endDate}
   const sprintByKey = new Map(); // KEY tiket -> jiraId
@@ -38,6 +39,22 @@ function rekonsiliasiSprintJira(feed) {
     const s = sprintById(id);
     if (!s) { sprints.list.push({ id, jiraId: jid, nama: sp.name || ("Sprint " + jid), selesai, auto: true }); ubahS = true; }
     else if (s.nama !== (sp.name || s.nama) || s.selesai !== selesai) { s.nama = sp.name || s.nama; s.selesai = selesai; ubahS = true; }
+  }
+  // Auto-ambil: tiket ber-sprint yang belum jadi tugas papan langsung diambil
+  // (pindah dari inbox). Dismissed dihormati — tiket yang sengaja dibuang /
+  // sudah diselesaikan tidak dihidupkan lagi.
+  for (const f of feed) {
+    if (!f.sprint || f.sprint.jiraId == null) continue;
+    if (jira.dismissed.includes(f.key)) continue;
+    if (tasks.some((t) => t.status !== "selesai" && t.text.includes(f.key))) continue;
+    tasks.push({
+      id: uid(), text: f.key + " — " + (f.summary || ""), priority: "sedang", due: null,
+      createdAt: new Date().toISOString(), status: "aktif", doneAt: null, focusedAt: null,
+      notified: false, sprintId: "jira:" + f.sprint.jiraId,
+    });
+    jira.items = jira.items.filter((x) => x.key !== f.key);
+    jira.dismissed.push(f.key);
+    ubahT = true; // jira.items/dismissed tersimpan oleh saveJira(true) di syncJira
   }
   // tautkan/lepas tugas papan (hanya menyentuh yang belum bersprint / di sprint auto)
   for (const t of tasks) {
