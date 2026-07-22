@@ -41,7 +41,7 @@ function addTask(text) {
 // Sprint yang dipilih menempel sampai diganti (sticky, seperti chip prioritas).
 function updateSprintChip() {
   const btn = $("#sprint-capture");
-  if (!sprintAktifList().length) { capSprintId = null; btn.classList.add("hidden"); return; }
+  if (!sprintManualAktifList().length) { capSprintId = null; btn.classList.add("hidden"); return; }
   if (capSprintId && !sprintById(capSprintId)) capSprintId = null; // sprint dihapus
   const s = capSprintId ? sprintById(capSprintId) : null;
   btn.classList.remove("hidden");
