@@ -451,6 +451,7 @@ function renderBauSection(wrap) {
 }
 
 // Section "Access": kode akses multi-user (disimpan per perangkat).
+// Dirender di tab Settings (lihat settings.js), bukan tab Jira.
 function renderAksesSection(wrap) {
   const sec = el("section", "section s-jira");
   sec.style.marginTop = "18px";
@@ -873,5 +874,4 @@ function renderJiraInbox() {
   sec.append(det);
   wrap.append(sec);
   renderBauSection(wrap);
-  renderAksesSection(wrap);
 }

@@ -18,12 +18,6 @@
       <h1>Catet</h1>
       <span class="tag">catatan cepat berprioritas</span>
     </div>
-    <div class="top-actions">
-      <button class="btn-ghost" id="notif-btn" title="Nyalakan/matikan pengingat waktu">🔔<span class="btn-label"> Reminders</span></button>
-      <button class="btn-ghost" id="export-btn" title="Unduh cadangan semua data sebagai file .json">⬇<span class="btn-label"> Export</span></button>
-      <button class="btn-ghost" id="import-btn" title="Pulihkan data dari file .json (mengganti data di browser ini)">⬆<span class="btn-label"> Import</span></button>
-      <input type="file" id="import-file" accept="application/json,.json" hidden>
-    </div>
   </header>
 
   <div class="tabs-row">
@@ -31,6 +25,7 @@
       <button class="tab" id="tab-papan" role="tab" aria-selected="true">📋 Board</button>
       <button class="tab" id="tab-jira" role="tab" aria-selected="false">🎫 Jira</button>
       <button class="tab" id="tab-log" role="tab" aria-selected="false">🗒 Work log</button>
+      <button class="tab" id="tab-settings" role="tab" aria-selected="false">⚙️ Settings</button>
     </nav>
     <input type="search" id="search" placeholder="Search tasks / tickets / logs…" aria-label="Cari">
   </div>
@@ -84,6 +79,32 @@
 
   <div id="worklog" class="hidden"></div>
 
+  <div id="settingsview" class="hidden">
+    <div id="settings-access"></div>
+
+    <section class="section s-jira" style="margin-top:18px">
+      <div class="section-head"><h2>Reminders</h2></div>
+      <div class="routine-card">
+        <div class="routine-row">
+          <span class="r-text">Toast di dalam halaman + bip untuk tugas jatuh tempo, rutinitas, dan meeting. Notifikasi sistem ikut aktif kalau browser mengizinkan.</span>
+          <button class="btn-line" id="notif-btn" title="Nyalakan/matikan pengingat waktu">🔔<span class="btn-label"> Reminders</span></button>
+        </div>
+      </div>
+    </section>
+
+    <section class="section s-jira" style="margin-top:18px">
+      <div class="section-head"><h2>Backup</h2></div>
+      <div class="routine-card">
+        <div class="routine-row">
+          <span class="r-text">Unduh atau pulihkan semua data (tugas, rutinitas, sprint, log kerja) sebagai file .json — jaring pengaman yang tidak bergantung ke sinkron cloud.</span>
+          <button class="btn-line" id="export-btn" title="Unduh cadangan semua data sebagai file .json">⬇<span class="btn-label"> Export</span></button>
+          <button class="btn-line" id="import-btn" title="Pulihkan data dari file .json (mengganti data di browser ini)">⬆<span class="btn-label"> Import</span></button>
+          <input type="file" id="import-file" accept="application/json,.json" hidden>
+        </div>
+      </div>
+    </section>
+  </div>
+
   <footer class="foot">Data tersimpan lokal di browser ini (localStorage)<span id="sync-status"></span></footer>
 </div>
 
@@ -103,6 +124,7 @@
 <script src="assets/js/reminders.js"></script>
 <script src="assets/js/sync.js"></script>
 <script src="assets/js/backup.js"></script>
+<script src="assets/js/settings.js"></script>
 <script src="assets/js/app.js"></script>
 </body>
 </html>
