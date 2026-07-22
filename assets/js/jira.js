@@ -23,6 +23,9 @@ function normalisasiJira(j) {
   j.key = j.key || "";
   j.calIcs = j.calIcs || ""; // secret iCal URL, disimpan per perangkat
   j.dismissed = j.dismissed || [];
+  // Dependensi tiket dev per key tiket QA (dari issue link / sebutan di
+  // description): key → { ready, wait:[{key,status}] }. Diisi ulang tiap sync.
+  j.deps = j.deps || {};
   j.items = Array.isArray(j.items) ? j.items : [];
   // Topik BAU (Business as Usual): tiket "wadah worklog" di project khusus
   // (mis. TDBU) untuk kerjaan di luar task sprint — meeting, deployment, dst.
@@ -132,6 +135,25 @@ function rapikanInbox() {
   return true;
 }
 
+/* ---------- dependensi tiket dev (QA menunggu dev done) ---------- */
+function depsTiket(key) { return (key && jira.deps && jira.deps[key]) || null; }
+// Untuk tugas papan: dependensi key tiket pertama di teks tugas.
+function depsTugas(t) {
+  const m = t && t.text ? t.text.match(JIRA_RE) : null;
+  return m ? depsTiket(m[0]) : null;
+}
+// Badge "✅ ready to test" / "⏳ dev: KEY" — dipakai papan & inbox Jira.
+function depBadge(dep) {
+  if (dep.ready) {
+    const b = el("span", "effort-badge dep-ready", "✅ ready to test");
+    b.title = "Tiket dev-nya sudah Done — siap dites, otomatis masuk “Do today”.";
+    return b;
+  }
+  const b = el("span", "effort-badge dep-wait", "⏳ dev: " + dep.wait[0].key);
+  b.title = "Menunggu " + dep.wait.map((x) => x.key + " (" + x.status + ")").join(", ");
+  return b;
+}
+
 /* ---------- sinkronisasi otomatis lewat proxy (Cloudflare Worker) ---------- */
 // Alamat proxy bawaan — semua perangkat otomatis tersambung tanpa setup apa
 // pun. Otorisasi di Worker berbasis Origin, jadi tidak ada kunci rahasia di
@@ -166,6 +188,19 @@ async function syncJira(manual) {
       const ex = jira.items.find((x) => x.key === f.key);
       if (ex) { ex.summary = f.summary; ex.status = f.status; ex.created = f.created || ex.created; }
       else jira.items.push({ id: uid(), key: f.key, summary: f.summary, status: f.status, created: f.created || null, src: "sync", addedAt: new Date().toISOString() });
+    }
+    // Peta dependensi diisi untuk SEMUA tiket feed (termasuk yang sudah
+    // diambil jadi tugas) — papan butuh tahu tiket dev-nya done atau belum.
+    for (const f of feed) {
+      if (Array.isArray(f.deps) && f.deps.length) {
+        jira.deps[f.key] = {
+          ready: f.deps.every((d) => d.done),
+          wait: f.deps.filter((d) => !d.done).map((d) => ({ key: d.key, status: d.status })),
+        };
+      } else delete jira.deps[f.key];
+    }
+    if (feed.length) {
+      for (const k of Object.keys(jira.deps)) if (!feedKeys.has(k)) delete jira.deps[k];
     }
     // Tiket hasil sinkron yang sudah tidak muncul di Jira (selesai/di-reassign)
     // ikut hilang; tiket hasil impor manual dibiarkan.
@@ -717,6 +752,8 @@ function renderJiraInbox() {
       }
       row.append(el("span", "jira-summary", item.summary));
       if (item.status) row.append(el("span", "jira-status", item.status));
+      const dep = depsTiket(item.key);
+      if (dep) row.append(depBadge(dep));
       const take = el("button", "btn-line", "＋ Take");
       take.title = "Pindahkan ke papan utama sebagai tugas";
       take.onclick = () => { takeJiraItem(item); render(); };
