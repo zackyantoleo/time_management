@@ -176,7 +176,12 @@ async function syncJira(manual) {
   jiraSyncMsg = "fetching…";
   if (view === "papan" || view === "jira") render();
   try {
-    const r = await fetch(jiraProxy() + "/tickets", { headers: headerAkses() });
+    // Kirim key tugas papan yang masih aktif — Worker melaporkan statusnya,
+    // supaya tugas yang tiketnya sudah Done via Jira ditutup otomatis di bawah.
+    const papanKeys = [...new Set(tasks.filter((t) => t.status !== "selesai")
+      .flatMap((t) => { const m = t.text.match(JIRA_RE); return m ? [m[0]] : []; }))].slice(0, 50);
+    const qs = papanKeys.length ? "?keys=" + encodeURIComponent(papanKeys.join(",")) : "";
+    const r = await fetch(jiraProxy() + "/tickets" + qs, { headers: headerAkses() });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
     if (typeof data.site === "string" && data.site) jira.site = data.site;
@@ -212,6 +217,16 @@ async function syncJira(manual) {
     // menghapus penjaga untuk tiket yang sebenarnya masih terbuka.
     if (feed.length) jira.dismissed = jira.dismissed.filter((k) => feedKeys.has(k));
     rapikanInbox(); // buang tiket yang sudah jadi tugas aktif
+    // Tugas papan yang tiketnya sudah Done di Jira → tandai selesai otomatis
+    // (masuk lipatan Done + tercatat di log kerja), tanpa klaim dirty.
+    if (data.keyStatus) {
+      for (const t of [...tasks]) {
+        if (t.status === "selesai") continue;
+        const m = t.text.match(JIRA_RE);
+        const st = m ? data.keyStatus[m[0]] : null;
+        if (st && st.done) completeTask(t, true);
+      }
+    }
     jira.lastSync = new Date().toISOString();
     jiraSyncMsg = "";
     saveJira(true); // penyegaran mesin — jangan klaim dirty

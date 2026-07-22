@@ -158,7 +158,9 @@ function lanjutkanTumpukan() {
   return top || null;
 }
 
-function completeTask(t) {
+// mesin=true saat penutupan dilakukan otomatis (tiket sudah Done di Jira):
+// simpan tanpa klaim dirty — tiap perangkat mendeteksinya sendiri dari feed.
+function completeTask(t, mesin) {
   const tadinyaFokus = t.status === "fokus";
   stopFocus(t);
   t.status = "selesai";
@@ -171,7 +173,8 @@ function completeTask(t) {
     text: t.text, priority: t.priority, mins: Math.round(t.focusMins || 0),
   });
   t.focusMins = 0;
-  save(); saveWorklog();
+  if (mesin) { saveTanpaSinkron(); saveWorklogTanpaSinkron(); }
+  else { save(); saveWorklog(); }
 }
 function uncompleteTask(t) {
   t.status = "aktif"; t.doneAt = null;
