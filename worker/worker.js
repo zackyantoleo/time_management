@@ -423,7 +423,17 @@ async function tangani(request, env) {
         set.delete(i.key);
         if (set.size) depsByTiket.set(i.key, set);
       }
-      const tanya = [...new Set([...depsByTiket.values()].flatMap((s) => [...s]))]
+      // ?keys= — key tugas papan milik klien; statusnya dilaporkan balik supaya
+      // tugas yang tiketnya sudah Done via Jira bisa ditutup otomatis. Tiket
+      // Done tak pernah muncul di feed (JQL != Done), jadi harus dicek eksplisit.
+      const KEY_1 = /^[A-Z][A-Z0-9]{1,9}-\d+$/;
+      const papanKeys = (url.searchParams.get("keys") || "").split(",")
+        .map((k) => k.trim()).filter((k) => KEY_1.test(k)).slice(0, 50);
+      for (const i of data.issues || []) {
+        const st = i.fields && i.fields.status;
+        if (st) statusByKey.set(i.key, { status: st.name || "?", done: beres(st) });
+      }
+      const tanya = [...new Set([...[...depsByTiket.values()].flatMap((s) => [...s]), ...papanKeys])]
         .filter((k) => !statusByKey.has(k)).slice(0, 100);
       if (tanya.length) {
         const rb = await fetch(site + "/rest/api/3/issue/bulkfetch", {
@@ -439,7 +449,7 @@ async function tangani(request, env) {
           }
         }
       }
-      return json({
+      const body = {
         site,
         items: (data.issues || []).map((i) => {
           const it = {
@@ -455,7 +465,12 @@ async function tangani(request, env) {
           if (deps.length) it.deps = deps;
           return it;
         }),
-      });
+      };
+      if (papanKeys.length) {
+        body.keyStatus = {};
+        for (const k of papanKeys) if (statusByKey.has(k)) body.keyStatus[k] = statusByKey.get(k);
+      }
+      return json(body);
     }
 
     // GET /bau?project=TDBU — daftar tiket "topik" di project BAU (Business
