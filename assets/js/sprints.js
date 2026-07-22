@@ -16,9 +16,6 @@ function saveSprints() { localStorage.setItem(SPRINT_KEY, JSON.stringify(sprints
 // Tanpa klaim dirty — untuk sprint OTOMATIS dari Jira: deterministik, tiap
 // perangkat menghitungnya sendiri dari feed (jangan dorong state basi).
 function saveSprintsTanpaSinkron() { localStorage.setItem(SPRINT_KEY, JSON.stringify(sprints)); }
-// Sprint yang boleh ditetapkan MANUAL (bukan sprint otomatis Jira — itu
-// keanggotaannya dikontrol Jira, tak bisa ditambah tugas sembarang dari sini).
-function sprintManualAktifList() { return sprintAktifList().filter((s) => !s.auto); }
 
 // Rekonsiliasi sprint otomatis dari feed /tickets (dipanggil di syncJira):
 // tiap sprint aktif Jira → sprint Catet ber-id "jira:<id>" (nama & tanggal dari
@@ -56,9 +53,10 @@ function rekonsiliasiSprintJira(feed) {
     jira.dismissed.push(f.key);
     ubahT = true; // jira.items/dismissed tersimpan oleh saveJira(true) di syncJira
   }
-  // tautkan/lepas tugas papan (hanya menyentuh yang belum bersprint / di sprint auto)
+  // tautkan/lepas tugas papan (hanya menyentuh yang belum bersprint / di sprint
+  // auto; penetapan manual pengguna — sprintManual — tidak diutak-atik)
   for (const t of tasks) {
-    if (t.status === "selesai") continue;
+    if (t.status === "selesai" || t.sprintManual) continue;
     const m = t.text.match(JIRA_RE);
     if (!m) continue;
     const jid = sprintByKey.get(m[0]);
@@ -159,10 +157,20 @@ function jumlahTugasSprint(id) {
   return tasks.filter((t) => t.status !== "selesai" && t.sprintId === id).length;
 }
 
-// Ubah keanggotaan sprint sebuah tugas. id berisi → pindah/masuk sprint.
-// id null → keluarkan (lihat keluarkanDariSprint).
+// Ubah keanggotaan sprint sebuah tugas (aksi PENGGUNA — semua pemanggilnya
+// menu/tombol). sprintManual = keputusan manual menang atas rekonsiliasi
+// sprint Jira: tautan buatan user tidak dicabut/ditaut ulang oleh sync.
+// id berisi → pindah/masuk sprint; null → keluarkan.
 function setTaskSprint(t, id) {
-  if (id) { t.sprintId = id; save(); return; }
+  if (id) { t.sprintId = id; t.sprintManual = true; save(); return; }
+  const cur = t.sprintId ? sprintById(t.sprintId) : null;
+  if (cur && cur.auto) {
+    // Keluar dari sprint otomatis: tugas tetap di papan (turun ke "Nanti"),
+    // di-flag manual supaya sync tidak memasukkannya lagi.
+    t.sprintId = null; t.sprintManual = true;
+    if (typeof nantiOpen !== "undefined") nantiOpen = true;
+    save(); return;
+  }
   keluarkanDariSprint(t);
 }
 
@@ -208,10 +216,10 @@ function bukaSprintMenu(anchor, currentId, onPick) {
   const menu = el("div", "sprint-menu");
   sprintMenuEl = menu;
   const pilih = (id) => (ev) => { ev.stopPropagation(); tutupSprintMenu(); onPick(id); };
-  for (const s of sprintManualAktifList()) {
+  for (const s of sprintAktifList()) {
     const item = el("button", "sprint-menu-item" + (currentId === s.id ? " aktif" : ""));
     item.append(el("span", "sprint-menu-tick", currentId === s.id ? "✓" : ""));
-    item.append(el("span", null, s.nama + " · " + fmtSisaSprint(s)));
+    item.append(el("span", null, (s.auto ? "🔄 " : "") + s.nama + " · " + fmtSisaSprint(s)));
     item.onclick = pilih(s.id);
     menu.append(item);
   }

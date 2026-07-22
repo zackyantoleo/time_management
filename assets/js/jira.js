@@ -111,6 +111,7 @@ function takeJiraItem(item, sprintId) {
     createdAt: new Date().toISOString(),
     status: "aktif", doneAt: null, focusedAt: null, notified: false,
     sprintId: sprintId || null,
+    sprintManual: sprintId ? true : undefined, // pilihan user menang atas sync sprint Jira
   });
   jira.items = jira.items.filter((x) => x.id !== item.id);
   if (!jira.dismissed.includes(item.key)) jira.dismissed.push(item.key);
@@ -570,7 +571,8 @@ function sprintRow(s, sec) {
   if (s.auto) {
     // Sprint otomatis: nama & tanggal dari Jira, tak bisa diedit di sini.
     const info = el("div", "cap-hint");
-    info.textContent = "Ends " + fmtDayName(s.selesai) + " · nama & isi disinkron dari Jira.";
+    info.textContent = "Ends " + fmtDayName(s.selesai) + " · nama & tanggal ikut Jira. " +
+      "Isinya boleh diubah manual (tombol 🏃 di tugas/tiket) — perubahan manual tidak dilawan sync.";
     ed.append(info);
   } else {
     const grpNama = el("div", "cap-group");
@@ -608,12 +610,10 @@ function sprintRow(s, sec) {
       // Status tiket dev (ready to test / menunggu dev) — sama seperti di Board.
       const dep = t.status !== "selesai" ? depsTugas(t) : null;
       if (dep) li.append(depBadge(dep));
-      if (!s.auto) { // keanggotaan sprint otomatis dikontrol Jira
-        const keluar = el("button", "icon-btn danger", "✕");
-        keluar.title = "Keluarkan dari sprint"; keluar.setAttribute("aria-label", keluar.title);
-        keluar.onclick = () => { setTaskSprint(t, null); render(); };
-        li.append(keluar);
-      }
+      const keluar = el("button", "icon-btn danger", "✕");
+      keluar.title = "Keluarkan dari sprint"; keluar.setAttribute("aria-label", keluar.title);
+      keluar.onclick = () => { setTaskSprint(t, null); render(); };
+      li.append(keluar);
       ul.append(li);
     });
     ed.append(ul);
@@ -820,7 +820,7 @@ function renderJiraInbox() {
       take.title = "Pindahkan ke papan utama sebagai tugas";
       take.onclick = () => { takeJiraItem(item); render(); };
       row.append(take);
-      if (sprintManualAktifList().length) {
+      if (sprintAktifList().length) {
         const takeSprint = el("button", "btn-line", "🏃 Sprint");
         takeSprint.title = "Ambil ke papan + pilih sprint";
         takeSprint.onclick = (e) => {
