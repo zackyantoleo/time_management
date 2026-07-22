@@ -591,6 +591,9 @@ function sprintRow(s, sec) {
       const tx = el("span", "sprint-task-text" + (t.status === "selesai" ? " done" : ""));
       tx.append(linkify(t.text));
       li.append(tx);
+      // Status tiket dev (ready to test / menunggu dev) — sama seperti di Board.
+      const dep = t.status !== "selesai" ? depsTugas(t) : null;
+      if (dep) li.append(depBadge(dep));
       const keluar = el("button", "icon-btn danger", "✕");
       keluar.title = "Keluarkan dari sprint"; keluar.setAttribute("aria-label", keluar.title);
       keluar.onclick = () => { setTaskSprint(t, null); render(); };
