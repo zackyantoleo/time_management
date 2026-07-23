@@ -2,7 +2,7 @@
 "use strict";
 
 let capPriority = "sedang";
-let capDue = { kind: "none" }; // none | today | tomorrow-am | custom(value)
+let capDue = { kind: "today" }; // none | today | tomorrow-am | custom(value)
 
 function resolveDue() {
   const now = new Date();
