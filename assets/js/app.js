@@ -3,7 +3,12 @@
 // dipasang di sini.
 "use strict";
 
-let view = "papan"; // papan | jira | log | settings
+// Tab aktif diingat per perangkat — refresh tidak melempar balik ke Board.
+const VIEW_KEY = "catet.view.v1";
+let view = (() => {
+  const v = localStorage.getItem(VIEW_KEY);
+  return ["papan", "jira", "log", "settings"].includes(v) ? v : "papan";
+})(); // papan | jira | log | settings
 // Pencarian per tab — query Board tidak ikut memfilter Jira/Log, dan
 // sebaliknya. Kotaknya satu; isinya mengikuti tab aktif. Settings tak punya
 // isi yang bisa dicari, jadi kotaknya disembunyikan di tab itu.
@@ -18,6 +23,7 @@ const SEARCH_PLACEHOLDER = {
 
 function setView(v) {
   view = v;
+  localStorage.setItem(VIEW_KEY, v); // preferensi perangkat, tidak ikut sinkron
   searchQuery = searchPerTab[v] || "";
   const s = $("#search");
   s.value = searchQuery;
@@ -86,7 +92,7 @@ function initApp() {
       });
     }).catch(() => {});
   }
-  render();
+  setView(view); // pulihkan tab terakhir (markup default HTML = papan)
   initSync(); // pull state → sinkron Jira → push tertunda (urutan di sync.js)
 }
 initApp();

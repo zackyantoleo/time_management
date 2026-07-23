@@ -16,13 +16,11 @@ function saveSprints() { localStorage.setItem(SPRINT_KEY, JSON.stringify(sprints
 // Tanpa klaim dirty — untuk sprint OTOMATIS dari Jira: deterministik, tiap
 // perangkat menghitungnya sendiri dari feed (jangan dorong state basi).
 function saveSprintsTanpaSinkron() { localStorage.setItem(SPRINT_KEY, JSON.stringify(sprints)); }
-// Sprint yang boleh ditetapkan MANUAL (bukan sprint otomatis Jira — itu
-// keanggotaannya dikontrol Jira, tak bisa ditambah tugas sembarang dari sini).
-function sprintManualAktifList() { return sprintAktifList().filter((s) => !s.auto); }
 
 // Rekonsiliasi sprint otomatis dari feed /tickets (dipanggil di syncJira):
 // tiap sprint aktif Jira → sprint Catet ber-id "jira:<id>" (nama & tanggal dari
-// Jira); tugas papan yang tiketnya di sprint itu ikut ditautkan otomatis.
+// Jira); tiket sprint yang belum ada di papan otomatis diambil jadi tugas
+// (tanpa perlu "Take" manual), lalu tugas papan ditautkan/dilepas mengikuti Jira.
 function rekonsiliasiSprintJira(feed) {
   const jiraSprints = new Map(); // jiraId -> {name,endDate}
   const sprintByKey = new Map(); // KEY tiket -> jiraId
@@ -39,9 +37,26 @@ function rekonsiliasiSprintJira(feed) {
     if (!s) { sprints.list.push({ id, jiraId: jid, nama: sp.name || ("Sprint " + jid), selesai, auto: true }); ubahS = true; }
     else if (s.nama !== (sp.name || s.nama) || s.selesai !== selesai) { s.nama = sp.name || s.nama; s.selesai = selesai; ubahS = true; }
   }
-  // tautkan/lepas tugas papan (hanya menyentuh yang belum bersprint / di sprint auto)
+  // Auto-ambil: tiket ber-sprint yang belum jadi tugas papan langsung diambil
+  // (pindah dari inbox). Dismissed dihormati — tiket yang sengaja dibuang /
+  // sudah diselesaikan tidak dihidupkan lagi.
+  for (const f of feed) {
+    if (!f.sprint || f.sprint.jiraId == null) continue;
+    if (jira.dismissed.includes(f.key)) continue;
+    if (tasks.some((t) => t.status !== "selesai" && t.text.includes(f.key))) continue;
+    tasks.push({
+      id: uid(), text: f.key + " — " + (f.summary || ""), priority: "sedang", due: null,
+      createdAt: new Date().toISOString(), status: "aktif", doneAt: null, focusedAt: null,
+      notified: false, sprintId: "jira:" + f.sprint.jiraId,
+    });
+    jira.items = jira.items.filter((x) => x.key !== f.key);
+    jira.dismissed.push(f.key);
+    ubahT = true; // jira.items/dismissed tersimpan oleh saveJira(true) di syncJira
+  }
+  // tautkan/lepas tugas papan (hanya menyentuh yang belum bersprint / di sprint
+  // auto; penetapan manual pengguna — sprintManual — tidak diutak-atik)
   for (const t of tasks) {
-    if (t.status === "selesai") continue;
+    if (t.status === "selesai" || t.sprintManual) continue;
     const m = t.text.match(JIRA_RE);
     if (!m) continue;
     const jid = sprintByKey.get(m[0]);
@@ -142,10 +157,20 @@ function jumlahTugasSprint(id) {
   return tasks.filter((t) => t.status !== "selesai" && t.sprintId === id).length;
 }
 
-// Ubah keanggotaan sprint sebuah tugas. id berisi → pindah/masuk sprint.
-// id null → keluarkan (lihat keluarkanDariSprint).
+// Ubah keanggotaan sprint sebuah tugas (aksi PENGGUNA — semua pemanggilnya
+// menu/tombol). sprintManual = keputusan manual menang atas rekonsiliasi
+// sprint Jira: tautan buatan user tidak dicabut/ditaut ulang oleh sync.
+// id berisi → pindah/masuk sprint; null → keluarkan.
 function setTaskSprint(t, id) {
-  if (id) { t.sprintId = id; save(); return; }
+  if (id) { t.sprintId = id; t.sprintManual = true; save(); return; }
+  const cur = t.sprintId ? sprintById(t.sprintId) : null;
+  if (cur && cur.auto) {
+    // Keluar dari sprint otomatis: tugas tetap di papan (turun ke "Nanti"),
+    // di-flag manual supaya sync tidak memasukkannya lagi.
+    t.sprintId = null; t.sprintManual = true;
+    if (typeof nantiOpen !== "undefined") nantiOpen = true;
+    save(); return;
+  }
   keluarkanDariSprint(t);
 }
 
@@ -191,10 +216,10 @@ function bukaSprintMenu(anchor, currentId, onPick) {
   const menu = el("div", "sprint-menu");
   sprintMenuEl = menu;
   const pilih = (id) => (ev) => { ev.stopPropagation(); tutupSprintMenu(); onPick(id); };
-  for (const s of sprintManualAktifList()) {
+  for (const s of sprintAktifList()) {
     const item = el("button", "sprint-menu-item" + (currentId === s.id ? " aktif" : ""));
     item.append(el("span", "sprint-menu-tick", currentId === s.id ? "✓" : ""));
-    item.append(el("span", null, s.nama + " · " + fmtSisaSprint(s)));
+    item.append(el("span", null, (s.auto ? "🔄 " : "") + s.nama + " · " + fmtSisaSprint(s)));
     item.onclick = pilih(s.id);
     menu.append(item);
   }

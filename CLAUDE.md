@@ -22,7 +22,7 @@ dependensi, tanpa framework. Data pengguna di `localStorage`.
   di `index.html` penting:
   1. `util.js` — helper DOM (`$`, `el`), `uid`, format tanggal/waktu, salin teks
   2. `tasks.js` — state `tasks` + `worklog`; skor dinamis (`skorTugas`, `masukHariIni`); selesai/batal/fokus; tumpukan interupsi (`fokuskan`, `lanjutkanTumpukan` — field `ditumpuk` di tugas)
-  3. `sprints.js` — sprint (nama + tanggal selesai); `sprintPts` menekan skor anggotanya (sadar-beban); `sprintKuotaHariIni` = jatah harian burn-down untuk "Do today"; `completeSprint` tutup + log. Sprint OTOMATIS dari Jira (`rekonsiliasiSprintJira` di syncJira; id `jira:<id>`, field `auto`) — dibuat/ditaut/dihapus dari sprint aktif tiket (field Sprint `customfield_*`); manual tetap didukung (`sprintManualAktifList` untuk penetapan manual)
+  3. `sprints.js` — sprint (nama + tanggal selesai); `sprintPts` menekan skor anggotanya (sadar-beban); `sprintKuotaHariIni` = jatah harian burn-down untuk "Do today"; `completeSprint` tutup + log. Sprint OTOMATIS dari Jira (`rekonsiliasiSprintJira` di syncJira; id `jira:<id>`, field `auto`) — dibuat/ditaut/dihapus dari sprint aktif tiket (field Sprint `customfield_*`); manual tetap didukung; penetapan manual (tombol 🏃/chip) boleh menyasar sprint auto juga — flag `sprintManual` di tugas membuat rekonsiliasi tidak melawannya
   4. `capture.js` — kolom catat cepat (prioritas, kapan, `addTask`)
   5. `routines.js` — rutinitas harian + render section-nya
   6. `jira.js` — autolink kode tiket, inbox tiket, impor, sinkron via proxy; topik BAU (`jira.bau`, `cocokBau`, `syncBau` — worklog non-sprint ke tiket topik, mis. project TDBU)

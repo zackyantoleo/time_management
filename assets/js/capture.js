@@ -2,7 +2,7 @@
 "use strict";
 
 let capPriority = "sedang";
-let capDue = { kind: "none" }; // none | today | tomorrow-am | custom(value)
+let capDue = { kind: "today" }; // none | today | tomorrow-am | custom(value)
 
 function resolveDue() {
   const now = new Date();
@@ -32,6 +32,7 @@ function addTask(text) {
     status: "aktif", doneAt: null, focusedAt: null, notified: false,
     dampak: s ? scDampak : null, usaha: s ? scUsaha : null, skor: s ? s.skor : null,
     sprintId: sprint ? sprint.id : null,
+    sprintManual: sprint ? true : undefined, // pilihan user menang atas sync sprint Jira
   });
   resetScore();
   save(); render();
@@ -41,7 +42,7 @@ function addTask(text) {
 // Sprint yang dipilih menempel sampai diganti (sticky, seperti chip prioritas).
 function updateSprintChip() {
   const btn = $("#sprint-capture");
-  if (!sprintManualAktifList().length) { capSprintId = null; btn.classList.add("hidden"); return; }
+  if (!sprintAktifList().length) { capSprintId = null; btn.classList.add("hidden"); return; }
   if (capSprintId && !sprintById(capSprintId)) capSprintId = null; // sprint dihapus
   const s = capSprintId ? sprintById(capSprintId) : null;
   btn.classList.remove("hidden");
