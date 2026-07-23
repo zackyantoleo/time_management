@@ -23,7 +23,7 @@ function renderFocus() {
     const doneBtn = el("button", "btn-solid", "✓ Done");
     doneBtn.onclick = () => { completeTask(t); render(); };
     const pauseBtn = el("button", "btn-line", "Pause — back to list");
-    pauseBtn.onclick = () => { stopFocus(t); t.status = "aktif"; save(); render(); };
+    pauseBtn.onclick = () => { stopFocus(t); t.status = "aktif"; save(true); render(); };
     const intBtn = el("button", "btn-line", "⚡ Interruption? Note it");
     intBtn.title = "Catat interupsinya di kolom bawah, lalu tekan ▶ padanya kalau harus dikerjakan sekarang — tugas ini otomatis masuk tumpukan dan kembali difokuskan begitu interupsinya selesai.";
     intBtn.onclick = () => { $("#cap-text").focus(); };

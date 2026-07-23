@@ -20,25 +20,25 @@ function load() {
   try { return JSON.parse(localStorage.getItem(STORE_KEY)) || []; }
   catch { return []; }
 }
-function save() {
+// segera=true → push sinkron tanpa debounce (fokus/pause/selesai), supaya
+// perangkat lain cepat melihat status "In progress".
+function save(segera) {
   localStorage.setItem(STORE_KEY, JSON.stringify(tasks));
-  if (typeof syncDirty === "function") syncDirty();
+  if (typeof syncDirty === "function") syncDirty(!!segera);
 }
 function loadWorklog() {
   try { return JSON.parse(localStorage.getItem(WORKLOG_KEY)) || []; }
   catch { return []; }
 }
-function saveWorklog() {
+function saveWorklog(segera) {
   localStorage.setItem(WORKLOG_KEY, JSON.stringify(worklog));
-  if (typeof syncDirty === "function") syncDirty();
+  if (typeof syncDirty === "function") syncDirty(!!segera);
 }
 // Simpan TANPA menandai dirty — khusus perubahan yang dibuat mesin (arsip
-// otomatis, backfill, penanda notifikasi), bukan tangan pengguna. Perangkat
-// ber-flag dirty MENDORONG seluruh state-nya alih-alih menarik; kalau
-// perubahan mesin ikut mengklaim itu, tab lama yang berjalan di latar akan
-// terus menimpa server dengan state basi — tugas yang sudah diselesaikan di
-// perangkat lain "hidup lagi". Perubahan mesin bersifat deterministik: tiap
-// perangkat menghitungnya sendiri, tak perlu didorong.
+// otomatis, backfill, penanda notifikasi), bukan tangan pengguna. Kalau
+// perubahan mesin ikut mengklaim dirty, tab lama di latar bisa mendorong
+// state basi dan menimpa fokus/selesai dari perangkat lain. Perubahan mesin
+// bersifat deterministik: tiap perangkat menghitungnya sendiri.
 function saveTanpaSinkron() { localStorage.setItem(STORE_KEY, JSON.stringify(tasks)); }
 function saveWorklogTanpaSinkron() { localStorage.setItem(WORKLOG_KEY, JSON.stringify(worklog)); }
 
@@ -145,7 +145,7 @@ function fokuskan(t) {
     cur.ditumpuk = new Date().toISOString();
   }
   t.status = "fokus"; t.focusedAt = new Date().toISOString(); t.ditumpuk = null;
-  save();
+  save(true); // segera: perangkat lain harus lihat fokus tanpa tunggu debounce
 }
 // Tugas di tumpukan, yang terakhir ditunda paling atas (LIFO).
 function daftarTumpukan() {
@@ -176,14 +176,14 @@ function completeTask(t, mesin, kapanIso) {
   });
   t.focusMins = 0;
   if (mesin) { saveTanpaSinkron(); saveWorklogTanpaSinkron(); }
-  else { save(); saveWorklog(); }
+  else { save(true); saveWorklog(true); } // segera: fokus/selesai ikut sinkron
 }
 function uncompleteTask(t) {
   t.status = "aktif"; t.doneAt = null;
   for (let i = worklog.length - 1; i >= 0; i--) {
     if (worklog[i].taskId === t.id) { worklog.splice(i, 1); break; }
   }
-  save(); saveWorklog();
+  save(true); saveWorklog(true);
 }
 
 // Arsipkan tugas selesai yang sudah lama: buang dari papan supaya state
