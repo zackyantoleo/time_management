@@ -244,11 +244,10 @@ function taskRow(t) {
 
   const actions = el("div", "task-actions");
   if (t.status !== "selesai") {
-    // Tombol 🏃 → menu pilih sprint MANUAL. Sprint otomatis (Jira) tak bisa
-    // diubah dari sini — keanggotaannya dikontrol Jira, jadi tombol disembunyikan
-    // untuk tugas yang sudah di sprint otomatis.
+    // Tombol 🏃 → menu pilih sprint (manual maupun otomatis Jira; penetapan
+    // manual di-flag sprintManual sehingga tidak dilawan sync).
     const s = t.sprintId ? sprintById(t.sprintId) : null;
-    if (sprintManualAktifList().length || (s && !s.auto)) {
+    if (sprintAktifList().length || t.sprintId) {
       const spBtn = el("button", "icon-btn" + (t.sprintId ? " in-sprint" : ""), "🏃");
       spBtn.title = s ? "Sprint: " + s.nama + " (klik untuk ganti/keluar)" : "Masukkan ke sprint";
       spBtn.setAttribute("aria-label", spBtn.title);
