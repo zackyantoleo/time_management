@@ -143,15 +143,26 @@ function depsTugas(t) {
   const m = t && t.text ? t.text.match(JIRA_RE) : null;
   return m ? depsTiket(m[0]) : null;
 }
-// Badge "✅ ready to test" / "⏳ dev: KEY" — dipakai papan & inbox Jira.
+// Badge "✅ ready to test" / "⏳ dev: KEY" — dipakai papan, inbox Jira, dan
+// item sprint. Bisa diklik → buka tiket dev-nya di Jira (kalau key & site ada;
+// data lama tanpa `keys` jatuh ke span biasa sampai sinkron berikutnya).
 function depBadge(dep) {
-  if (dep.ready) {
-    const b = el("span", "effort-badge dep-ready", "✅ ready to test");
-    b.title = "Tiket dev-nya sudah Done — siap dites, otomatis masuk “Do today”.";
-    return b;
+  const kelas = dep.ready ? "effort-badge dep-ready" : "effort-badge dep-wait";
+  const label = dep.ready ? "✅ ready to test" : "⏳ dev: " + dep.wait[0].key;
+  const key = dep.ready ? (dep.keys || [])[0] : dep.wait[0].key;
+  const title = dep.ready
+    ? "Tiket dev" + (dep.keys && dep.keys.length ? " " + dep.keys.join(", ") : "") +
+      " sudah Done — siap dites, otomatis masuk “Do today”."
+    : "Menunggu " + dep.wait.map((x) => x.key + " (" + x.status + ")").join(", ");
+  if (key && jiraSite()) {
+    const a = el("a", kelas, label);
+    a.href = jiraUrl(key); a.target = "_blank"; a.rel = "noopener";
+    a.title = title + " Klik untuk buka " + key + " di Jira.";
+    a.onclick = (e) => e.stopPropagation(); // jangan memicu aksi baris di belakangnya
+    return a;
   }
-  const b = el("span", "effort-badge dep-wait", "⏳ dev: " + dep.wait[0].key);
-  b.title = "Menunggu " + dep.wait.map((x) => x.key + " (" + x.status + ")").join(", ");
+  const b = el("span", kelas, label);
+  b.title = title;
   return b;
 }
 
@@ -201,6 +212,7 @@ async function syncJira(manual) {
       if (Array.isArray(f.deps) && f.deps.length) {
         jira.deps[f.key] = {
           ready: f.deps.every((d) => d.done),
+          keys: f.deps.map((d) => d.key), // untuk tautan badge → tiket dev
           wait: f.deps.filter((d) => !d.done).map((d) => ({ key: d.key, status: d.status })),
         };
       } else delete jira.deps[f.key];

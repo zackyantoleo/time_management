@@ -226,9 +226,11 @@
     background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-muted);
   }
   .effort-badge.sprint-mepet { border-color: var(--p-urgent); color: var(--p-urgent); background: var(--p-urgent-soft); }
-  /* status tiket dev untuk tiket QA */
+  /* status tiket dev untuk tiket QA (bisa berupa <a> → buka tiket dev di Jira) */
   .effort-badge.dep-ready { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
   .effort-badge.dep-wait { color: var(--ink-faint); }
+  a.effort-badge { text-decoration: none; }
+  a.effort-badge:hover { text-decoration: underline; text-underline-offset: 2px; border-color: currentColor; }
   .pr-tag { font-size: 11px; font-weight: 700; }
   .pr-tag.pr-urgent { color: var(--p-urgent); }
   .pr-tag.pr-tinggi { color: var(--p-tinggi); }
