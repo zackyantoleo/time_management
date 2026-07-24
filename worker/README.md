@@ -123,10 +123,27 @@ kode akses.
    ```
    Daftar user: `curl -s .../admin/users -H "X-Admin-Key: …"`.
    Hapus (beserta datanya): `curl -X DELETE .../admin/users/<id> -H "X-Admin-Key: …"`.
-3. Tiap orang membuka aplikasi → tab **Jira** → **Access — sync** → isi kode
-   → Save. Data lokal yang sudah ada terunggah otomatis ke akunnya.
-   (Pemilik lama: buat kode untuk dirimu juga; begitu diisi, state lokalmu
+3. Tiap orang membuka aplikasi → **⚙ Settings** → **Account** → **Sign in**
+   → isi kode → Sign in. Data lokal yang sudah ada terunggah otomatis ke
+   akunnya, dan kredensial Jira/kalender ikut dari server — **di perangkat
+   baru cukup kode ini, tak perlu isi ulang**.
+   (Pemilik lama: buat kode untuk dirimu juga; begitu di-sign-in, state lokalmu
    pindah ke akun itu.)
+
+### Pendaftaran mandiri (opsional — tim buat akun sendiri)
+
+Supaya ±20 orang bisa **buat akun sendiri** tanpa kamu jalankan curl per orang,
+set satu passphrase bersama lalu bagikan sekali ke tim:
+
+```
+wrangler secret put SIGNUP_SECRET    # mis. "tim-catet-2026"
+```
+
+Lalu tiap orang: **⚙ Settings → Account → + create account** → isi nama +
+passphrase → **Create account**. Sistem membuat akun & menampilkan **kode
+akses sekali** (mereka simpan di password manager). Tanpa `SIGNUP_SECRET`,
+pendaftaran mandiri tertutup dan kode tetap dibuat admin lewat `/admin/users`.
+Endpoint `POST /signup` di-origin-gate (hanya dari app) + butuh passphrase itu.
 
 4. Kredensial Jira per orang: setelah kode terisi, di section **Access**
    muncul kolom **Jira credentials** — isi alamat Jira Cloud

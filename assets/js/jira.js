@@ -467,83 +467,201 @@ function renderBauSection(wrap) {
 
 // Section "Access": kode akses multi-user (disimpan per perangkat).
 // Dirender di tab Settings (lihat settings.js), bukan tab Jira.
+/* ---------- akun (kode akses = login) ----------
+   Kode akses berfungsi sebagai login: kredensial Jira & iCal tersimpan di
+   SERVER per akun, jadi di perangkat baru cukup sign in dengan kode — tak perlu
+   isi ulang. profil = hasil GET /me (nama + status kredensial), ditarik sekali
+   saat masuk tab. kodeBaru = kode hasil signup, ditampilkan sekali. */
+let profil = null;
+let profilAt = 0;
+let profilLoading = false;
+let kodeBaru = null;
+async function tarikProfil(paksa) {
+  if (!jira.key || !jiraProxy() || profilLoading) return;
+  if (!paksa && profil && Date.now() - profilAt < 60000) return;
+  profilLoading = true;
+  try {
+    const r = await fetch(jiraProxy() + "/me", { headers: headerAkses() });
+    const d = await r.json().catch(() => ({}));
+    profil = r.ok ? d : { error: d.error || ("HTTP " + r.status) };
+    if (r.ok && d.jira_site) jira.site = d.jira_site;
+  } catch (e) {
+    profil = { error: (e && e.message) || "koneksi" };
+  }
+  profilAt = Date.now(); profilLoading = false;
+  if (view === "jira" || view === "settings") render();
+}
+// Terapkan kode akses (sign in / ganti akun): pull state, tarik profil & tiket.
+async function pakaiKode(kode) {
+  jira.key = (kode || "").trim();
+  saveJira(true); // kredensial perangkat, bukan perubahan data
+  setSyncStatus(""); profil = null;
+  await pullState(true);
+  tarikProfil(true);
+  syncJira(true);
+  render();
+}
+
 function renderAksesSection(wrap) {
   const sec = el("section", "section s-jira");
   sec.style.marginTop = "18px";
   const head = el("div", "section-head");
-  head.append(el("h2", null, "Access — sync"));
-  if (jira.key) head.append(el("span", "count mono", "✓ code set"));
+  head.append(el("h2", null, "Account"));
+  if (jira.key) head.append(el("span", "count mono",
+    profil && profil.name ? "✓ " + profil.name : "✓ signed in"));
   sec.append(head);
+
+  if (jira.key && jiraProxy()) tarikProfil(false);
 
   const det = document.createElement("details");
   det.className = "routine-manage";
+  det.open = !jira.key; // belum sign in → panel terbuka biar kelihatan
   const sum = document.createElement("summary");
-  sum.textContent = jira.key ? "access settings" : "+ set access code";
+  sum.textContent = jira.key ? "account settings" : "+ sign in / create account";
   det.append(sum);
   const editor = el("div", "routine-editor");
+
+  // Kode baru hasil signup — tampil sekali (di atas), harus disimpan.
+  if (kodeBaru) editor.append(kotakKodeBaru());
+  if (!jira.key) renderSignedOut(editor);
+  else renderSignedIn(editor);
+
+  det.append(editor);
+  sec.append(det);
+  wrap.append(sec);
+}
+
+// Kotak kode akses baru (hasil signup) — ditampilkan sekali, wajib disimpan.
+function kotakKodeBaru() {
+  const box = el("div", "kode-baru");
+  box.append(el("div", "cap-label", "Your new access code — simpan!"));
+  const row = el("div", "routine-form");
+  const salin = el("button", "btn-line", "Copy");
+  salin.onclick = () => copyText(kodeBaru, salin);
+  row.append(el("code", "kode-baru-val", kodeBaru), salin);
+  const tutup = el("button", "btn-line", "I saved it");
+  tutup.onclick = () => { kodeBaru = null; render(); };
+  row.append(tutup);
+  box.append(row);
+  box.append(el("div", "cap-hint",
+    "Kode hanya ditampilkan sekali. Simpan baik-baik (mis. di password manager) — dipakai untuk sign in di semua perangkatmu."));
+  return box;
+}
+
+// Belum sign in: form masuk (kode) + form buat akun (nama + passphrase).
+function renderSignedOut(editor) {
+  editor.append(el("div", "cap-label", "Sign in"));
   const form = el("div", "routine-form");
   const kodeIn = document.createElement("input");
-  kodeIn.type = "password"; kodeIn.value = jira.key || "";
-  kodeIn.placeholder = "Access code";
-  kodeIn.title = "Kode akses dari admin — identitas kamu di server sinkronisasi";
-  const simpan = el("button", "btn-solid", "Save");
-  simpan.onclick = async () => {
-    jira.key = kodeIn.value.trim();
-    saveJira(true); // kredensial perangkat, bukan perubahan data
-    setSyncStatus("");
-    await pullState(true);
-    syncJira(true);
-    render();
-  };
+  kodeIn.type = "password"; kodeIn.placeholder = "Access code";
+  kodeIn.title = "Kode akunmu — identitas di server sinkronisasi";
+  const simpan = el("button", "btn-solid", "Sign in");
+  simpan.onclick = () => { if (kodeIn.value.trim()) pakaiKode(kodeIn.value); };
   kodeIn.onkeydown = (e) => { if (e.key === "Enter") simpan.onclick(); };
   form.append(kodeIn, simpan);
   editor.append(form);
   editor.append(el("div", "cap-hint",
-    "Dipakai kalau Worker disetel multi-user (REQUIRE_AUTH): tiap orang dapat kode dari admin, datanya terpisah per kode. Kosongkan kalau Worker-mu mode pribadi."));
+    "Sekali sign in, kredensial Jira & kalender ikut dari server — di perangkat lain cukup kode ini, tak perlu isi ulang. Kosongkan kalau Worker-mu mode pribadi."));
 
-  if (jira.key) {
-    // Kredensial Jira milik user — tiket & worklog atas nama masing-masing.
-    editor.append(el("div", "cap-label", "Jira credentials"));
-    const fj = el("div", "routine-form");
-    const siteIn = document.createElement("input");
-    siteIn.type = "url"; siteIn.placeholder = "https://kantormu.atlassian.net";
-    siteIn.title = "Alamat Jira Cloud kamu";
-    const emailIn = document.createElement("input");
-    emailIn.type = "email"; emailIn.placeholder = "Email Atlassian";
-    const tokenIn = document.createElement("input");
-    tokenIn.type = "password"; tokenIn.placeholder = "API token";
-    tokenIn.title = "Buat di id.atlassian.com/manage-profile/security/api-tokens";
-    const kirimJ = el("button", "btn-solid", "Save Jira credentials");
-    kirimJ.onclick = async () => {
-      kirimJ.disabled = true;
-      try {
-        const r = await fetch(jiraProxy() + "/me/jira", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...headerAkses() },
-          body: JSON.stringify({ site: siteIn.value, email: emailIn.value, token: tokenIn.value }),
-        });
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
-        jira.site = siteIn.value.trim().replace(/\/+$/, "");
-        saveJira(true);
-        alert("Tersimpan. Tiket & worklog Jira sekarang memakai akunmu sendiri.");
-        syncJira(true);
-      } catch (e) {
-        alert("Gagal menyimpan: " + (e && e.message ? e.message : "koneksi"));
-      }
-      kirimJ.disabled = false;
-      render();
-    };
-    fj.append(siteIn, emailIn, tokenIn, kirimJ);
-    editor.append(fj);
-    editor.append(el("div", "cap-hint",
-      "Isi sekali (tersimpan di server, bukan di perangkat). Token dibuat sendiri di id.atlassian.com → Security → API tokens."));
-  }
-  // Kalender jalan tanpa kode (mode pribadi) — URL iCal disimpan di perangkat.
+  const daf = document.createElement("details");
+  daf.className = "routine-manage"; daf.style.marginTop = "8px";
+  const dsum = document.createElement("summary");
+  dsum.textContent = "+ create account";
+  daf.append(dsum);
+  const df = el("div", "routine-form"); df.style.marginTop = "8px";
+  const namaIn = document.createElement("input");
+  namaIn.type = "text"; namaIn.placeholder = "Your name";
+  const secretIn = document.createElement("input");
+  secretIn.type = "password"; secretIn.placeholder = "Signup passphrase";
+  secretIn.title = "Passphrase pendaftaran dari admin/tim";
+  const buat = el("button", "btn-solid", "Create account");
+  buat.onclick = async () => {
+    if (!namaIn.value.trim()) { alert("Isi nama dulu."); return; }
+    buat.disabled = true;
+    try {
+      const r = await fetch(jiraProxy() + "/signup", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: namaIn.value.trim(), secret: secretIn.value }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+      kodeBaru = d.code;      // tampilkan sekali
+      await pakaiKode(d.code); // langsung sign in dengan akun baru
+    } catch (e) {
+      alert("Gagal membuat akun: " + (e && e.message ? e.message : "koneksi"));
+      buat.disabled = false;
+    }
+  };
+  df.append(namaIn, secretIn, buat);
+  daf.append(df);
+  daf.append(el("div", "cap-hint",
+    "Buat akunmu sendiri: butuh passphrase pendaftaran dari admin/tim. Setelah dibuat, kamu dapat kode akses untuk sign in."));
+  editor.append(daf);
+}
+
+// Sudah sign in: identitas + status kredensial (tersimpan di server) + edit.
+function renderSignedIn(editor) {
+  const bar = el("div", "routine-form");
+  bar.append(el("div", "cap-hint",
+    profil && profil.name ? "Signed in as " + profil.name
+    : profil && profil.error ? "Signed in (profil gagal dimuat: " + profil.error + ")"
+    : "Signed in…"));
+  const keluar = el("button", "btn-line", "Sign out");
+  keluar.style.marginLeft = "auto";
+  keluar.onclick = () => {
+    if (!confirm("Sign out dari perangkat ini?\nData lokal tetap ada; kredensial di server tidak dihapus.")) return;
+    jira.key = ""; profil = null; kodeBaru = null; saveJira(true); setSyncStatus(""); render();
+  };
+  bar.append(keluar);
+  editor.append(bar);
+
+  // Jira credentials — status + form ubah. Tersimpan di server per akun.
+  editor.append(el("div", "cap-label", "Jira credentials"));
+  const jiraOk = profil && profil.jira_tersimpan;
+  editor.append(el("div", "cap-hint",
+    jiraOk ? "✓ Tersambung ke " + (profil.jira_site || jira.site || "Jira") +
+      " (tersimpan di server — tak perlu isi ulang di perangkat lain)."
+    : profil ? "Belum diisi — tiket & worklog belum bisa ditarik. Isi di bawah."
+    : "Memeriksa…"));
+  const fj = el("div", "routine-form");
+  const siteIn = document.createElement("input");
+  siteIn.type = "url"; siteIn.placeholder = "https://kantormu.atlassian.net";
+  siteIn.title = "Alamat Jira Cloud kamu";
+  if (profil && profil.jira_site) siteIn.value = profil.jira_site;
+  const emailIn = document.createElement("input");
+  emailIn.type = "email"; emailIn.placeholder = "Email Atlassian";
+  if (profil && profil.jira_email) emailIn.value = profil.jira_email;
+  const tokenIn = document.createElement("input");
+  tokenIn.type = "password"; tokenIn.placeholder = jiraOk ? "API token (isi untuk ganti)" : "API token";
+  tokenIn.title = "Buat di id.atlassian.com/manage-profile/security/api-tokens";
+  const kirimJ = el("button", "btn-solid", jiraOk ? "Update" : "Save Jira credentials");
+  kirimJ.onclick = async () => {
+    kirimJ.disabled = true;
+    try {
+      const r = await fetch(jiraProxy() + "/me/jira", {
+        method: "POST", headers: { "Content-Type": "application/json", ...headerAkses() },
+        body: JSON.stringify({ site: siteIn.value, email: emailIn.value, token: tokenIn.value }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+      jira.site = siteIn.value.trim().replace(/\/+$/, ""); saveJira(true);
+      alert("Tersimpan. Tiket & worklog Jira memakai akunmu sendiri.");
+      tarikProfil(true); syncJira(true);
+    } catch (e) {
+      alert("Gagal menyimpan: " + (e && e.message ? e.message : "koneksi"));
+    }
+    kirimJ.disabled = false; render();
+  };
+  fj.append(siteIn, emailIn, tokenIn, kirimJ);
+  editor.append(fj);
+  editor.append(el("div", "cap-hint",
+    "Tersimpan di server (bukan di perangkat). Token dibuat sendiri di id.atlassian.com → Security → API tokens."));
+
+  // Google Calendar — status server + form (calSettingsForm juga simpan ke server).
+  if (profil) editor.append(el("div", "cap-hint",
+    profil.cal_tersimpan ? "📅 Kalender tersimpan di server — muncul di semua perangkatmu."
+    : "📅 Kalender belum diisi (opsional)."));
   if (typeof calSettingsForm === "function") editor.append(calSettingsForm());
-  det.append(editor);
-  sec.append(det);
-  wrap.append(sec);
 }
 
 /* ---------- sprint bar (di atas daftar tiket) ---------- */

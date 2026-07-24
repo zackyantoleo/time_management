@@ -324,6 +324,23 @@ async function tangani(request, env) {
       return json({ error: "Origin tidak diizinkan untuk mengakses proxy ini." }, 403);
     }
 
+    // POST /signup — buat akun sendiri (self-service). Dijaga origin + passphrase
+    // bersama SIGNUP_SECRET (owner bagikan sekali ke tim). Tanpa SIGNUP_SECRET,
+    // pendaftaran mandiri tertutup — kode tetap dibuat admin lewat /admin/users.
+    if (request.method === "POST" && url0.pathname === "/signup") {
+      if (!env.CATET_DB) return json({ error: "Signup butuh D1 (lihat worker/README.md)." }, 500);
+      if (!env.SIGNUP_SECRET) return json({ error: "Pendaftaran mandiri belum dibuka — minta kode ke admin." }, 403);
+      let b; try { b = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
+      if (String((b && b.secret) || "") !== env.SIGNUP_SECRET) return json({ error: "Signup passphrase salah." }, 401);
+      const name = (b && typeof b.name === "string" ? b.name.trim() : "").slice(0, 60);
+      if (!name) return json({ error: "Isi nama dulu." }, 400);
+      const id = crypto.randomUUID();
+      const code = kodeAcak();
+      await d1q(env, "INSERT INTO users (id, name, token_hash, created_at) VALUES (?1, ?2, ?3, ?4)",
+        [id, name, await sha256hex(code), new Date().toISOString()], "run");
+      return json({ name, code }); // kode hanya ditampilkan sekali ini
+    }
+
     // Identitas: kode akses → user. Saat REQUIRE_AUTH=1, semua endpoint data
     // wajib kode valid; tanpa mode itu, tanpa kode = user "default" (mode lama).
     const user = await userDariKode(env, request);
