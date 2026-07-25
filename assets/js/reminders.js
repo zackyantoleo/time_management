@@ -13,6 +13,26 @@ let remindersOn = localStorage.getItem(REMIND_KEY) !== "0"; // default nyala
 function sysNotifAvailable() {
   return "Notification" in window && Notification.permission === "granted";
 }
+// Notifikasi OS yang menonjol & persist (seperti WhatsApp): lewat service
+// worker → muncul di notification center, tetap sampai ditutup
+// (requireInteraction), bergetar, dan bisa diklik untuk buka app. Fallback ke
+// Notification biasa kalau SW tak ada (mis. dibuka dari file://).
+function tampilkanNotifSistem(judul, teks, tag) {
+  if (!sysNotifAvailable()) return;
+  const opts = {
+    body: teks, icon: "icon-192.png", badge: "icon-192.png",
+    tag: tag || undefined, renotify: !!tag,
+    requireInteraction: true, vibrate: [200, 100, 200], timestamp: Date.now(),
+  };
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.getRegistration()
+      .then((reg) => { if (reg && reg.showNotification) reg.showNotification(judul, opts);
+        else new Notification(judul, opts); })
+      .catch(() => { try { new Notification(judul, opts); } catch {} });
+  } else {
+    try { new Notification(judul, opts); } catch {}
+  }
+}
 // Ikon + label terpisah: di layar sempit label disembunyikan lewat CSS
 // (.btn-label) supaya header tidak dipenuhi tombol bertumpuk tiga baris.
 // Detail status ("di tab ini", dst.) cukup di title/tooltip.
@@ -94,7 +114,7 @@ function checkDue() {
   for (const t of tasks) {
     if (t.status !== "selesai" && t.due && !t.notified && new Date(t.due) <= now) {
       t.notified = true; changed = true;
-      dueNow.push(t);
+      dueNow.push({ judul: "⏰ Task due", text: t.text });
     }
   }
   // Penanda notified = perubahan mesin — simpan tanpa mengklaim dirty,
@@ -108,7 +128,7 @@ function checkDue() {
     if (r.time && r.time <= nowHM &&
         !rday.doneIds.includes(r.id) && !rday.notifiedIds.includes(r.id)) {
       rday.notifiedIds.push(r.id); rdayChanged = true;
-      dueNow.push({ text: "Routine: " + r.text });
+      dueNow.push({ judul: "🔁 Routine", text: r.text });
     }
   }
   if (rdayChanged) saveRday();
@@ -117,15 +137,13 @@ function checkDue() {
   if (typeof tarikKalender === "function") tarikKalender(false);
   if (typeof checkMeetingsDue === "function") {
     for (const e of checkMeetingsDue()) {
-      dueNow.push({ text: "📅 " + (e.summary || "(tanpa judul)") + " — " + fmtClock(new Date(e.start)) });
+      dueNow.push({ judul: "📅 Meeting now", text: (e.summary || "(tanpa judul)") + " · " + fmtClock(new Date(e.start)) });
     }
   }
   if (remindersOn) {
     for (const t of dueNow) {
       showToast(t);
-      if (sysNotifAvailable()) {
-        try { new Notification("Catet — time’s up!", { body: t.text }); } catch {}
-      }
+      tampilkanNotifSistem(t.judul || "Catet — pengingat", t.text, t.text.slice(0, 60));
     }
     if (dueNow.length) beep();
   }
