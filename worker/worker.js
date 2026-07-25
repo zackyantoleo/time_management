@@ -644,37 +644,39 @@ async function tangani(request, env) {
       return json({ ok: true });
     }
 
-    // POST /transition — { key } → pindahkan tiket ke "In Progress". Aman &
-    // idempoten: hanya menggeser dari kategori "To Do" (new); tiket yang sudah
-    // In Progress/Done tidak disentuh (tak mundur). Transisi tujuan dicari
-    // dinamis (nama "In Progress" diutamakan, jika tak ada pakai kategori
-    // indeterminate) — kebal beda nama status antar workflow.
+    // POST /transition — { key, target:"inprogress"|"done" } → geser status
+    // tiket. Aman & idempoten, tak pernah mundur:
+    //  • inprogress: hanya dari kategori To Do (new); yang sudah maju diabaikan.
+    //  • done: dari To Do / In Progress; yang sudah Done diabaikan.
+    // Transisi tujuan dicari dinamis (nama diutamakan, lalu kategori) — kebal
+    // beda nama status antar workflow.
     if (request.method === "POST" && url.pathname === "/transition") {
       let body; try { body = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
       const key = body && body.key;
+      const target = body && body.target === "done" ? "done" : "inprogress";
       if (!key || !/^[A-Z][A-Z0-9]{1,9}-\d+$/.test(key)) return json({ error: "Format key tidak valid." }, 400);
       const base = site + "/rest/api/3/issue/" + encodeURIComponent(key);
-      // status sekarang
       const rs = await fetch(base + "?fields=status", { headers: authHeaders });
       if (!rs.ok) return json({ error: "Jira menolak (" + rs.status + "): " + (await rs.text()).slice(0, 200) }, 502);
       const cur = (await rs.json()).fields || {};
       const catNow = cur.status && cur.status.statusCategory && cur.status.statusCategory.key;
-      if (catNow !== "new") { // sudah In Progress / Done → jangan diubah
-        return json({ ok: true, skipped: true, status: (cur.status && cur.status.name) || null });
-      }
-      // pilih transisi ke In Progress
+      // guard anti-mundur: skip kalau sudah di/di depan kategori tujuan
+      const skip = target === "inprogress" ? catNow !== "new" : catNow === "done";
+      if (skip) return json({ ok: true, skipped: true, status: (cur.status && cur.status.name) || null });
       const rt = await fetch(base + "/transitions", { headers: authHeaders });
       if (!rt.ok) return json({ error: "Gagal ambil transisi (" + rt.status + ")." }, 502);
       const trs = ((await rt.json()).transitions) || [];
-      const cocok = trs.find((t) => t.to && /^in\s*progress$/i.test(t.to.name || "")) ||
-        trs.find((t) => t.to && t.to.statusCategory && t.to.statusCategory.key === "indeterminate");
-      if (!cocok) return json({ ok: false, error: "Tak ada transisi ke In Progress." }, 200);
+      const namaRe = target === "done" ? /^done$/i : /^in\s*progress$/i;
+      const kat = target === "done" ? "done" : "indeterminate";
+      const cocok = trs.find((t) => t.to && namaRe.test(t.to.name || "")) ||
+        trs.find((t) => t.to && t.to.statusCategory && t.to.statusCategory.key === kat);
+      if (!cocok) return json({ ok: false, error: "Tak ada transisi ke " + target + "." }, 200);
       const rp = await fetch(base + "/transitions", {
         method: "POST", headers: { ...authHeaders, "Content-Type": "application/json" },
         body: JSON.stringify({ transition: { id: cocok.id } }),
       });
       if (!rp.ok) return json({ error: "Jira menolak transisi (" + rp.status + "): " + (await rp.text()).slice(0, 200) }, 502);
-      return json({ ok: true, status: (cocok.to && cocok.to.name) || "In Progress" });
+      return json({ ok: true, status: (cocok.to && cocok.to.name) || target });
     }
 
     // GET/PUT /state — sinkronisasi data antar perangkat. Satu blob JSON per
