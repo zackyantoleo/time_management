@@ -136,6 +136,31 @@ function rapikanInbox() {
   return true;
 }
 
+/* ---------- fokus → tiket Jira jadi "In Progress" ----------
+   Saat tugas dari tiket Jira difokuskan, geser statusnya di Jira ke In Progress
+   (sekali per tugas via flag jiraInProgress; best-effort — gagal ringan boleh
+   dicoba lagi di fokus berikutnya). Worker hanya menggeser dari To Do; yang
+   sudah In Progress/Done tak disentuh. */
+async function transisiJiraInProgress(t) {
+  if (!t || t.jiraInProgress || !jiraProxy()) return;
+  const m = t.text.match(JIRA_RE);
+  if (!m) return;
+  t.jiraInProgress = true; saveTanpaSinkron(); // optimistik — jangan spam
+  try {
+    const r = await fetch(jiraProxy() + "/transition", {
+      method: "POST", headers: { "Content-Type": "application/json", ...headerAkses() },
+      body: JSON.stringify({ key: m[0] }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.ok === false) throw new Error(d.error || ("HTTP " + r.status));
+    const it = jira.items.find((x) => x.key === m[0]); // segarkan status di inbox
+    if (it && d.status) { it.status = d.status; saveJira(true); }
+    if (view === "papan" || view === "jira") render();
+  } catch (e) {
+    t.jiraInProgress = false; saveTanpaSinkron(); // izinkan dicoba lagi
+  }
+}
+
 /* ---------- dependensi tiket dev (QA menunggu dev done) ---------- */
 function depsTiket(key) { return (key && jira.deps && jira.deps[key]) || null; }
 // Untuk tugas papan: dependensi key tiket pertama di teks tugas.

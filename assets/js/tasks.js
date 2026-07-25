@@ -146,6 +146,8 @@ function fokuskan(t) {
   }
   t.status = "fokus"; t.focusedAt = new Date().toISOString(); t.ditumpuk = null;
   save(true); // segera: perangkat lain harus lihat fokus tanpa tunggu debounce
+  // Tiket Jira yang difokuskan → geser ke In Progress di Jira (best-effort).
+  if (typeof transisiJiraInProgress === "function") transisiJiraInProgress(t);
 }
 // Tugas di tumpukan, yang terakhir ditunda paling atas (LIFO).
 function daftarTumpukan() {
