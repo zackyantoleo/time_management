@@ -1,7 +1,7 @@
 // Service worker Catet: network-first dengan cache fallback, supaya aplikasi
 // tetap bisa dibuka di HP saat tidak ada koneksi. Versi cache dinaikkan saat
 // daftar aset berubah.
-const CACHE = "catet-v41";
+const CACHE = "catet-v42";
 const ASSETS = [
   "./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png",
   "assets/css/styles.css",
@@ -38,4 +38,16 @@ self.addEventListener("fetch", (e) => {
       })
       .catch(() => caches.match(e.request, { ignoreSearch: true }))
   );
+});
+
+// Klik notifikasi OS → fokuskan tab app yang sudah ada, atau buka yang baru.
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  e.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const c of wins) {
+      if (c.url.startsWith(self.location.origin) && "focus" in c) return c.focus();
+    }
+    if (self.clients.openWindow) return self.clients.openWindow("./");
+  })());
 });
