@@ -146,6 +146,8 @@ function fokuskan(t) {
   }
   t.status = "fokus"; t.focusedAt = new Date().toISOString(); t.ditumpuk = null;
   save(true); // segera: perangkat lain harus lihat fokus tanpa tunggu debounce
+  // Tiket Jira yang difokuskan → geser ke In Progress di Jira (best-effort).
+  if (typeof transisiJiraInProgress === "function") transisiJiraInProgress(t);
 }
 // Tugas di tumpukan, yang terakhir ditunda paling atas (LIFO).
 function daftarTumpukan() {
@@ -176,7 +178,12 @@ function completeTask(t, mesin, kapanIso) {
   });
   t.focusMins = 0;
   if (mesin) { saveTanpaSinkron(); saveWorklogTanpaSinkron(); }
-  else { save(true); saveWorklog(true); } // segera: fokus/selesai ikut sinkron
+  else {
+    save(true); saveWorklog(true); // segera: fokus/selesai ikut sinkron
+    // Diselesaikan sendiri → tiket Jira jadi Done (mesin=true dilewati: itu
+    // penutupan otomatis KARENA tiketnya sudah Done, tak perlu transisi lagi).
+    if (typeof transisiJira === "function") transisiJira(t, "done");
+  }
 }
 function uncompleteTask(t) {
   t.status = "aktif"; t.doneAt = null;

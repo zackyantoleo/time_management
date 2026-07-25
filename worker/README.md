@@ -161,6 +161,7 @@ Endpoint `POST /signup` di-origin-gate (hanya dari app) + butuh passphrase itu.
 | GET | `/bau?project=TDBU` | Daftar tiket "topik" project BAU — wadah worklog non-sprint (meeting, deployment, dst.) |
 | GET | `/worklog-report?from=…&to=…` | Total worklog pemilik token per tanggal (maks 31 hari) — panel "sudah ter-log berapa" |
 | POST | `/worklog` | Kirim worklog: `{key, started, timeSpentSeconds, comment}` |
+| POST | `/transition` | `{key, target:"inprogress"\|"done"}` → geser status tiket (tak pernah mundur) — In Progress saat difokuskan, Done saat diselesaikan |
 | GET/PUT | `/state` | Simpan/ambil state Catet untuk sinkron antar perangkat (butuh KV) |
 
 Semuanya hanya bisa diakses dari Origin yang diizinkan (lihat "Keamanan

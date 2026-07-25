@@ -136,6 +136,33 @@ function rapikanInbox() {
   return true;
 }
 
+/* ---------- fokus/selesai → status tiket Jira ikut ----------
+   Tugas dari tiket Jira: difokuskan → tiket jadi In Progress; diselesaikan →
+   tiket jadi Done. Sekali per tugas per target (flag jiraInProgress/jiraDone);
+   best-effort — gagal ringan melepas flag agar bisa dicoba lagi. Worker tak
+   pernah memundurkan status. */
+async function transisiJira(t, target) {
+  const flag = target === "done" ? "jiraDone" : "jiraInProgress";
+  if (!t || t[flag] || !jiraProxy()) return;
+  const m = t.text.match(JIRA_RE);
+  if (!m) return;
+  t[flag] = true; saveTanpaSinkron(); // optimistik — jangan spam
+  try {
+    const r = await fetch(jiraProxy() + "/transition", {
+      method: "POST", headers: { "Content-Type": "application/json", ...headerAkses() },
+      body: JSON.stringify({ key: m[0], target: target || "inprogress" }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.ok === false) throw new Error(d.error || ("HTTP " + r.status));
+    const it = jira.items.find((x) => x.key === m[0]); // segarkan status di inbox
+    if (it && d.status) { it.status = d.status; saveJira(true); }
+    if (view === "papan" || view === "jira") render();
+  } catch (e) {
+    t[flag] = false; saveTanpaSinkron(); // izinkan dicoba lagi
+  }
+}
+function transisiJiraInProgress(t) { return transisiJira(t, "inprogress"); }
+
 /* ---------- dependensi tiket dev (QA menunggu dev done) ---------- */
 function depsTiket(key) { return (key && jira.deps && jira.deps[key]) || null; }
 // Untuk tugas papan: dependensi key tiket pertama di teks tugas.
