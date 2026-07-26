@@ -4,20 +4,25 @@
 "use strict";
 
 const CAL_TZ = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; } })();
+// Rentang tarikan: 7 hari ke belakang sampai 31 hari ke depan (38 hari, di
+// bawah batas 62 hari Worker). Board "Today's meetings" tetap menyaring hari
+// ini dari data ini; tab Calendar menampilkan seluruh rentang.
+const CAL_BACK = 7, CAL_AHEAD = 31;
 let calEvents = null;   // { from, to, events:[] } hasil tarikan
 let calAt = 0;
 let calLoading = false;
 let calMsg = "";
 let calAktif = false;   // kalender terpasang untuk user ini
+let calNeedScroll = false; // gulir ke hari ini sekali saat tab dibuka
 
 async function tarikKalender(paksa) {
   if (!jiraProxy() || calLoading) return;
   if (!paksa && Date.now() - calAt < 10 * 60 * 1000) return; // throttle 10 mnt
   calLoading = true; calMsg = "";
-  if (view === "papan") render();
+  if (view === "papan" || view === "kalender") render();
   try {
-    const from = localDateStr(new Date());
-    const to = localDateStr(new Date(Date.now() + 6 * 86400000)); // hari ini + 6
+    const from = localDateStr(new Date(Date.now() - CAL_BACK * 86400000));
+    const to = localDateStr(new Date(Date.now() + CAL_AHEAD * 86400000));
     // mode pribadi: URL iCal disimpan di perangkat, dikirim sebagai ?ics=
     const ics = jira.calIcs ? "&ics=" + encodeURIComponent(jira.calIcs) : "";
     const r = await fetch(jiraProxy() + "/calendar?from=" + from + "&to=" + to +
@@ -31,7 +36,7 @@ async function tarikKalender(paksa) {
     if (/belum diisi/i.test(calMsg)) calAktif = false;
   }
   calAt = Date.now(); calLoading = false;
-  if (view === "papan") render();
+  if (view === "papan" || view === "kalender") render();
 }
 
 // Acara yang bertumpang-tindih dengan tanggal lokal tertentu.
@@ -133,6 +138,69 @@ function renderMeetings(frag) {
     sec.append(card);
   }
   frag.append(sec);
+}
+
+// Tab "Calendar" — agenda 7 hari ke belakang s/d 31 hari ke depan, dikelompokkan
+// per hari (hanya hari yang ada acaranya). Hari lampau diredupkan, hari ini
+// disorot. Read-only; kelola acara tetap di Google.
+function renderCalendar() {
+  const wrap = $("#calview");
+  wrap.innerHTML = "";
+  if (jiraProxy()) tarikKalender(false);
+  const q = searchQuery.trim().toLowerCase();
+
+  const head = el("div", "section-head");
+  head.append(el("h2", null, "📅 Calendar"));
+  if (calLoading) head.append(el("span", "count", "…"));
+  const ref = el("button", "clear-done", "⟳ refresh");
+  ref.disabled = calLoading;
+  ref.onclick = () => { calAt = 0; tarikKalender(true); };
+  head.append(ref);
+  wrap.append(head);
+
+  if (!calAktif) {
+    wrap.append(el("div", "empty-note", calMsg
+      ? "Gagal menarik kalender: " + calMsg
+      : "Kalender belum diisi. Buka ⚙ Settings → Account → Google Calendar untuk memasang secret iCal URL."));
+    return;
+  }
+
+  const events = ((calEvents && calEvents.events) || []).filter((e) =>
+    !q || (e.summary || "").toLowerCase().includes(q) || (e.location || "").toLowerCase().includes(q));
+  const byDay = new Map();
+  for (const e of events) {
+    const day = e.allDay ? e.date : localDateStr(new Date(e.start));
+    if (!day) continue;
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(e);
+  }
+  const days = [...byDay.keys()].sort();
+  if (!days.length) {
+    wrap.append(el("div", "empty-note",
+      q ? "Tidak ada acara yang cocok." : "Tidak ada acara terjadwal dalam rentang ini 🎉"));
+    return;
+  }
+  const hariIni = localDateStr(new Date());
+  let elHariIni = null;
+  for (const day of days) {
+    const evs = byDay.get(day).sort((a, b) => (a.allDay ? -1 : b.allDay ? 1 : a.start.localeCompare(b.start)));
+    const sec = el("section", "cal-day" +
+      (day < hariIni ? " lampau" : "") + (day === hariIni ? " ini" : ""));
+    const dh = el("div", "cal-day-head");
+    dh.append(el("h3", null, fmtDayHeading(day)));
+    dh.append(el("span", "count mono", evs.length + (evs.length > 1 ? " events" : " event")));
+    sec.append(dh);
+    const card = el("div", "routine-card");
+    for (const e of evs) card.append(calRow(e));
+    sec.append(card);
+    wrap.append(sec);
+    if (!elHariIni && day >= hariIni) elHariIni = sec; // hari ini / hari mendatang pertama
+  }
+  // Gulir ke hari ini sekali saat tab dibuka (7 hari lampau ada di atas).
+  if (calNeedScroll && elHariIni) {
+    calNeedScroll = false;
+    setTimeout(() => elHariIni.scrollIntoView({ block: "start", behavior: "auto" }), 0);
+  }
 }
 
 // Section pengaturan kalender di tab Jira (dipakai renderAksesSection).

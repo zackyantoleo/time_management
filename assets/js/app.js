@@ -7,16 +7,17 @@
 const VIEW_KEY = "catet.view.v1";
 let view = (() => {
   const v = localStorage.getItem(VIEW_KEY);
-  return ["papan", "jira", "log", "settings"].includes(v) ? v : "papan";
-})(); // papan | jira | log | settings
+  return ["papan", "jira", "kalender", "log", "settings"].includes(v) ? v : "papan";
+})(); // papan | jira | kalender | log | settings
 // Pencarian per tab — query Board tidak ikut memfilter Jira/Log, dan
 // sebaliknya. Kotaknya satu; isinya mengikuti tab aktif. Settings tak punya
 // isi yang bisa dicari, jadi kotaknya disembunyikan di tab itu.
-let searchPerTab = { papan: "", jira: "", log: "", settings: "" };
+let searchPerTab = { papan: "", jira: "", kalender: "", log: "", settings: "" };
 let searchQuery = ""; // query tab aktif (dibaca para renderer)
 const SEARCH_PLACEHOLDER = {
   papan: "Search tasks…",
   jira: "Search tickets / sprints / topics…",
+  kalender: "Search events…",
   log: "Search work log…",
   settings: "",
 };
@@ -31,18 +32,22 @@ function setView(v) {
   s.classList.toggle("hidden", v === "settings");
   $("#tab-papan").setAttribute("aria-selected", String(v === "papan"));
   $("#tab-jira").setAttribute("aria-selected", String(v === "jira"));
+  $("#tab-kalender").setAttribute("aria-selected", String(v === "kalender"));
   $("#tab-log").setAttribute("aria-selected", String(v === "log"));
   $("#settings-btn").setAttribute("aria-pressed", String(v === "settings"));
   document.querySelectorAll(".board-view").forEach((n) => n.classList.toggle("hidden", v !== "papan"));
   $("#jiraview").classList.toggle("hidden", v !== "jira");
+  $("#calview").classList.toggle("hidden", v !== "kalender");
   $("#worklog").classList.toggle("hidden", v !== "log");
   $("#settingsview").classList.toggle("hidden", v !== "settings");
+  if (v === "kalender" && typeof calNeedScroll !== "undefined") calNeedScroll = true;
   render();
 }
 
 function render() {
   if (view === "papan") { renderFocus(); renderSections(); }
   else if (view === "jira") renderJiraInbox();
+  else if (view === "kalender") renderCalendar();
   else if (view === "settings") renderSettings();
   else renderWorklog();
   $("#tab-jira").textContent = "🎫 Jira" + (jira.items.length ? " (" + jira.items.length + ")" : "");
@@ -55,6 +60,7 @@ function render() {
 function initApp() {
   $("#tab-papan").onclick = () => setView("papan");
   $("#tab-jira").onclick = () => setView("jira");
+  $("#tab-kalender").onclick = () => setView("kalender");
   $("#tab-log").onclick = () => setView("log");
   $("#settings-btn").onclick = () => setView("settings");
   $("#search").addEventListener("input", (e) => {
