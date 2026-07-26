@@ -40,7 +40,6 @@ function setView(v) {
   $("#calview").classList.toggle("hidden", v !== "kalender");
   $("#worklog").classList.toggle("hidden", v !== "log");
   $("#settingsview").classList.toggle("hidden", v !== "settings");
-  if (v === "kalender" && typeof calNeedScroll !== "undefined") calNeedScroll = true;
   render();
 }
 
