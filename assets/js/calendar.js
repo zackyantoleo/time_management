@@ -73,8 +73,11 @@ function acaraLewat(e) {
 const meetingNotified = new Set();
 function meetingKey(e) { return (e.start || "") + "|" + (e.summary || ""); }
 
-// Meeting (timed) yang baru saja mulai & belum dinotifikasi. Jendela 5 menit
-// supaya tab yang baru dibuka tak memunculkan pengingat meeting jam-jam lalu.
+// Meeting (timed) yang akan mulai ≤5 menit lagi & belum dinotifikasi — pengingat
+// muncul 5 menit sebelum meeting. Jendela dari 5 menit sebelum s/d 5 menit
+// sesudah mulai: tab yang baru dibuka menjelang meeting tetap dapat pengingat,
+// tanpa membangkitkan meeting yang sudah lama lewat.
+const MEETING_LEAD = 5 * 60 * 1000;
 function checkMeetingsDue() {
   if (!calEvents || !Array.isArray(calEvents.events)) return [];
   const now = Date.now();
@@ -84,7 +87,8 @@ function checkMeetingsDue() {
     const mulai = new Date(e.start).getTime();
     if (isNaN(mulai)) continue;
     const k = meetingKey(e);
-    if (mulai <= now && now - mulai < 5 * 60 * 1000 && !meetingNotified.has(k)) {
+    const sisa = mulai - now; // >0 = belum mulai
+    if (sisa <= MEETING_LEAD && sisa > -MEETING_LEAD && !meetingNotified.has(k)) {
       meetingNotified.add(k);
       due.push(e);
     }
