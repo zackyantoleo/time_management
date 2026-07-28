@@ -80,17 +80,23 @@ function initReminders() {
   updateNotifBtn();
 }
 
+// Banner pengingat di atas layar. Persist: tidak hilang otomatis atau saat
+// scroll/pindah tab — hanya tertutup lewat tombol ✕ / klik banner.
 function showToast(t) {
   const wrap = $("#toasts");
   const toast = el("div", "toast");
-  toast.append(
-    el("div", "toast-title", "⏰ Time’s up!"),
-    el("div", "toast-body", t.text),
-    el("div", "toast-hint", "klik untuk menutup")
+  const main = el("div", "toast-main");
+  main.append(
+    el("div", "toast-title", t.judul || "⏰ Time’s up!"),
+    el("div", "toast-body", t.text)
   );
+  const close = el("button", "toast-close", "✕");
+  close.setAttribute("aria-label", "Tutup pengingat");
+  close.onclick = (ev) => { ev.stopPropagation(); toast.remove(); };
+  toast.append(main, close);
+  toast.title = "Klik untuk menutup";
   toast.onclick = () => toast.remove();
   wrap.append(toast);
-  setTimeout(() => toast.remove(), 30000);
 }
 let audioCtx = null;
 function beep() {
@@ -137,7 +143,10 @@ function checkDue() {
   if (typeof tarikKalender === "function") tarikKalender(false);
   if (typeof checkMeetingsDue === "function") {
     for (const e of checkMeetingsDue()) {
-      dueNow.push({ judul: "📅 Meeting now", text: (e.summary || "(tanpa judul)") + " · " + fmtClock(new Date(e.start)) });
+      const mulai = new Date(e.start);
+      const menit = Math.round((mulai.getTime() - Date.now()) / 60000);
+      const kapan = menit > 0 ? "dalam " + menit + " menit" : "sekarang";
+      dueNow.push({ judul: "📅 Meeting soon", text: (e.summary || "(tanpa judul)") + " · " + fmtClock(mulai) + " (" + kapan + ")" });
     }
   }
   if (remindersOn) {
