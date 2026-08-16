@@ -21,21 +21,24 @@ function resolveDue() {
 
 let capSprintId = null; // chip "🏃 Sprint": sprint tujuan untuk tugas baru
 
-function addTask(text) {
+function addTask(text, jalankan) {
   text = text.trim();
   if (!text) return;
   const s = scoreOpen ? hitungSkor() : null;
   const sprint = capSprintId ? sprintById(capSprintId) : null;
-  tasks.push({
+  const task = {
     id: uid(), text, priority: capPriority, due: resolveDue(),
     createdAt: new Date().toISOString(),
     status: "aktif", doneAt: null, focusedAt: null, notified: false,
     dampak: s ? scDampak : null, usaha: s ? scUsaha : null, skor: s ? s.skor : null,
     sprintId: sprint ? sprint.id : null,
     sprintManual: sprint ? true : undefined, // pilihan user menang atas sync sprint Jira
-  });
+  };
+  tasks.push(task);
   resetScore();
-  save(); render();
+  if (jalankan) fokuskan(task);
+  else save();
+  render();
 }
 
 // Chip sprint: tampil bila ada sprint; klik → menu pilih sprint tujuan.
@@ -146,7 +149,13 @@ function initCapture() {
       updateScoreVerdict();
     };
   });
-  $("#cap-save").onclick = () => { addTask($("#cap-text").value); $("#cap-text").value = ""; $("#cap-text").focus(); };
+  const submitCapture = (jalankan) => {
+    addTask($("#cap-text").value, jalankan);
+    $("#cap-text").value = "";
+    $("#cap-text").focus();
+  };
+  $("#cap-run").onclick = () => submitCapture(true);
+  $("#cap-save").onclick = () => submitCapture(false);
   $("#cap-text").addEventListener("keydown", (e) => {
     if (e.key === "Enter") { addTask(e.target.value); e.target.value = ""; }
   });

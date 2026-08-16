@@ -14,7 +14,8 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
 - **Slot "Sedang dikerjakan"** — tandai satu tugas sebagai fokus (tombol ▶).
   Tugas itu terpampang di paling atas beserta durasi fokus, jadi setelah
   interupsi selesai kamu langsung ingat tadi sedang mengerjakan apa.
-- **Catat cepat** — ketik, pilih prioritas, Enter. Selesai.
+- **Catat cepat** — ketik lalu tekan Enter/**Save** untuk memasukkannya ke
+  daftar, atau **▶ Run** agar tugas langsung menjadi fokus **In progress**.
 - **Bantu nilai (skoring)** — bingung ini urgent atau bukan? Klik **🧮 Bantu
   nilai**, jawab dua hal: *kalau ditunda kenapa?* (aman / mengganggu /
   memblokir orang-produksi) dan *perkiraan usaha* (≤1 jam / ±½ hari / ≥1
