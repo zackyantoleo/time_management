@@ -767,6 +767,21 @@ function sprintRow(s, sec) {
       // Status tiket dev (ready to test / menunggu dev) — sama seperti di Board.
       const dep = t.status !== "selesai" ? depsTugas(t) : null;
       if (dep) li.append(depBadge(dep));
+      if (t.status !== "selesai") {
+        const running = t.status === "fokus";
+        const run = el("button", "btn-line sprint-run", running ? "● Running" : "▶ Run");
+        run.title = running
+          ? "Tugas ini sedang In progress — buka di Board"
+          : "Jalankan sekarang sebagai In progress";
+        run.setAttribute("aria-label", run.title);
+        run.onclick = () => {
+          // Jangan fokuskan ulang tugas yang sudah berjalan: itu akan mereset
+          // stempel focusedAt dan membuang durasi sesi yang sedang dihitung.
+          if (!running) fokuskan(t);
+          setView("papan");
+        };
+        li.append(run);
+      }
       const keluar = el("button", "icon-btn danger", "✕");
       keluar.title = "Keluarkan dari sprint"; keluar.setAttribute("aria-label", keluar.title);
       keluar.onclick = () => { setTaskSprint(t, null); render(); };
