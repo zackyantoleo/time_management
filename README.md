@@ -85,9 +85,10 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
   setara tenggat terlambat. Badge 🏃 di baris tugas memerah saat sprint
   mepet. Menghapus sprint tidak menghapus tugasnya.
   - **Kelola sprint** (tombol ✎ di bar sprint): ubah nama & tanggal selesai,
-    lihat daftar tugas di dalamnya, keluarkan tugas, atau tekan **✓ Selesai
-    sprint** untuk menutupnya — tercatat di Log kerja dan tekanan skornya
-    berhenti. Sprint yang ditutup masuk area "Sprint selesai".
+    lihat daftar tugas di dalamnya, jalankan item langsung lewat **▶ Run**,
+    keluarkan tugas, atau tekan **✓ Selesai sprint** untuk menutupnya — tercatat
+    di Log kerja dan tekanan skornya berhenti. Sprint yang ditutup masuk area
+    "Sprint selesai".
   - **Pilih sprint per tugas**: tombol 🏃 di baris tugas membuka menu pilih
     sprint langsung (masuk / pindah antar sprint / keluarkan) — sama juga di
     tombol 🏃 pada tiket Jira dan di chip 🏃 kolom catat cepat untuk tugas
