@@ -51,6 +51,12 @@ const bad = await worker.fetch(new Request("https://worker.test/priority-snapsho
   body: JSON.stringify({ ...snapshot, date: "not-a-date" }),
 }), env);
 assert.equal(bad.status, 400);
+const impossibleDate = await worker.fetch(new Request("https://worker.test/priority-snapshot", {
+  method: "PUT",
+  headers: { Origin: origin, "Content-Type": "application/json", Authorization: "Bearer service-secret" },
+  body: JSON.stringify({ ...snapshot, date: "2026-02-31" }),
+}), env);
+assert.equal(impossibleDate.status, 400);
 assert.equal(snapshotWrites, 1, "invalid snapshot must not be written");
 const fetched = await worker.fetch(new Request("https://worker.test/priority-snapshot", { headers: { Origin: origin } }), env);
 assert.deepEqual(await fetched.json(), snapshot);

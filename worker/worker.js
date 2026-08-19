@@ -364,7 +364,8 @@ async function tangani(request, env) {
         if (!user && !priorityServiceOk) return json({ error: "Priority snapshot write membutuhkan kode akses atau service token." }, 401);
         let body;
         try { body = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
-        if (!body || !/^\d{4}-\d{2}-\d{2}$/.test(body.date) ||
+        const dateObj = body && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? new Date(body.date + "T00:00:00Z") : null;
+        if (!body || !dateObj || isNaN(dateObj) || dateObj.toISOString().slice(0, 10) !== body.date ||
           typeof body.generatedAt !== "string" || isNaN(new Date(body.generatedAt)) ||
           !Number.isInteger(body.active) || body.active < 0 ||
           !Number.isInteger(body.today) || body.today < 0 || body.today > body.active ||
