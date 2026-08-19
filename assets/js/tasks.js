@@ -48,43 +48,15 @@ function saveWorklogTanpaSinkron() { localStorage.setItem(WORKLOG_KEY, JSON.stri
    Bahan: dampak (dari panel "Bantu nilai", fallback ke prioritas), kedekatan
    tenggat, dan perkiraan usaha (tugas lama dapat poin lebih supaya dicicil
    lebih awal). Skala 0–10. */
-const SKOR_BASE_PRIORITAS = { urgent: 6, tinggi: 4, sedang: 3, rendah: 1 };
-const SKOR_AMBANG_HARI_INI = 6;
-
 function priorityEvaluator(now) {
   return CatetPriorityEngine.createEvaluator({ tasks, sprints, jira, now: now || new Date() });
-}
-
-function duePtsTugas(t) {
-  return CatetPriorityEngine.duePoints(t, new Date());
-}
-// Tekanan waktu efektif = yang paling mendesak antara tenggat per-tugas dan
-// akhir sprint yang memuat tugas ini (sprintPts dari sprints.js).
-function tekananWaktu(t) {
-  return Math.max(duePtsTugas(t), sprintPts(t));
-}
-// Bonus otomatis — tanpa input pengguna: kerjaan yang sudah dicicil naik
-// (selesaikan dulu yang setengah jadi), dan tugas yang mengendap ≥3 hari
-// naik pelan supaya tidak membusuk di daftar.
-function bonusOtomatis(t) {
-  const wip = (t.focusMins || 0) > 0 || t.ditumpuk ? 1 : 0;
-  const umur = Date.now() - new Date(t.createdAt) >= 3 * 86400000 ? 1 : 0;
-  return wip + umur;
 }
 function skorTugas(t) {
   return priorityEvaluator().score(t);
 }
 // Rincian komponen skor — untuk tooltip badge, biar angkanya tidak misterius.
 function rincianSkor(t) {
-  const parts = [(t.dampak ? "impact " : "priority ") +
-    (t.dampak ? t.dampak * 2 : (SKOR_BASE_PRIORITAS[t.priority] || 3))];
-  const w = tekananWaktu(t);
-  if (w) parts.push((sprintPts(t) > duePtsTugas(t) ? "sprint" : "due") + " +" + w);
-  const uPts = t.usaha === "L" ? 2 : t.usaha === "M" ? 1 : 0;
-  if (uPts) parts.push("effort +" + uPts);
-  if ((t.focusMins || 0) > 0 || t.ditumpuk) parts.push("in progress +1");
-  if (Date.now() - new Date(t.createdAt) >= 3 * 86400000) parts.push("aging +1");
-  return parts.join(" · ");
+  return priorityEvaluator().explain(t);
 }
 // Masuk daftar "Kerjakan hari ini"?
 // - urgent / memblokir orang (dampak 3) / tenggat hari ini atau lewat → selalu.

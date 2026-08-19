@@ -345,7 +345,10 @@ async function tangani(request, env) {
     // Identitas: kode akses → user. Saat REQUIRE_AUTH=1, semua endpoint data
     // wajib kode valid; tanpa mode itu, tanpa kode = user "default" (mode lama).
     const user = await userDariKode(env, request);
-    if (env.REQUIRE_AUTH === "1" && !user) {
+    const priorityServiceOk = url0.pathname === "/priority-snapshot" &&
+      !!env.PRIORITY_SERVICE_TOKEN &&
+      request.headers.get("Authorization") === "Bearer " + env.PRIORITY_SERVICE_TOKEN;
+    if (env.REQUIRE_AUTH === "1" && !user && !priorityServiceOk) {
       return json({ error: "Kode akses tidak valid atau belum diisi — masukkan kode dari admin (tab Jira → Access)." }, 401);
     }
     const uid = user ? user.id : "default";
@@ -359,13 +362,18 @@ async function tangani(request, env) {
         return json(row ? JSON.parse(row.blob) : { date: null, items: [] });
       }
       if (request.method === "PUT") {
-        const serviceOk = !!env.PRIORITY_SERVICE_TOKEN &&
-          request.headers.get("Authorization") === "Bearer " + env.PRIORITY_SERVICE_TOKEN;
-        if (!user && !serviceOk) return json({ error: "Priority snapshot write membutuhkan kode akses atau service token." }, 401);
+        if (!user && !priorityServiceOk) return json({ error: "Priority snapshot write membutuhkan kode akses atau service token." }, 401);
         let body;
         try { body = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
-        if (!body || typeof body.date !== "string" || !Array.isArray(body.items)) {
-          return json({ error: "Field date dan items wajib ada." }, 400);
+        if (!body || !/^\d{4}-\d{2}-\d{2}$/.test(body.date) ||
+          typeof body.generatedAt !== "string" || isNaN(new Date(body.generatedAt)) ||
+          !Number.isInteger(body.active) || body.active < 0 ||
+          !Number.isInteger(body.today) || body.today < 0 || body.today > body.active ||
+          !Array.isArray(body.items) || body.items.length > 5 ||
+          body.items.some((item, i) => !item || typeof item.taskId !== "string" ||
+            typeof item.text !== "string" || !Number.isInteger(item.score) || item.score < 1 || item.score > 10 ||
+            item.rank !== i + 1)) {
+          return json({ error: "Format snapshot tidak valid." }, 400);
         }
         const raw = JSON.stringify(body);
         if (raw.length > 128 * 1024) return json({ error: "Snapshot terlalu besar (maks 128 KB)." }, 413);

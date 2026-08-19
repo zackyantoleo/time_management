@@ -17,6 +17,12 @@
     return date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, "0") + "-" +
       String(date.getDate()).padStart(2, "0");
   }
+  function dateInTimezone(date, timezone) {
+    if (!timezone) return localDate(date);
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(date);
+  }
   function duePoints(task, now) {
     if (!task.due) return 0;
     const due = asDate(task.due);
@@ -59,14 +65,30 @@
       if (perDay >= 1.5) points = Math.min(4, points + 1);
       return points;
     }
-    function score(task) {
+    function components(task) {
       const base = task.dampak ? task.dampak * 2 : (BASE_PRIORITY[task.priority] || 3);
+      const due = duePoints(task, now);
+      const sprint = sprintPoints(task);
       const effort = task.usaha === "L" ? 2 : task.usaha === "M" ? 1 : 0;
       const wip = (task.focusMins || 0) > 0 || task.ditumpuk ? 1 : 0;
       const created = asDate(task.createdAt);
       const aging = created && now - created >= 3 * 86400000 ? 1 : 0;
-      const raw = Math.min(12, base + Math.max(duePoints(task, now), sprintPoints(task)) + effort + wip + aging);
-      return Math.min(10, Math.round((raw / 12) * 10));
+      const pressure = Math.max(due, sprint);
+      const raw = Math.min(12, base + pressure + effort + wip + aging);
+      return { base, due, sprint, pressure, effort, wip, aging,
+        score: Math.min(10, Math.round((raw / 12) * 10)) };
+    }
+    function score(task) {
+      return components(task).score;
+    }
+    function explain(task) {
+      const c = components(task);
+      const parts = [(task.dampak ? "impact " : "priority ") + c.base];
+      if (c.pressure) parts.push((c.sprint > c.due ? "sprint" : "due") + " +" + c.pressure);
+      if (c.effort) parts.push("effort +" + c.effort);
+      if (c.wip) parts.push("in progress +1");
+      if (c.aging) parts.push("aging +1");
+      return parts.join(" · ");
     }
     function compare(a, b) {
       const diff = score(b) - score(a);
@@ -104,9 +126,9 @@
       if (sprint && sprint.status !== "selesai") return (quotaSet || quota()).has(task.id);
       return score(task) >= TODAY_THRESHOLD;
     }
-    return { now, score, compare, quota, isToday, sprintPoints };
+    return { now, score, explain, compare, quota, isToday, sprintPoints };
   }
-  function snapshot({ tasks, sprints, jira, now }) {
+  function snapshot({ tasks, sprints, jira, now, timezone }) {
     now = asDate(now) || new Date();
     const evaluator = createEvaluator({ tasks, sprints, jira, now });
     const quotaSet = evaluator.quota();
@@ -114,12 +136,12 @@
       .filter((task) => ACTIVE.has(task.status) && !task.ditumpuk);
     const selected = active.filter((task) => evaluator.isToday(task, quotaSet)).sort(evaluator.compare);
     return {
-      date: localDate(now),
+      date: dateInTimezone(now, timezone),
       generatedAt: now.toISOString(),
       active: active.length,
       today: selected.length,
-      items: selected.map((task, index) => ({ taskId: task.id, text: task.text, score: evaluator.score(task), rank: index + 1 })),
+      items: selected.slice(0, 5).map((task, index) => ({ taskId: task.id, text: task.text, score: evaluator.score(task), rank: index + 1 })),
     };
   }
-  root.CatetPriorityEngine = { createEvaluator, snapshot, duePoints };
+  root.CatetPriorityEngine = { createEvaluator, snapshot, duePoints, dateInTimezone };
 })(typeof globalThis !== "undefined" ? globalThis : this);

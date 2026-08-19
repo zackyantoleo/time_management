@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 "use strict";
 
+process.env.TZ = "Asia/Jakarta";
+
 const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
@@ -40,6 +42,7 @@ async function jsonRequest(url, options = {}) {
     sprints: state.stores.sprints || { list: [] },
     jira: state.stores.jira || {},
     now: new Date(),
+    timezone: "Asia/Jakarta",
   });
   if (!config.dryRun) {
     const serviceToken = (process.env.CATET_PRIORITY_SERVICE_TOKEN || "").trim();
@@ -55,5 +58,11 @@ async function jsonRequest(url, options = {}) {
       body: JSON.stringify(snapshot),
     });
   }
-  console.log(JSON.stringify(snapshot));
+  console.log(JSON.stringify({
+    date: snapshot.date,
+    active: snapshot.active,
+    today: snapshot.today,
+    items: snapshot.items.length,
+    dryRun: config.dryRun,
+  }));
 })().catch((error) => { console.error("daily priority update failed:", error.message); process.exit(1); });
