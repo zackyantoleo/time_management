@@ -72,7 +72,19 @@ worklog (durasi diambil dari waktu fokus).
 
 Supaya data Catet di laptop dan HP sama, Worker yang sama jadi tempat
 penitipan state. Penyimpanannya **Cloudflare D1** (SQLite; kuota tulis
-gratis 100rb/hari — cukup untuk banyak pengguna):
+gratis 100rb/hari — cukup untuk banyak pengguna).
+
+Snapshot prioritas harian scheduler disimpan lewat endpoint terpisah
+`GET/PUT /priority-snapshot`, bukan di blob `/state`. Dengan begitu cron tidak
+pernah menimpa edit task browser. `PUT` wajib membawa kode akses pengguna atau
+`Authorization: Bearer <PRIORITY_SERVICE_TOKEN>`; token disimpan sebagai secret
+Worker dan file mode 0600 di host scheduler, bukan di repo/browser.
+
+> Tanpa `REQUIRE_AUTH = "1"`, endpoint data user `default` tetap kompatibel
+> dengan instalasi lama dan dapat diakses tanpa kode. Allowlist `Origin` hanya
+> batas CORS browser, bukan autentikasi terhadap klien non-browser. Jangan
+> aktifkan `REQUIRE_AUTH` sebelum semua perangkat memiliki kode akses dan
+> rollback sudah disiapkan.
 
 ```bash
 cd worker

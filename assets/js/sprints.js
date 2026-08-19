@@ -113,15 +113,7 @@ function sisaTugasSprint(id) {
 // sprint berisi banyak tiket yang harus dicicil. Sadar-beban: sprint gemuk
 // (perlu ≥1,5 tiket/hari agar selesai) menekan satu tingkat lebih awal.
 function sprintPts(t) {
-  if (!t.sprintId) return 0;
-  const s = sprintById(t.sprintId);
-  if (!s || sprintSelesai(s)) return 0; // sprint dihapus/ditutup — tak menekan lagi
-  const h = (akhirSprint(s) - Date.now()) / 3600000;
-  if (h < 0) return 4;    // sprint lewat
-  let pts = h <= 24 ? 4 : h <= 72 ? 3 : h <= 168 ? 2 : 1;
-  const perHari = sisaTugasSprint(s.id).length / Math.max(h / 24, 0.5);
-  if (perHari >= 1.5) pts = Math.min(4, pts + 1);
-  return pts;
+  return priorityEvaluator().sprintPoints(t);
 }
 // Jatah harian sprint (burn-down otomatis): supaya selesai tepat waktu, tiap
 // hari perlu dicicil ceil(sisaTugas / sisaHari) tiket. Kembalikan Set id
@@ -130,22 +122,7 @@ function sprintPts(t) {
 // "Nanti" dan naik sendiri begitu jatah hari berikutnya menghitung ulang.
 // Sprint di hari terakhir/terlambat: kuota ≥ sisa, jadi semua anggota masuk.
 function sprintKuotaHariIni() {
-  const set = new Set();
-  // Tiket yang masih menunggu dev (belum bisa dites) mundur ke akhir antrean —
-  // jatah hari ini diberikan ke tiket yang benar-benar bisa dikerjakan.
-  const terblokir = (t) => {
-    const d = typeof depsTugas === "function" ? depsTugas(t) : null;
-    return d && !d.ready ? 1 : 0;
-  };
-  for (const s of sprintAktifList()) {
-    const anggota = sisaTugasSprint(s.id);
-    if (!anggota.length) continue;
-    const sisaHari = Math.max((akhirSprint(s) - Date.now()) / 86400000, 0.5);
-    const kuota = Math.ceil(anggota.length / sisaHari);
-    anggota.sort((a, b) => terblokir(a) - terblokir(b) || bandingkanTugas(a, b))
-      .slice(0, kuota).forEach((t) => set.add(t.id));
-  }
-  return set;
+  return priorityEvaluator().quota();
 }
 function fmtSisaSprint(s) {
   const hari = Math.ceil((akhirSprint(s) - Date.now()) / 86400000);

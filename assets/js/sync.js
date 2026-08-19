@@ -30,6 +30,24 @@ const PULL_INTERVAL_MS = 20 * 1000; // poll antar perangkat (fokus, dll.)
 const PULL_THROTTLE_MS = 8 * 1000;  // batas bawah saat tidak dipaksa
 const PUSH_DEBOUNCE_MS = 3000;
 
+// Ringkasan snapshot prioritas harian dari endpoint terpisah. Bukan bagian
+// blob state, sehingga scheduler tidak pernah menimpa task dari browser.
+let dailyPriority = null;
+
+async function pullDailyPriority() {
+  if (!syncAktif()) return;
+  try {
+    const r = await fetch(jiraProxy() + "/priority-snapshot", { headers: headerAkses() });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+    dailyPriority = data;
+    if (view === "papan" && !sedangMengetik()) renderDailyPriority();
+  } catch { /* Snapshot opsional; board live tetap berjalan tanpa ini. */ }
+}
+function refreshDailyPriority() {
+  if (document.visibilityState === "visible") pullDailyPriority();
+}
+
 let syncPushTimer = null;
 let syncStatus = ""; // teks kecil di footer
 let syncLastPull = 0;
@@ -151,6 +169,7 @@ function terapkanRemote(stores) {
     normalisasiJira(stores.jira);
     tulis("catet.jira.v1", stores.jira);
   }
+
   // muat ulang state global dari localStorage
   if (stores.tasks != null) tasks = stores.tasks;
   if (stores.worklog != null) worklog = stores.worklog;
@@ -243,13 +262,18 @@ async function initSync() {
   document.addEventListener("visibilitychange", () => {
     // Paksa tarik saat tab aktif lagi — fokus dari perangkat lain langsung
     // kelihatan tanpa menunggu interval.
-    if (document.visibilityState === "visible") pullState(true);
+    if (document.visibilityState === "visible") {
+      pullState(true);
+      pullDailyPriority();
+    }
   });
   setInterval(() => {
     // Poll hanya saat tab terlihat — hemat baterai/kuota di latar.
     if (document.visibilityState === "visible") pullState(false);
   }, PULL_INTERVAL_MS);
+  setInterval(refreshDailyPriority, 5 * 60 * 1000);
   try { await pullState(true); } finally { syncReady = true; }
+  await pullDailyPriority();
   if (jiraProxy()) syncJira(false);
   if (syncPendingPush) {
     const segera = syncPendingSegera;

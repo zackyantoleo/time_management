@@ -44,7 +44,7 @@ function setView(v) {
 }
 
 function render() {
-  if (view === "papan") { renderFocus(); renderSections(); }
+  if (view === "papan") { renderDailyPriority(); renderFocus(); renderSections(); }
   else if (view === "jira") renderJiraInbox();
   else if (view === "kalender") renderCalendar();
   else if (view === "settings") renderSettings();

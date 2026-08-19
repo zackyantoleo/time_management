@@ -10,18 +10,17 @@
 //   JIRA_EMAIL     email akun Atlassian pemilik API token
 //   JIRA_API_TOKEN dari id.atlassian.com/manage-profile/security/api-tokens
 //
-// Akses TIDAK lagi pakai kunci rahasia. Otorisasi berbasis Origin: hanya
-// halaman dari origin yang diizinkan (GitHub Pages, localhost, file://) yang
-// boleh memakai proxy ini. Efeknya: perangkat baru langsung tersinkron tanpa
-// menempel apa pun — cukup buka aplikasinya. (Origin dikunci oleh browser,
-// jadi halaman di origin lain tak bisa memalsukannya.)
+// Kompatibilitas lama membolehkan user "default" tanpa kode akses. Allowlist
+// Origin membatasi browser lewat CORS, tetapi bukan autentikasi klien
+// non-browser. Set REQUIRE_AUTH=1 hanya setelah semua perangkat punya kode
+// akses; lihat worker/README.md untuk migrasi dan risiko lockout.
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   // PUT wajib ada di sini — sinkronisasi state pakai PUT /state; tanpa PUT,
   // preflight CORS gagal dan browser memblokir permintaannya.
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, X-Catet-Key, X-Admin-Key",
+  "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Catet-Key, X-Admin-Key",
   "Access-Control-Max-Age": "86400",
 };
 
@@ -60,6 +59,7 @@ function toJiraDate(iso) {
 // dipakai (tanpa langkah migrasi manual). mode: first|run|all.
 const SKEMA = [
   "CREATE TABLE IF NOT EXISTS states (user_id TEXT PRIMARY KEY, blob TEXT NOT NULL, updated_at TEXT NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS priority_snapshots (user_id TEXT PRIMARY KEY, blob TEXT NOT NULL, updated_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL, jira_site TEXT, jira_email TEXT, jira_token TEXT, cal_ics_url TEXT, created_at TEXT NOT NULL)",
 ];
 // Kolom yang ditambahkan setelah tabel pertama dibuat (instalasi lama).
@@ -344,10 +344,46 @@ async function tangani(request, env) {
     // Identitas: kode akses → user. Saat REQUIRE_AUTH=1, semua endpoint data
     // wajib kode valid; tanpa mode itu, tanpa kode = user "default" (mode lama).
     const user = await userDariKode(env, request);
-    if (env.REQUIRE_AUTH === "1" && !user) {
+    const priorityServiceOk = url0.pathname === "/priority-snapshot" &&
+      !!env.PRIORITY_SERVICE_TOKEN &&
+      request.headers.get("Authorization") === "Bearer " + env.PRIORITY_SERVICE_TOKEN;
+    if (env.REQUIRE_AUTH === "1" && !user && !priorityServiceOk) {
       return json({ error: "Kode akses tidak valid atau belum diisi — masukkan kode dari admin (tab Jira → Access)." }, 401);
     }
     const uid = user ? user.id : "default";
+
+    // Snapshot prioritas dipisah dari blob state agar scheduler tidak pernah
+    // menimpa edit browser. PUT hanya untuk user berkode atau service token.
+    if (url0.pathname === "/priority-snapshot") {
+      if (!env.CATET_DB) return json({ error: "Priority snapshot membutuhkan D1." }, 500);
+      if (request.method === "GET") {
+        const row = await d1q(env, "SELECT blob FROM priority_snapshots WHERE user_id = ?1", [uid], "first");
+        return json(row ? JSON.parse(row.blob) : { date: null, items: [] });
+      }
+      if (request.method === "PUT") {
+        if (!user && !priorityServiceOk) return json({ error: "Priority snapshot write membutuhkan kode akses atau service token." }, 401);
+        let body;
+        try { body = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
+        const dateObj = body && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? new Date(body.date + "T00:00:00Z") : null;
+        if (!body || !dateObj || isNaN(dateObj) || dateObj.toISOString().slice(0, 10) !== body.date ||
+          typeof body.generatedAt !== "string" || isNaN(new Date(body.generatedAt)) ||
+          !Number.isInteger(body.active) || body.active < 0 ||
+          !Number.isInteger(body.today) || body.today < 0 || body.today > body.active ||
+          !Array.isArray(body.items) || body.items.length > 5 ||
+          body.items.some((item, i) => !item || typeof item.taskId !== "string" ||
+            typeof item.text !== "string" || !Number.isInteger(item.score) || item.score < 1 || item.score > 10 ||
+            item.rank !== i + 1)) {
+          return json({ error: "Format snapshot tidak valid." }, 400);
+        }
+        const raw = JSON.stringify(body);
+        if (raw.length > 128 * 1024) return json({ error: "Snapshot terlalu besar (maks 128 KB)." }, 413);
+        const updatedAt = new Date().toISOString();
+        await d1q(env,
+          "INSERT INTO priority_snapshots (user_id, blob, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(user_id) DO UPDATE SET blob = ?2, updated_at = ?3",
+          [uid, raw, updatedAt], "run");
+        return json({ ok: true, updatedAt });
+      }
+    }
 
     // GET /me · POST /me/jira · POST /me/calendar — profil & kredensial user.
     if (url0.pathname.startsWith("/me")) {
@@ -723,5 +759,5 @@ async function tangani(request, env) {
       }
     }
 
-    return json({ error: "Endpoint tidak dikenal. Yang ada: GET /tickets, POST /worklog, GET/PUT /state." }, 404);
+    return json({ error: "Endpoint tidak dikenal. Yang ada: GET /tickets, POST /worklog, GET/PUT /state, GET/PUT /priority-snapshot." }, 404);
 }

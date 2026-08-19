@@ -35,6 +35,8 @@
 
   <section class="focus-card board-view" id="focus-card" aria-live="polite"></section>
 
+  <section class="daily-priority board-view hidden" id="daily-priority" aria-live="polite"></section>
+
   <section class="capture board-view" aria-label="Tambah catatan">
     <div class="capture-row1">
       <input type="text" id="cap-text" placeholder="Catat cepat… mis. “kabari mas Budi soal deploy” lalu Enter" autofocus>
@@ -119,6 +121,7 @@
 <!-- Urutan dimuat penting: util → state/fitur → render → app (inisialisasi).
      Skrip klasik (bukan module) supaya tetap bisa dibuka langsung dari file://. -->
 <script src="assets/js/util.js"></script>
+<script src="assets/js/priority-engine.js"></script>
 <script src="assets/js/tasks.js"></script>
 <script src="assets/js/sprints.js"></script>
 <script src="assets/js/capture.js"></script>
