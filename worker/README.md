@@ -80,6 +80,12 @@ pernah menimpa edit task browser. `PUT` wajib membawa kode akses pengguna atau
 `Authorization: Bearer <PRIORITY_SERVICE_TOKEN>`; token disimpan sebagai secret
 Worker dan file mode 0600 di host scheduler, bukan di repo/browser.
 
+> Tanpa `REQUIRE_AUTH = "1"`, endpoint data user `default` tetap kompatibel
+> dengan instalasi lama dan dapat diakses tanpa kode. Allowlist `Origin` hanya
+> batas CORS browser, bukan autentikasi terhadap klien non-browser. Jangan
+> aktifkan `REQUIRE_AUTH` sebelum semua perangkat memiliki kode akses dan
+> rollback sudah disiapkan.
+
 ```bash
 cd worker
 wrangler d1 create catet-db

@@ -10,11 +10,10 @@
 //   JIRA_EMAIL     email akun Atlassian pemilik API token
 //   JIRA_API_TOKEN dari id.atlassian.com/manage-profile/security/api-tokens
 //
-// Akses TIDAK lagi pakai kunci rahasia. Otorisasi berbasis Origin: hanya
-// halaman dari origin yang diizinkan (GitHub Pages, localhost, file://) yang
-// boleh memakai proxy ini. Efeknya: perangkat baru langsung tersinkron tanpa
-// menempel apa pun — cukup buka aplikasinya. (Origin dikunci oleh browser,
-// jadi halaman di origin lain tak bisa memalsukannya.)
+// Kompatibilitas lama membolehkan user "default" tanpa kode akses. Allowlist
+// Origin membatasi browser lewat CORS, tetapi bukan autentikasi klien
+// non-browser. Set REQUIRE_AUTH=1 hanya setelah semua perangkat punya kode
+// akses; lihat worker/README.md untuk migrasi dan risiko lockout.
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
