@@ -72,7 +72,13 @@ worklog (durasi diambil dari waktu fokus).
 
 Supaya data Catet di laptop dan HP sama, Worker yang sama jadi tempat
 penitipan state. Penyimpanannya **Cloudflare D1** (SQLite; kuota tulis
-gratis 100rb/hari — cukup untuk banyak pengguna):
+gratis 100rb/hari — cukup untuk banyak pengguna).
+
+Snapshot prioritas harian scheduler disimpan lewat endpoint terpisah
+`GET/PUT /priority-snapshot`, bukan di blob `/state`. Dengan begitu cron tidak
+pernah menimpa edit task browser. `PUT` wajib membawa kode akses pengguna atau
+`Authorization: Bearer <PRIORITY_SERVICE_TOKEN>`; token disimpan sebagai secret
+Worker dan file mode 0600 di host scheduler, bukan di repo/browser.
 
 ```bash
 cd worker

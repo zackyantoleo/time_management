@@ -51,13 +51,12 @@ function saveWorklogTanpaSinkron() { localStorage.setItem(WORKLOG_KEY, JSON.stri
 const SKOR_BASE_PRIORITAS = { urgent: 6, tinggi: 4, sedang: 3, rendah: 1 };
 const SKOR_AMBANG_HARI_INI = 6;
 
+function priorityEvaluator(now) {
+  return CatetPriorityEngine.createEvaluator({ tasks, sprints, jira, now: now || new Date() });
+}
+
 function duePtsTugas(t) {
-  if (!t.due) return 0;
-  const h = (new Date(t.due) - Date.now()) / 3600000;
-  if (h < 0) return 4;   // terlambat
-  if (h <= 24) return 3; // hari ini
-  if (h <= 48) return 2; // besok
-  return 1;
+  return CatetPriorityEngine.duePoints(t, new Date());
 }
 // Tekanan waktu efektif = yang paling mendesak antara tenggat per-tugas dan
 // akhir sprint yang memuat tugas ini (sprintPts dari sprints.js).
@@ -73,11 +72,7 @@ function bonusOtomatis(t) {
   return wip + umur;
 }
 function skorTugas(t) {
-  const base = t.dampak ? t.dampak * 2 : (SKOR_BASE_PRIORITAS[t.priority] || 3);
-  const uPts = t.usaha === "L" ? 2 : t.usaha === "M" ? 1 : 0;
-  // bonus menambah di atas formula lama, dicap 12 — skor tak pernah turun
-  const raw = Math.min(12, base + tekananWaktu(t) + uPts + bonusOtomatis(t));
-  return Math.min(10, Math.round((raw / 12) * 10));
+  return priorityEvaluator().score(t);
 }
 // Rincian komponen skor — untuk tooltip badge, biar angkanya tidak misterius.
 function rincianSkor(t) {
@@ -98,26 +93,12 @@ function rincianSkor(t) {
 // - selain itu → skor tinggi.
 // kuotaSet opsional (di-precompute board.js sekali per render).
 function masukHariIni(t, kuotaSet) {
-  if (t.priority === "urgent" || t.dampak === 3) return true;
-  if (duePtsTugas(t) >= 3) return true; // tenggat eksplisit menang atas kuota
-  // Tiket QA yang tiket dev-nya baru saja Done → siap dites, kerjakan hari ini.
-  const dep = typeof depsTugas === "function" ? depsTugas(t) : null;
-  if (dep && dep.ready) return true;
-  const s = t.sprintId && typeof sprintById === "function" ? sprintById(t.sprintId) : null;
-  if (s && !sprintSelesai(s)) {
-    return (kuotaSet || sprintKuotaHariIni()).has(t.id);
-  }
-  return skorTugas(t) >= SKOR_AMBANG_HARI_INI;
+  return priorityEvaluator().isToday(t, kuotaSet || sprintKuotaHariIni());
 }
 // Urutan pengerjaan: skor tertinggi dulu, lalu tenggat terdekat, lalu yang
 // lebih dulu dicatat.
 function bandingkanTugas(a, b) {
-  const sa = skorTugas(a), sb = skorTugas(b);
-  if (sa !== sb) return sb - sa;
-  if (a.due && b.due) return new Date(a.due) - new Date(b.due);
-  if (a.due) return -1;
-  if (b.due) return 1;
-  return new Date(a.createdAt) - new Date(b.createdAt);
+  return priorityEvaluator().compare(a, b);
 }
 
 /* ---------- work log (append-only, terpisah dari daftar tugas) ---------- */

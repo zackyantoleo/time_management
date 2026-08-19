@@ -21,7 +21,7 @@ const CORS = {
   // PUT wajib ada di sini — sinkronisasi state pakai PUT /state; tanpa PUT,
   // preflight CORS gagal dan browser memblokir permintaannya.
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, X-Catet-Key, X-Admin-Key",
+  "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Catet-Key, X-Admin-Key",
   "Access-Control-Max-Age": "86400",
 };
 
@@ -60,6 +60,7 @@ function toJiraDate(iso) {
 // dipakai (tanpa langkah migrasi manual). mode: first|run|all.
 const SKEMA = [
   "CREATE TABLE IF NOT EXISTS states (user_id TEXT PRIMARY KEY, blob TEXT NOT NULL, updated_at TEXT NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS priority_snapshots (user_id TEXT PRIMARY KEY, blob TEXT NOT NULL, updated_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL, jira_site TEXT, jira_email TEXT, jira_token TEXT, cal_ics_url TEXT, created_at TEXT NOT NULL)",
 ];
 // Kolom yang ditambahkan setelah tabel pertama dibuat (instalasi lama).
@@ -348,6 +349,33 @@ async function tangani(request, env) {
       return json({ error: "Kode akses tidak valid atau belum diisi — masukkan kode dari admin (tab Jira → Access)." }, 401);
     }
     const uid = user ? user.id : "default";
+
+    // Snapshot prioritas dipisah dari blob state agar scheduler tidak pernah
+    // menimpa edit browser. PUT hanya untuk user berkode atau service token.
+    if (url0.pathname === "/priority-snapshot") {
+      if (!env.CATET_DB) return json({ error: "Priority snapshot membutuhkan D1." }, 500);
+      if (request.method === "GET") {
+        const row = await d1q(env, "SELECT blob FROM priority_snapshots WHERE user_id = ?1", [uid], "first");
+        return json(row ? JSON.parse(row.blob) : { date: null, items: [] });
+      }
+      if (request.method === "PUT") {
+        const serviceOk = !!env.PRIORITY_SERVICE_TOKEN &&
+          request.headers.get("Authorization") === "Bearer " + env.PRIORITY_SERVICE_TOKEN;
+        if (!user && !serviceOk) return json({ error: "Priority snapshot write membutuhkan kode akses atau service token." }, 401);
+        let body;
+        try { body = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
+        if (!body || typeof body.date !== "string" || !Array.isArray(body.items)) {
+          return json({ error: "Field date dan items wajib ada." }, 400);
+        }
+        const raw = JSON.stringify(body);
+        if (raw.length > 128 * 1024) return json({ error: "Snapshot terlalu besar (maks 128 KB)." }, 413);
+        const updatedAt = new Date().toISOString();
+        await d1q(env,
+          "INSERT INTO priority_snapshots (user_id, blob, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(user_id) DO UPDATE SET blob = ?2, updated_at = ?3",
+          [uid, raw, updatedAt], "run");
+        return json({ ok: true, updatedAt });
+      }
+    }
 
     // GET /me · POST /me/jira · POST /me/calendar — profil & kredensial user.
     if (url0.pathname.startsWith("/me")) {
@@ -723,5 +751,5 @@ async function tangani(request, env) {
       }
     }
 
-    return json({ error: "Endpoint tidak dikenal. Yang ada: GET /tickets, POST /worklog, GET/PUT /state." }, 404);
+    return json({ error: "Endpoint tidak dikenal. Yang ada: GET /tickets, POST /worklog, GET/PUT /state, GET/PUT /priority-snapshot." }, 404);
 }

@@ -2,6 +2,27 @@
 // section per prioritas, bagian Selesai, dan badge judul tab.
 "use strict";
 
+function renderDailyPriority() {
+  const card = $("#daily-priority");
+  if (!card) return;
+  const p = typeof dailyPriority === "object" && dailyPriority;
+  if (!p || p.date !== localDateStr(new Date())) {
+    card.classList.add("hidden");
+    card.innerHTML = "";
+    return;
+  }
+  card.innerHTML = "";
+  card.classList.remove("hidden");
+  const title = el("strong", null, "📌 Prioritas hari ini");
+  const meta = el("span", "mono", (p.today || 0) + " dari " + (p.active || 0) + " tugas");
+  card.append(title, meta);
+  const list = el("ol", "daily-priority-list");
+  (p.items || []).slice(0, 5).forEach((item) => {
+    list.append(el("li", null, (item.text || "Task") + " · score " + item.score + "/10"));
+  });
+  if (list.children.length) card.append(list);
+}
+
 function renderFocus() {
   const card = $("#focus-card");
   card.innerHTML = "";
@@ -206,7 +227,8 @@ function taskRow(t) {
   }
   if (t.status !== "selesai") {
     meta.append(el("span", "pr-tag pr-" + t.priority, PR_LABEL[t.priority]));
-    const skorBadge = el("span", "effort-badge mono", "score " + skorTugas(t) + "/10");
+    const skorSekarang = skorTugas(t);
+    const skorBadge = el("span", "effort-badge mono", "score " + skorSekarang + "/10");
     skorBadge.title = rincianSkor(t);
     meta.append(skorBadge);
     if (t.usaha) {
