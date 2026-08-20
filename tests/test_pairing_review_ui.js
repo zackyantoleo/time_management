@@ -26,6 +26,15 @@ assert(!jira.includes('const pairWarn = renderPairingWarnings();'), 'global pair
 assert(jira.includes('const actionable = warnings.filter((w) => w.type === "qa-ambiguous")'),
   'ambiguous QA tickets must be prioritized separately inside a sprint');
 assert(jira.includes('document.createElement("details")'), 'large missing-pair audit must remain collapsible');
+assert(jira.includes('async function uploadDependencyKeJira(qaKey, button)'),
+  'manual pairing must expose an explicit Jira upload action');
+assert(jira.includes('jiraProxy() + "/pairing-link"'), 'upload action must call the dedicated Worker endpoint');
+assert(jira.includes('body: JSON.stringify({ qaKey, devKey })'), 'only the selected QA/dev pair may be uploaded');
+assert(jira.includes('"Upload ke Jira"'), 'selected manual pairing must render an upload button');
+assert(jira.includes('"✓ Ada di Jira"'), 'native pairing must replace the upload action with verified status');
+assert(jira.includes('source: "jira-native"'), 'successful upload must be promoted to native Jira source');
+const pilihSource = jira.slice(jira.indexOf('function pilihDependency'), jira.indexOf('function hapusPilihanDependency'));
+assert(!pilihSource.includes('uploadDependencyKeJira'), 'selecting a candidate must not upload automatically');
 assert(!jira.includes('row.append(el("span", "jira-summary", w.summary || ""), warningBadge(w));'),
   'warning badge must not be duplicated in both row and dependency review');
 assert(css.includes('.pairing-sprint-review'), 'inline sprint pairing review must be styled');

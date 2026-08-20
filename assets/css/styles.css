@@ -267,6 +267,8 @@
   .dep-review { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding-left: 0; }
   .dep-review-label { font-size: 11px; font-weight: 700; color: var(--ink-muted); margin-right: 2px; }
   .dep-candidate { display: inline-flex; align-items: center; gap: 6px; }
+  .dep-upload { padding-block: 4px; }
+  .dep-upload.uploaded { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
   .dep-score { min-width: 20px; padding: 0 4px; border-radius: 999px; background: var(--surface-2);
     color: var(--ink-faint); font-size: 10px; text-align: center; }
   .pairing-audit { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
