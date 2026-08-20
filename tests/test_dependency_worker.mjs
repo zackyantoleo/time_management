@@ -32,6 +32,8 @@ const dev = {
   },
 };
 let calls = [];
+let assignedPage = 0;
+let sprintPage = 0;
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, init = {}) => {
   calls.push(String(url));
@@ -40,8 +42,18 @@ globalThis.fetch = async (url, init = {}) => {
   }
   if (String(url).includes("/rest/api/3/search/jql")) {
     const decoded = decodeURIComponent(String(url));
-    if (decoded.includes("assignee = currentUser()")) return new Response(JSON.stringify({ issues: [qa] }), { status: 200 });
-    if (decoded.includes("sprint in (77)")) return new Response(JSON.stringify({ issues: [qa, dev] }), { status: 200 });
+    if (decoded.includes("assignee = currentUser()")) {
+      assignedPage++;
+      return new Response(JSON.stringify(assignedPage === 1
+        ? { issues: [qa], nextPageToken: "assigned-2" }
+        : { issues: [], isLast: true }), { status: 200 });
+    }
+    if (decoded.includes("sprint in (77)")) {
+      sprintPage++;
+      return new Response(JSON.stringify(sprintPage === 1
+        ? { issues: [qa], nextPageToken: "sprint-2" }
+        : { issues: [dev], isLast: true }), { status: 200 });
+    }
   }
   throw new Error("unexpected Jira call: " + url + " " + JSON.stringify(init));
 };
@@ -66,6 +78,8 @@ try {
   assert.equal(q.sprintId, "77");
   assert(!("description" in q), "raw Jira descriptions must not be returned to the browser matcher");
   assert(calls.some((x) => decodeURIComponent(x).includes("sprint in (77)")), "worker must query all issues in the active sprint");
+  assert.equal(assignedPage, 2, "assigned ticket seed search must follow Jira nextPageToken");
+  assert.equal(sprintPage, 2, "active sprint candidate search must follow Jira nextPageToken");
   console.log(JSON.stringify({ ok: true, pairingIssues: body.pairingIssues.length }));
 } finally {
   globalThis.fetch = realFetch;

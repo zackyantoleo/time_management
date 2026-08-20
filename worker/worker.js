@@ -470,14 +470,23 @@ async function tangani(request, env) {
       const jql = "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC";
       const sf = await sprintFieldId(site, authHeaders); // id field Sprint (bisa null)
       const ticketFields = "summary,status,created,issuetype,parent,components,labels,issuelinks,description";
-      const r = await fetch(
-        site + "/rest/api/3/search/jql?jql=" + encodeURIComponent(jql) +
-          "&fields=" + ticketFields + (sf ? "," + sf : "") +
-          "&maxResults=100",
-        { headers: authHeaders }
-      );
-      if (!r.ok) return json({ error: "Jira menolak (" + r.status + "): " + (await r.text()).slice(0, 300) }, 502);
-      const data = await r.json();
+      let assignedToken = "", assignedIssues = [];
+      const seenAssignedTokens = new Set();
+      do {
+        const pageUrl = site + "/rest/api/3/search/jql?jql=" + encodeURIComponent(jql) +
+          "&fields=" + ticketFields + (sf ? "," + sf : "") + "&maxResults=100" +
+          (assignedToken ? "&nextPageToken=" + encodeURIComponent(assignedToken) : "");
+        const r = await fetch(pageUrl, { headers: authHeaders });
+        if (!r.ok) return json({ error: "Jira menolak (" + r.status + "): " + (await r.text()).slice(0, 300) }, 502);
+        const page = await r.json();
+        assignedIssues.push(...(page.issues || []));
+        assignedToken = page.nextPageToken || "";
+        if (assignedToken && seenAssignedTokens.has(assignedToken)) {
+          return json({ error: "Jira mengulang token pagination tiket; hasil tidak aman dipakai." }, 502);
+        }
+        if (assignedToken) seenAssignedTokens.add(assignedToken);
+      } while (assignedToken);
+      const data = { issues: assignedIssues };
       const KEY_G = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/g;
       const beres = (st) => !!st && ((st.statusCategory && st.statusCategory.key === "done") || /^done$/i.test(st.name || ""));
       const statusByKey = new Map(); // key → { status, done }
@@ -541,18 +550,23 @@ async function tangani(request, env) {
         }))].filter((x) => /^\d+$/.test(x)).slice(0, 10);
         if (activeSprintIds.length) {
           const pairJql = "sprint in (" + activeSprintIds.join(",") + ") ORDER BY updated DESC";
-          let nextPageToken = "", pages = 0, pairRaw = [];
+          let nextPageToken = "", pairRaw = [], pairingComplete = true;
+          const seenPairTokens = new Set();
           do {
             const pageUrl = site + "/rest/api/3/search/jql?jql=" + encodeURIComponent(pairJql) +
               "&fields=" + ticketFields + "," + sf + "&maxResults=100" +
               (nextPageToken ? "&nextPageToken=" + encodeURIComponent(nextPageToken) : "");
             const rp = await fetch(pageUrl, { headers: authHeaders });
-            if (!rp.ok) { pairRaw = []; break; }
+            if (!rp.ok) { pairingComplete = false; break; }
             const pd = await rp.json();
             pairRaw.push(...(pd.issues || []));
             nextPageToken = pd.nextPageToken || "";
-            pages++;
-          } while (nextPageToken && pages < 10); // pagar 1000 issue/sync
+            if (nextPageToken && seenPairTokens.has(nextPageToken)) { pairingComplete = false; break; }
+            if (nextPageToken) seenPairTokens.add(nextPageToken);
+          } while (nextPageToken);
+          // Jangan menghasilkan warning dari candidate pool parsial: lebih baik
+          // tidak ada warning daripada menuduh pasangan hilang dari data bolong.
+          if (!pairingComplete) pairRaw = [];
           pairingIssues = pairRaw.map((i) => {
             const f = i.fields || {};
             const arr = Array.isArray(f[sf]) ? f[sf] : [];
