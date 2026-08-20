@@ -843,13 +843,13 @@ function sprintRow(s, sec) {
   edit.onclick = () => { sprintEditId = sprintEditId === s.id ? null : s.id; render(); };
   row.append(edit);
   sec.append(row);
-  const pairing = renderSprintPairing(s);
-  if (pairing) sec.append(pairing);
 
   if (sprintEditId !== s.id) return;
 
   // ----- panel edit sprint -----
   const ed = el("div", "task-editor");
+  const pairing = renderSprintPairing(s);
+  if (pairing) ed.append(pairing);
   ed.style.borderLeft = "3px solid var(--p-tinggi)";
   ed.style.paddingLeft = "10px";
 
