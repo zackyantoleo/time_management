@@ -463,14 +463,16 @@ async function tangani(request, env) {
 
     // GET /tickets — tiket terbuka yang di-assign ke pemilik token, plus
     // dependensi tiket dev-nya (deps): dari issue link DAN key yang disebut di
-    // description (smart link/teks). Status link sudah terbawa gratis; status
-    // key sebutan-description ditanya sekali via bulkfetch (toleran key salah).
+    // description. Untuk pencocokan CATET-only, Worker juga mengambil metadata
+    // minimal seluruh issue di sprint aktif (termasuk Done dan issue orang lain).
+    // Description mentah tidak pernah diteruskan ke browser.
     if (request.method === "GET" && url.pathname === "/tickets") {
       const jql = "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC";
       const sf = await sprintFieldId(site, authHeaders); // id field Sprint (bisa null)
+      const ticketFields = "summary,status,created,issuetype,parent,components,labels,issuelinks,description";
       const r = await fetch(
         site + "/rest/api/3/search/jql?jql=" + encodeURIComponent(jql) +
-          "&fields=summary,status,created,issuelinks,description" + (sf ? "," + sf : "") +
+          "&fields=" + ticketFields + (sf ? "," + sf : "") +
           "&maxResults=100",
         { headers: authHeaders }
       );
@@ -527,8 +529,61 @@ async function tangani(request, env) {
           }
         }
       }
+      // Candidate pool pasangan QA↔dev: semua issue di sprint aktif yang terlihat
+      // pada feed user. Query kedua sengaja meliputi Done; status Done adalah
+      // sinyal yang dibutuhkan badge "ready to test". Kalau Jira menolak query
+      // ini, feed utama tetap berfungsi dan klien hanya tidak mendapat warning.
+      let pairingIssues = [];
+      if (sf) {
+        const activeSprintIds = [...new Set((data.issues || []).flatMap((i) => {
+          const arr = i.fields && i.fields[sf];
+          return Array.isArray(arr) ? arr.filter((x) => x && x.state === "active" && x.id != null).map((x) => String(x.id)) : [];
+        }))].filter((x) => /^\d+$/.test(x)).slice(0, 10);
+        if (activeSprintIds.length) {
+          const pairJql = "sprint in (" + activeSprintIds.join(",") + ") ORDER BY updated DESC";
+          let nextPageToken = "", pages = 0, pairRaw = [];
+          do {
+            const pageUrl = site + "/rest/api/3/search/jql?jql=" + encodeURIComponent(pairJql) +
+              "&fields=" + ticketFields + "," + sf + "&maxResults=100" +
+              (nextPageToken ? "&nextPageToken=" + encodeURIComponent(nextPageToken) : "");
+            const rp = await fetch(pageUrl, { headers: authHeaders });
+            if (!rp.ok) { pairRaw = []; break; }
+            const pd = await rp.json();
+            pairRaw.push(...(pd.issues || []));
+            nextPageToken = pd.nextPageToken || "";
+            pages++;
+          } while (nextPageToken && pages < 10); // pagar 1000 issue/sync
+          pairingIssues = pairRaw.map((i) => {
+            const f = i.fields || {};
+            const arr = Array.isArray(f[sf]) ? f[sf] : [];
+            const aktif = arr.find((x) => x && x.state === "active");
+            const st = f.status || null;
+            const links = (f.issuelinks || []).map((l) => l.outwardIssue || l.inwardIssue)
+              .filter((x) => x && x.key).map((x) => x.key);
+            const mentions = [...String(JSON.stringify(f.description || "")).matchAll(KEY_G)].map((m) => m[0])
+              .filter((k) => k !== i.key);
+            return {
+              key: i.key,
+              summary: f.summary || "",
+              status: st && st.name || null,
+              done: beres(st),
+              created: f.created || null,
+              issueType: f.issuetype && f.issuetype.name || "",
+              parentKey: f.parent && f.parent.key || null,
+              components: (f.components || []).map((x) => x && x.name).filter(Boolean),
+              labels: Array.isArray(f.labels) ? f.labels : [],
+              linkedKeys: [...new Set(links)],
+              mentionedKeys: [...new Set(mentions)],
+              sprintId: aktif && aktif.id != null ? String(aktif.id) : null,
+              sprintName: aktif && aktif.name || null,
+            };
+          });
+        }
+      }
+
       const body = {
         site,
+        pairingIssues,
         items: (data.issues || []).map((i) => {
           const it = {
             key: i.key,

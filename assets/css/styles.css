@@ -252,6 +252,10 @@
   /* status tiket dev untuk tiket QA (bisa berupa <a> → buka tiket dev di Jira) */
   .effort-badge.dep-ready { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
   .effort-badge.dep-wait { color: var(--ink-faint); }
+  .effort-badge.dep-warning { border-color: var(--p-urgent); color: var(--p-urgent); background: var(--p-urgent-soft); }
+  .dep-review { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    padding: 6px 8px; border-left: 3px solid var(--p-urgent); background: var(--p-urgent-soft); border-radius: 5px; }
+  .dep-review-label { font-size: 11px; font-weight: 700; color: var(--p-urgent); }
   a.effort-badge { text-decoration: none; }
   a.effort-badge:hover { text-decoration: underline; text-underline-offset: 2px; border-color: currentColor; }
   /* kotak kode akses baru hasil signup — ditampilkan sekali */

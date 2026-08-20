@@ -23,9 +23,12 @@ function normalisasiJira(j) {
   j.key = j.key || "";
   j.calIcs = j.calIcs || ""; // secret iCal URL, disimpan per perangkat
   j.dismissed = j.dismissed || [];
-  // Dependensi tiket dev per key tiket QA (dari issue link / sebutan di
-  // description): key → { ready, wait:[{key,status}] }. Diisi ulang tiap sync.
+  // Dependensi tiket dev per key tiket QA: native Jira + hasil matcher CATET.
   j.deps = j.deps || {};
+  j.depOverrides = j.depOverrides || {}; // pilihan manual QA key → dev key
+  j.depSuggestions = j.depSuggestions || {};
+  j.depWarnings = Array.isArray(j.depWarnings) ? j.depWarnings : [];
+  j.pairingIssues = Array.isArray(j.pairingIssues) ? j.pairingIssues : [];
   j.items = Array.isArray(j.items) ? j.items : [];
   // Topik BAU (Business as Usual): tiket "wadah worklog" di project khusus
   // (mis. TDBU) untuk kerjaan di luar task sprint — meeting, deployment, dst.
@@ -170,6 +173,96 @@ function depsTugas(t) {
   const m = t && t.text ? t.text.match(JIRA_RE) : null;
   return m ? depsTiket(m[0]) : null;
 }
+function warningTiket(key) {
+  return (jira.depWarnings || []).find((x) => x && x.key === key) || null;
+}
+function suggestionTiket(key) { return jira.depSuggestions && jira.depSuggestions[key] || null; }
+function warningBadge(w) {
+  const label = w.type === "dev-missing-qa" ? "⚠ QA ticket belum ditemukan"
+    : w.type === "qa-ambiguous" ? "⚠ pilih tiket dev" : "⚠ dev ticket belum ditemukan";
+  const b = el("span", "effort-badge dep-warning", label);
+  b.title = w.message || label;
+  return b;
+}
+function terapkanHasilPasangan(result, nativeDeps) {
+  const next = { ...(nativeDeps || {}) };
+  for (const [key, dep] of Object.entries(next)) dep.source = "jira-native";
+  for (const m of result.matches || []) {
+    if (next[m.qaKey]) continue; // relasi eksplisit Jira selalu menang
+    next[m.qaKey] = {
+      ready: !!m.done, keys: [m.devKey], source: m.source,
+      wait: m.done ? [] : [{ key: m.devKey, status: m.status || "?" }],
+      evidence: m.evidence || [], score: m.score || null,
+    };
+  }
+  jira.deps = next;
+  jira.depSuggestions = {};
+  for (const s of result.suggestions || []) jira.depSuggestions[s.qaKey] = s;
+  jira.depWarnings = result.warnings || [];
+}
+function hitungPasangan(nativeDeps) {
+  if (typeof CatetDependencyMatcher !== "object") return;
+  const result = CatetDependencyMatcher.matchSprintIssues(jira.pairingIssues || [], { overrides: jira.depOverrides });
+  terapkanHasilPasangan(result, nativeDeps || Object.fromEntries(
+    Object.entries(jira.deps || {}).filter(([, dep]) => dep && dep.source === "jira-native")));
+}
+function pilihDependency(qaKey, devKey) {
+  jira.depOverrides[qaKey] = devKey;
+  hitungPasangan(); saveJira(); render();
+}
+function hapusPilihanDependency(qaKey) {
+  delete jira.depOverrides[qaKey];
+  hitungPasangan(); saveJira(); render();
+}
+function dependencyReview(key) {
+  const sug = suggestionTiket(key), w = warningTiket(key), manual = jira.depOverrides[key];
+  if (!sug && !w && !manual) return null;
+  const box = el("div", "dep-review");
+  if (w) box.append(warningBadge(w));
+  if (sug && Array.isArray(sug.candidates)) {
+    box.append(el("span", "dep-review-label", "Kandidat:"));
+    for (const c of sug.candidates) {
+      const b = el("button", "btn-line", c.key + " · " + c.score);
+      b.title = (c.summary || c.key) + (c.evidence && c.evidence.length ? " — " + c.evidence.join("; ") : "");
+      b.onclick = () => pilihDependency(key, c.key);
+      box.append(b);
+    }
+  }
+  if (manual) {
+    box.append(el("span", "dep-review-label", "Pilihan CATET: " + manual));
+    const reset = el("button", "btn-line", "Reset");
+    reset.title = "Hapus pilihan manual dan hitung ulang";
+    reset.onclick = () => hapusPilihanDependency(key);
+    box.append(reset);
+  }
+  return box;
+}
+function renderPairingWarnings() {
+  const warnings = jira.depWarnings || [];
+  if (!warnings.length) return null;
+  const sec = el("section", "section s-jira pairing-warnings");
+  const head = el("div", "section-head");
+  head.append(el("h2", null, "⚠ Jira pairing check"));
+  head.append(el("span", "count mono", String(warnings.length)));
+  sec.append(head);
+  const hint = el("div", "empty-note", "Peringatan ini hasil pemeriksaan CATET, bukan perubahan Jira. Cocokkan kandidat kalau ada; tiket tanpa pasangan tetap dibiarkan.");
+  sec.append(hint);
+  const card = el("div", "routine-card");
+  for (const w of warnings) {
+    const row = el("div", "jira-row");
+    if (jiraSite()) {
+      const a = el("a", "jira-key", w.key);
+      a.href = jiraUrl(w.key); a.target = "_blank"; a.rel = "noopener";
+      row.append(a);
+    } else row.append(el("span", "jira-key", w.key));
+    row.append(el("span", "jira-summary", w.summary || ""), warningBadge(w));
+    const review = dependencyReview(w.key);
+    if (review) row.append(review);
+    card.append(row);
+  }
+  sec.append(card);
+  return sec;
+}
 // Badge "✅ ready to test" / "⏳ dev: KEY" — dipakai papan, inbox Jira, dan
 // item sprint. Bisa diklik → buka tiket dev-nya di Jira (kalau key & site ada;
 // data lama tanpa `keys` jatuh ke span biasa sampai sinkron berikutnya).
@@ -233,20 +326,21 @@ async function syncJira(manual) {
       if (ex) { ex.summary = f.summary; ex.status = f.status; ex.created = f.created || ex.created; }
       else jira.items.push({ id: uid(), key: f.key, summary: f.summary, status: f.status, created: f.created || null, src: "sync", addedAt: new Date().toISOString() });
     }
-    // Peta dependensi diisi untuk SEMUA tiket feed (termasuk yang sudah
-    // diambil jadi tugas) — papan butuh tahu tiket dev-nya done atau belum.
+    // Relasi eksplisit Jira tetap source of truth. Matcher deterministic hanya
+    // mengisi tiket yang belum punya issue link/key di description.
+    const nativeDeps = {};
     for (const f of feed) {
       if (Array.isArray(f.deps) && f.deps.length) {
-        jira.deps[f.key] = {
+        nativeDeps[f.key] = {
           ready: f.deps.every((d) => d.done),
-          keys: f.deps.map((d) => d.key), // untuk tautan badge → tiket dev
+          keys: f.deps.map((d) => d.key),
           wait: f.deps.filter((d) => !d.done).map((d) => ({ key: d.key, status: d.status })),
+          source: "jira-native",
         };
-      } else delete jira.deps[f.key];
+      }
     }
-    if (feed.length) {
-      for (const k of Object.keys(jira.deps)) if (!feedKeys.has(k)) delete jira.deps[k];
-    }
+    jira.pairingIssues = Array.isArray(data.pairingIssues) ? data.pairingIssues : [];
+    hitungPasangan(nativeDeps);
     // Tiket hasil sinkron yang sudah tidak muncul di Jira (selesai/di-reassign)
     // ikut hilang; tiket hasil impor manual dibiarkan.
     jira.items = jira.items.filter((x) => x.src !== "sync" || feedKeys.has(x.key));
@@ -765,8 +859,13 @@ function sprintRow(s, sec) {
       tx.append(linkify(t.text));
       li.append(tx);
       // Status tiket dev (ready to test / menunggu dev) — sama seperti di Board.
+      const key = (t.text.match(JIRA_RE) || [null])[0];
       const dep = t.status !== "selesai" ? depsTugas(t) : null;
       if (dep) li.append(depBadge(dep));
+      else if (key) {
+        const warn = warningTiket(key);
+        if (warn) li.append(warningBadge(warn));
+      }
       if (t.status !== "selesai") {
         const running = t.status === "fokus";
         const run = el("button", "btn-line sprint-run", running ? "● Running" : "▶ Run");
@@ -914,6 +1013,8 @@ function renderJiraInbox() {
   const wrap = $("#jiraview");
   wrap.innerHTML = "";
   wrap.append(renderSprintBar());
+  const pairWarn = renderPairingWarnings();
+  if (pairWarn) wrap.append(pairWarn);
   if (rapikanInbox()) saveJira(true); // penyembuhan mesin — tanpa klaim dirty
   const q = searchQuery.trim().toLowerCase();
   const shown = !q ? jira.items : jira.items.filter((x) =>
@@ -988,6 +1089,10 @@ function renderJiraInbox() {
       if (item.status) row.append(el("span", "jira-status", item.status));
       const dep = depsTiket(item.key);
       if (dep) row.append(depBadge(dep));
+      else {
+        const warn = warningTiket(item.key);
+        if (warn) row.append(warningBadge(warn));
+      }
       const take = el("button", "btn-line", "＋ Take");
       take.title = "Pindahkan ke papan utama sebagai tugas";
       take.onclick = () => { takeJiraItem(item); render(); };
