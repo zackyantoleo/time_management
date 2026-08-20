@@ -204,7 +204,13 @@ function terapkanHasilPasangan(result, nativeDeps) {
 }
 function hitungPasangan(nativeDeps) {
   if (typeof CatetDependencyMatcher !== "object") return;
-  const result = CatetDependencyMatcher.matchSprintIssues(jira.pairingIssues || [], { overrides: jira.depOverrides });
+  // Scope pairing hanya sprint aktif Jira yang benar-benar ada di Catet.
+  // Jangan audit backlog atau tiket non-sprint — itu sumber spam, bukan insight.
+  const sprintIds = new Set((sprints.list || []).filter((s) => s.auto && s.jiraId != null)
+    .map((s) => String(s.jiraId)));
+  const sprintIssues = (jira.pairingIssues || [])
+    .filter((i) => i.sprintId && sprintIds.has(String(i.sprintId)));
+  const result = CatetDependencyMatcher.matchSprintIssues(sprintIssues, { overrides: jira.depOverrides });
   terapkanHasilPasangan(result, nativeDeps || Object.fromEntries(
     Object.entries(jira.deps || {}).filter(([, dep]) => dep && dep.source === "jira-native")));
 }
@@ -217,21 +223,21 @@ function hapusPilihanDependency(qaKey) {
   hitungPasangan(); saveJira(); render();
 }
 function dependencyReview(key) {
-  const sug = suggestionTiket(key), w = warningTiket(key), manual = jira.depOverrides[key];
-  if (!sug && !w && !manual) return null;
+  const sug = suggestionTiket(key), manual = jira.depOverrides[key];
+  if (!sug && !manual) return null;
   const box = el("div", "dep-review");
-  if (w) box.append(warningBadge(w));
   if (sug && Array.isArray(sug.candidates)) {
-    box.append(el("span", "dep-review-label", "Kandidat:"));
+    box.append(el("span", "dep-review-label", "Pilih tiket dev"));
     for (const c of sug.candidates) {
-      const b = el("button", "btn-line", c.key + " · " + c.score);
+      const b = el("button", "btn-line dep-candidate", c.key);
+      b.append(el("span", "dep-score mono", String(c.score)));
       b.title = (c.summary || c.key) + (c.evidence && c.evidence.length ? " — " + c.evidence.join("; ") : "");
       b.onclick = () => pilihDependency(key, c.key);
       box.append(b);
     }
   }
   if (manual) {
-    box.append(el("span", "dep-review-label", "Pilihan CATET: " + manual));
+    box.append(el("span", "dep-review-label", "Terpilih: " + manual));
     const reset = el("button", "btn-line", "Reset");
     reset.title = "Hapus pilihan manual dan hitung ulang";
     reset.onclick = () => hapusPilihanDependency(key);
@@ -239,30 +245,57 @@ function dependencyReview(key) {
   }
   return box;
 }
+function pairingTicketRow(w, actionable) {
+  const row = el("div", "pairing-ticket" + (actionable ? " actionable" : ""));
+  const main = el("div", "pairing-ticket-main");
+  if (jiraSite()) {
+    const a = el("a", "jira-key", w.key);
+    a.href = jiraUrl(w.key); a.target = "_blank"; a.rel = "noopener";
+    main.append(a);
+  } else main.append(el("span", "jira-key", w.key));
+  main.append(el("span", "pairing-ticket-title", w.summary || ""));
+  if (!actionable) main.append(warningBadge(w));
+  row.append(main);
+  const review = actionable ? dependencyReview(w.key) : null;
+  if (review) row.append(review);
+  return row;
+}
 function renderPairingWarnings() {
   const warnings = jira.depWarnings || [];
   if (!warnings.length) return null;
+  const actionable = warnings.filter((w) => w.type === "qa-ambiguous");
+  const audit = warnings.filter((w) => w.type !== "qa-ambiguous");
   const sec = el("section", "section s-jira pairing-warnings");
-  const head = el("div", "section-head");
-  head.append(el("h2", null, "⚠ Jira pairing check"));
-  head.append(el("span", "count mono", String(warnings.length)));
-  sec.append(head);
-  const hint = el("div", "empty-note", "Peringatan ini hasil pemeriksaan CATET, bukan perubahan Jira. Cocokkan kandidat kalau ada; tiket tanpa pasangan tetap dibiarkan.");
-  sec.append(hint);
-  const card = el("div", "routine-card");
-  for (const w of warnings) {
-    const row = el("div", "jira-row");
-    if (jiraSite()) {
-      const a = el("a", "jira-key", w.key);
-      a.href = jiraUrl(w.key); a.target = "_blank"; a.rel = "noopener";
-      row.append(a);
-    } else row.append(el("span", "jira-key", w.key));
-    row.append(el("span", "jira-summary", w.summary || ""), warningBadge(w));
-    const review = dependencyReview(w.key);
-    if (review) row.append(review);
-    card.append(row);
+
+  const summary = el("div", "pairing-summary");
+  const copy = el("div", "pairing-summary-copy");
+  copy.append(el("h2", null, "Ticket pairing"));
+  copy.append(el("p", null, "Cek pasangan tiket dalam sprint aktif. CATET tidak mengubah Jira."));
+  summary.append(copy);
+  const stats = el("div", "pairing-stats");
+  if (actionable.length) stats.append(el("span", "pairing-stat needs-action", actionable.length + " perlu dipilih"));
+  if (audit.length) stats.append(el("span", "pairing-stat", audit.length + " belum berpasangan"));
+  summary.append(stats);
+  sec.append(summary);
+
+  if (actionable.length) {
+    const actionCard = el("div", "pairing-card");
+    actionCard.append(el("div", "pairing-card-label", "Perlu keputusanmu"));
+    for (const w of actionable) actionCard.append(pairingTicketRow(w, true));
+    sec.append(actionCard);
   }
-  sec.append(card);
+
+  if (audit.length) {
+    const details = document.createElement("details");
+    details.className = "pairing-audit";
+    const label = document.createElement("summary");
+    label.append("Lihat tiket tanpa pasangan ", el("span", "count mono", String(audit.length)));
+    details.append(label);
+    const list = el("div", "pairing-audit-list");
+    for (const w of audit) list.append(pairingTicketRow(w, false));
+    details.append(list);
+    sec.append(details);
+  }
   return sec;
 }
 // Badge "✅ ready to test" / "⏳ dev: KEY" — dipakai papan, inbox Jira, dan
