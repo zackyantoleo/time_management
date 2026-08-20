@@ -20,6 +20,10 @@ assert(!sync.includes('delete j.depOverrides'), 'manual pairing overrides must r
 assert(sync.includes('stores.jira.pairingIssues = jira.pairingIssues'),
   'pulling remote state must retain the device-local Jira candidate cache');
 assert(jira.includes('hitungPasangan(nativeDeps)'), 'Jira sync must combine native and inferred mappings');
+assert(jira.includes('filter((s) => !nativeKeys.has(s.qaKey))'),
+  'native Jira dependencies must suppress inferred suggestions');
+assert(jira.includes('filter((w) => !nativeKeys.has(w.key) && !nativeDevKeys.has(w.key))'),
+  'native Jira dependencies must suppress false missing-pair warnings on both QA and dev');
 assert(jira.includes('renderPairingWarnings()'), 'Jira tab must render pairing warnings');
 assert(jira.includes('pilihDependency(key, c.key)'), 'ambiguous candidates must be manually confirmable');
 assert(jira.includes('hapusPilihanDependency'), 'manual confirmation must be reversible');

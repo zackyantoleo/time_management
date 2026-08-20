@@ -186,6 +186,8 @@ function warningBadge(w) {
 }
 function terapkanHasilPasangan(result, nativeDeps) {
   const next = { ...(nativeDeps || {}) };
+  const nativeKeys = new Set(Object.keys(next));
+  const nativeDevKeys = new Set(Object.values(next).flatMap((dep) => dep && Array.isArray(dep.keys) ? dep.keys : []));
   for (const [key, dep] of Object.entries(next)) dep.source = "jira-native";
   for (const m of result.matches || []) {
     if (next[m.qaKey]) continue; // relasi eksplisit Jira selalu menang
@@ -197,8 +199,8 @@ function terapkanHasilPasangan(result, nativeDeps) {
   }
   jira.deps = next;
   jira.depSuggestions = {};
-  for (const s of result.suggestions || []) jira.depSuggestions[s.qaKey] = s;
-  jira.depWarnings = result.warnings || [];
+  for (const s of (result.suggestions || []).filter((s) => !nativeKeys.has(s.qaKey))) jira.depSuggestions[s.qaKey] = s;
+  jira.depWarnings = (result.warnings || []).filter((w) => !nativeKeys.has(w.key) && !nativeDevKeys.has(w.key));
 }
 function hitungPasangan(nativeDeps) {
   if (typeof CatetDependencyMatcher !== "object") return;
