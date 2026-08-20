@@ -260,43 +260,36 @@ function pairingTicketRow(w, actionable) {
   if (review) row.append(review);
   return row;
 }
-function renderPairingWarnings() {
-  const warnings = jira.depWarnings || [];
+function warningsUntukSprint(s) {
+  if (!s || !s.auto || s.jiraId == null) return [];
+  return (jira.depWarnings || []).filter((w) => w.sprintId != null && String(w.sprintId) === String(s.jiraId));
+}
+function renderSprintPairing(s) {
+  const warnings = warningsUntukSprint(s);
   if (!warnings.length) return null;
   const actionable = warnings.filter((w) => w.type === "qa-ambiguous");
   const audit = warnings.filter((w) => w.type !== "qa-ambiguous");
-  const sec = el("section", "section s-jira pairing-warnings");
-
-  const summary = el("div", "pairing-summary");
-  const copy = el("div", "pairing-summary-copy");
-  copy.append(el("h2", null, "Ticket pairing"));
-  copy.append(el("p", null, "Cek pasangan tiket dalam sprint aktif. CATET tidak mengubah Jira."));
-  summary.append(copy);
-  const stats = el("div", "pairing-stats");
-  if (actionable.length) stats.append(el("span", "pairing-stat needs-action", actionable.length + " perlu dipilih"));
-  if (audit.length) stats.append(el("span", "pairing-stat", audit.length + " belum berpasangan"));
-  summary.append(stats);
-  sec.append(summary);
+  const wrap = el("div", "pairing-sprint-review");
 
   if (actionable.length) {
     const actionCard = el("div", "pairing-card");
-    actionCard.append(el("div", "pairing-card-label", "Perlu keputusanmu"));
+    actionCard.append(el("div", "pairing-card-label", "Ticket pairing · perlu keputusanmu"));
     for (const w of actionable) actionCard.append(pairingTicketRow(w, true));
-    sec.append(actionCard);
+    wrap.append(actionCard);
   }
 
   if (audit.length) {
     const details = document.createElement("details");
     details.className = "pairing-audit";
     const label = document.createElement("summary");
-    label.append("Lihat tiket tanpa pasangan ", el("span", "count mono", String(audit.length)));
+    label.append("Tiket sprint tanpa pasangan ", el("span", "count mono", String(audit.length)));
     details.append(label);
     const list = el("div", "pairing-audit-list");
     for (const w of audit) list.append(pairingTicketRow(w, false));
     details.append(list);
-    sec.append(details);
+    wrap.append(details);
   }
-  return sec;
+  return wrap;
 }
 // Badge "✅ ready to test" / "⏳ dev: KEY" — dipakai papan, inbox Jira, dan
 // item sprint. Bisa diklik → buka tiket dev-nya di Jira (kalau key & site ada;
@@ -840,12 +833,18 @@ function sprintRow(s, sec) {
   row.append(badge);
   const jml = jumlahTugasSprint(s.id);
   row.append(el("span", "jira-status", jml + " tasks"));
+  const pairCount = warningsUntukSprint(s).length;
+  if (pairCount) {
+    row.append(el("span", "pairing-sprint-count", pairCount + " pairing"));
+  }
 
   const edit = el("button", "icon-btn" + (sprintEditId === s.id ? " in-sprint" : ""), "✎");
   edit.title = "Ubah sprint / lihat isinya"; edit.setAttribute("aria-label", edit.title);
   edit.onclick = () => { sprintEditId = sprintEditId === s.id ? null : s.id; render(); };
   row.append(edit);
   sec.append(row);
+  const pairing = renderSprintPairing(s);
+  if (pairing) sec.append(pairing);
 
   if (sprintEditId !== s.id) return;
 
@@ -1048,8 +1047,6 @@ function renderJiraInbox() {
   const wrap = $("#jiraview");
   wrap.innerHTML = "";
   wrap.append(renderSprintBar());
-  const pairWarn = renderPairingWarnings();
-  if (pairWarn) wrap.append(pairWarn);
   if (rapikanInbox()) saveJira(true); // penyembuhan mesin — tanpa klaim dirty
   const q = searchQuery.trim().toLowerCase();
   const shown = !q ? jira.items : jira.items.filter((x) =>

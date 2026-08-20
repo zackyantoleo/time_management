@@ -10,15 +10,19 @@ const worker = fs.readFileSync(path.join(root, 'worker/worker.js'), 'utf8');
 assert(jira.includes('const sprintIds = new Set'), 'matcher input must be limited to active Jira sprint ids');
 assert(jira.includes('.filter((i) => i.sprintId && sprintIds.has(String(i.sprintId)))'),
   'non-sprint pairing issues must be excluded before matching');
+assert(jira.includes('function warningsUntukSprint(s)'), 'pairing warnings must be grouped by their Jira sprint');
+assert(jira.includes('String(w.sprintId) === String(s.jiraId)'), 'warning-to-sprint mapping must use Jira sprint id');
+assert(jira.includes('function renderSprintPairing(s)'), 'each sprint must own its pairing review renderer');
+assert(jira.includes('row.append(el("span", "pairing-sprint-count", pairCount + " pairing"))'),
+  'sprint header must expose its own pairing count');
+assert(jira.includes('const pairing = renderSprintPairing(s);'), 'sprint row must render its pairing review inline');
+assert(!jira.includes('const pairWarn = renderPairingWarnings();'), 'global pairing section must be removed from Jira inbox');
 assert(jira.includes('const actionable = warnings.filter((w) => w.type === "qa-ambiguous")'),
-  'ambiguous QA tickets must be prioritized separately');
-assert(jira.includes('const audit = warnings.filter((w) => w.type !== "qa-ambiguous")'),
-  'missing-pair audit must be grouped away from actionable items');
-assert(jira.includes('document.createElement("details")'), 'large missing-pair audit must be collapsible');
-assert(jira.includes('pairing-summary'), 'pairing review must use a compact summary component');
+  'ambiguous QA tickets must be prioritized separately inside a sprint');
+assert(jira.includes('document.createElement("details")'), 'large missing-pair audit must remain collapsible');
 assert(!jira.includes('row.append(el("span", "jira-summary", w.summary || ""), warningBadge(w));'),
   'warning badge must not be duplicated in both row and dependency review');
-assert(css.includes('.pairing-summary'), 'compact pairing summary must be styled');
+assert(css.includes('.pairing-sprint-review'), 'inline sprint pairing review must be styled');
 assert(css.includes('.pairing-audit'), 'collapsible audit list must be styled');
 assert(worker.includes('sprint in ('), 'worker candidate source remains Jira sprint query');
 

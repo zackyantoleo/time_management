@@ -24,7 +24,7 @@ assert(jira.includes('filter((s) => !nativeKeys.has(s.qaKey))'),
   'native Jira dependencies must suppress inferred suggestions');
 assert(jira.includes('filter((w) => !nativeKeys.has(w.key) && !nativeDevKeys.has(w.key))'),
   'native Jira dependencies must suppress false missing-pair warnings on both QA and dev');
-assert(jira.includes('renderPairingWarnings()'), 'Jira tab must render pairing warnings');
+assert(jira.includes('renderSprintPairing(s)'), 'Jira sprint section must render pairing warnings inline');
 assert(jira.includes('pilihDependency(key, c.key)'), 'ambiguous candidates must be manually confirmable');
 assert(jira.includes('hapusPilihanDependency'), 'manual confirmation must be reversible');
 assert(board.includes('warningBadge(warn)'), 'board must surface missing-pair warnings');

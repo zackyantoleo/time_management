@@ -253,15 +253,9 @@
   .effort-badge.dep-ready { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
   .effort-badge.dep-wait { color: var(--ink-faint); }
   .effort-badge.dep-warning { border-color: color-mix(in srgb, var(--p-urgent) 45%, var(--line)); color: var(--p-urgent); background: transparent; }
-  .pairing-warnings { display: grid; gap: 10px; }
-  .pairing-summary { display: flex; justify-content: space-between; align-items: center; gap: 16px;
-    padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
-  .pairing-summary h2 { margin: 0; color: var(--ink); font-size: 14px; }
-  .pairing-summary p { margin: 3px 0 0; color: var(--ink-faint); font-size: 11.5px; }
-  .pairing-stats { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-  .pairing-stat { padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line);
-    color: var(--ink-muted); font-size: 11px; white-space: nowrap; }
-  .pairing-stat.needs-action { border-color: color-mix(in srgb, var(--p-urgent) 45%, var(--line)); color: var(--p-urgent); }
+  .pairing-sprint-review { display: grid; gap: 8px; padding: 0 10px 10px; }
+  .pairing-sprint-count { padding: 2px 7px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--p-urgent) 40%, var(--line));
+    color: var(--p-urgent); font-size: 10px; font-weight: 700; white-space: nowrap; }
   .pairing-card { overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
   .pairing-card-label { padding: 8px 12px; border-bottom: 1px solid var(--line); color: var(--ink-muted);
     background: var(--surface-2); font-size: 11px; font-weight: 700; letter-spacing: .02em; }
@@ -283,8 +277,7 @@
   .pairing-audit[open] > summary::before { transform: rotate(90deg); }
   .pairing-audit-list { border-top: 1px solid var(--line); max-height: 360px; overflow: auto; }
   @media (max-width: 620px) {
-    .pairing-summary { align-items: flex-start; flex-direction: column; }
-    .pairing-stats { justify-content: flex-start; }
+    .pairing-sprint-review { padding-inline: 4px; }
   }
   a.effort-badge { text-decoration: none; }
   a.effort-badge:hover { text-decoration: underline; text-underline-offset: 2px; border-color: currentColor; }
