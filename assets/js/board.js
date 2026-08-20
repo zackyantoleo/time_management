@@ -246,9 +246,14 @@ function taskRow(t) {
       }
       meta.append(sb);
     }
-    // Status tiket dev (QA menunggu / siap dites) — dari peta jira.deps.
+    // Status tiket dev (QA menunggu / siap dites) atau warning pasangan hilang.
     const dep = typeof depsTugas === "function" ? depsTugas(t) : null;
     if (dep) meta.append(depBadge(dep));
+    else if (typeof warningTiket === "function") {
+      const key = (t.text.match(JIRA_RE) || [null])[0];
+      const warn = key ? warningTiket(key) : null;
+      if (warn) meta.append(warningBadge(warn));
+    }
     // Judul memuat nama topik BAU (mis. "Deployment ccm" → TDBU-28
     // Deployment)? Tunjukkan nyantolnya ke mana — worklog-nya nanti bisa
     // dikirim ke tiket itu dari tab Log kerja.

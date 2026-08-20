@@ -108,8 +108,13 @@ function syncDirty(segera) {
 function kumpulkanStores() {
   const ambil = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
   const j = ambil("catet.jira.v1");
-  // kredensial per perangkat tidak ikut diunggah ke server
-  if (j) { delete j.key; delete j.proxy; delete j.calIcs; }
+  // Kredensial dan candidate pool sprint tidak ikut diunggah. pairingIssues,
+  // suggestion, dan warning adalah cache hasil Jira yang bisa besar/usang;
+  // yang durable hanya depOverrides (konfirmasi pengguna) + deps untuk scorer.
+  if (j) {
+    delete j.key; delete j.proxy; delete j.calIcs;
+    delete j.pairingIssues; delete j.depSuggestions; delete j.depWarnings;
+  }
   return {
     tasks: ambil("catet.tasks.v1"),
     worklog: ambil("catet.worklog.v1"),
@@ -161,9 +166,15 @@ function terapkanRemote(stores) {
   tulis("catet.routineday.v1", stores.routineday);
   tulis("catet.sprints.v1", stores.sprints);
   if (stores.jira != null) {
+    // Cache hasil Jira tetap milik perangkat ini. Server hanya membawa state
+    // durable (terutama depOverrides); jangan hilangkan warning/status terakhir
+    // saat pull state terjadi di antara dua sync Jira.
     stores.jira.proxy = jira.proxy;
     stores.jira.key = jira.key;
     stores.jira.calIcs = jira.calIcs;
+    stores.jira.pairingIssues = jira.pairingIssues;
+    stores.jira.depSuggestions = jira.depSuggestions;
+    stores.jira.depWarnings = jira.depWarnings;
     // Data server bisa berasal dari versi lama (belum punya bau, dsb.) —
     // lengkapi dulu, jangan sampai render crash karena struktur bolong.
     normalisasiJira(stores.jira);
