@@ -461,6 +461,79 @@ async function tangani(request, env) {
       Accept: "application/json",
     };
 
+    // POST /pairing-link — unggah SATU pasangan yang sudah dipilih user menjadi
+    // native Jira issue link. Endpoint ini tidak pernah dipanggil matcher/sync.
+    // Idempoten: existing link dibaca sebelum POST dan diverifikasi lagi sesudahnya.
+    if (request.method === "POST" && url.pathname === "/pairing-link") {
+      let body;
+      try { body = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
+      const qaKey = body && body.qaKey;
+      const devKey = body && body.devKey;
+      const KEY = /^[A-Z][A-Z0-9]{1,9}-\d+$/;
+      if (!KEY.test(qaKey || "") || !KEY.test(devKey || "") || qaKey === devKey) {
+        return json({ error: "Format QA/dev key tidak valid." }, 400);
+      }
+
+      const sf = await sprintFieldId(site, authHeaders);
+      if (!sf) return json({ error: "Field Sprint Jira tidak ditemukan; pairing dibatalkan." }, 502);
+      const issueUrl = (key) => site + "/rest/api/3/issue/" + encodeURIComponent(key) +
+        "?fields=" + encodeURIComponent("issuelinks," + sf);
+      const bacaIssue = async (key) => {
+        const r = await fetch(issueUrl(key), { headers: authHeaders });
+        if (!r.ok) return { error: "Jira menolak tiket " + key + " (" + r.status + ").", status: r.status };
+        return { issue: await r.json() };
+      };
+      const [qaRead, devRead] = await Promise.all([bacaIssue(qaKey), bacaIssue(devKey)]);
+      if (qaRead.error || devRead.error) return json({ error: qaRead.error || devRead.error }, 502);
+      const qa = qaRead.issue, dev = devRead.issue;
+      const linksKe = (issue, otherKey) => (((issue || {}).fields || {}).issuelinks || []).some((l) => {
+        const other = l.outwardIssue || l.inwardIssue;
+        return other && other.key === otherKey;
+      });
+      const hasil = (alreadyLinked, linkType) => ({
+        ok: true, linked: true, alreadyLinked, verified: true,
+        qaKey, devKey, linkType,
+      });
+      if (linksKe(qa, devKey) || linksKe(dev, qaKey)) return json(hasil(true, "existing"));
+
+      const sprintAktif = (issue) => new Set(
+        ((((issue || {}).fields || {})[sf] || [])
+          .filter((s) => s && s.state === "active" && s.id != null)
+          .map((s) => String(s.id)))
+      );
+      const qaSprints = sprintAktif(qa), devSprints = sprintAktif(dev);
+      const sprintSama = [...qaSprints].some((id) => devSprints.has(id));
+      if (!sprintSama) {
+        return json({ error: "Tiket QA dan dev tidak berada di active sprint yang sama." }, 409);
+      }
+
+      // "Relates" dipilih karena simetris: CATET merekam pasangan, bukan
+      // menyimpulkan arah block/depends yang bisa salah secara semantik.
+      const typeR = await fetch(site + "/rest/api/3/issueLinkType", { headers: authHeaders });
+      if (!typeR.ok) return json({ error: "Gagal membaca tipe issue link Jira (" + typeR.status + ")." }, 502);
+      const types = (await typeR.json()).issueLinkTypes || [];
+      const relate = types.find((t) => /^relates?$/i.test(t.name || "")) ||
+        types.find((t) => /^relates?\s+to$/i.test(t.outward || "") && /^relates?\s+to$/i.test(t.inward || ""));
+      if (!relate || !relate.id) return json({ error: "Tipe issue link Relates tidak tersedia di Jira." }, 409);
+
+      const linkR = await fetch(site + "/rest/api/3/issueLink", {
+        method: "POST",
+        headers: { ...authHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: { id: String(relate.id) },
+          outwardIssue: { key: qaKey },
+          inwardIssue: { key: devKey },
+        }),
+      });
+      if (!linkR.ok) return json({ error: "Jira menolak issue link (" + linkR.status + "): " + (await linkR.text()).slice(0, 200) }, 502);
+
+      const verify = await bacaIssue(qaKey);
+      if (verify.error || !linksKe(verify.issue, devKey)) {
+        return json({ error: "Jira menerima upload tetapi link belum terverifikasi; sync ulang sebelum mencoba lagi." }, 502);
+      }
+      return json(hasil(false, relate.name || "Relates"));
+    }
+
     // GET /tickets — tiket terbuka yang di-assign ke pemilik token, plus
     // dependensi tiket dev-nya (deps): dari issue link DAN key yang disebut di
     // description. Untuk pencocokan CATET-only, Worker juga mengambil metadata
