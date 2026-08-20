@@ -15,7 +15,13 @@ assert(jira.includes('String(w.sprintId) === String(s.jiraId)'), 'warning-to-spr
 assert(jira.includes('function renderSprintPairing(s)'), 'each sprint must own its pairing review renderer');
 assert(jira.includes('row.append(el("span", "pairing-sprint-count", pairCount + " pairing"))'),
   'sprint header must expose its own pairing count');
-assert(jira.includes('const pairing = renderSprintPairing(s);'), 'sprint row must render its pairing review inline');
+assert(jira.includes('if (sprintEditId !== s.id) return;'), 'sprint edit state must gate expanded content');
+const sprintRowSource = jira.slice(jira.indexOf('function sprintRow(s, sec)'), jira.indexOf('function renderSprintBar()'));
+const editGate = sprintRowSource.indexOf('if (sprintEditId !== s.id) return;');
+const pairingRender = sprintRowSource.indexOf('const pairing = renderSprintPairing(s);');
+assert(pairingRender > editGate, 'pairing review must render only after the sprint edit gate');
+assert(!sprintRowSource.slice(0, editGate).includes('renderSprintPairing(s)'),
+  'collapsed sprint row must not render pairing content');
 assert(!jira.includes('const pairWarn = renderPairingWarnings();'), 'global pairing section must be removed from Jira inbox');
 assert(jira.includes('const actionable = warnings.filter((w) => w.type === "qa-ambiguous")'),
   'ambiguous QA tickets must be prioritized separately inside a sprint');
