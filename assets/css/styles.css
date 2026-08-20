@@ -252,10 +252,40 @@
   /* status tiket dev untuk tiket QA (bisa berupa <a> → buka tiket dev di Jira) */
   .effort-badge.dep-ready { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
   .effort-badge.dep-wait { color: var(--ink-faint); }
-  .effort-badge.dep-warning { border-color: var(--p-urgent); color: var(--p-urgent); background: var(--p-urgent-soft); }
-  .dep-review { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
-    padding: 6px 8px; border-left: 3px solid var(--p-urgent); background: var(--p-urgent-soft); border-radius: 5px; }
-  .dep-review-label { font-size: 11px; font-weight: 700; color: var(--p-urgent); }
+  .effort-badge.dep-warning { border-color: color-mix(in srgb, var(--p-urgent) 45%, var(--line)); color: var(--p-urgent); background: transparent; }
+  .pairing-warnings { display: grid; gap: 10px; }
+  .pairing-summary { display: flex; justify-content: space-between; align-items: center; gap: 16px;
+    padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  .pairing-summary h2 { margin: 0; color: var(--ink); font-size: 14px; }
+  .pairing-summary p { margin: 3px 0 0; color: var(--ink-faint); font-size: 11.5px; }
+  .pairing-stats { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+  .pairing-stat { padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line);
+    color: var(--ink-muted); font-size: 11px; white-space: nowrap; }
+  .pairing-stat.needs-action { border-color: color-mix(in srgb, var(--p-urgent) 45%, var(--line)); color: var(--p-urgent); }
+  .pairing-card { overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  .pairing-card-label { padding: 8px 12px; border-bottom: 1px solid var(--line); color: var(--ink-muted);
+    background: var(--surface-2); font-size: 11px; font-weight: 700; letter-spacing: .02em; }
+  .pairing-ticket { display: grid; gap: 7px; padding: 10px 12px; border-top: 1px solid var(--line); }
+  .pairing-ticket:first-child, .pairing-card-label + .pairing-ticket { border-top: 0; }
+  .pairing-ticket-main { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 9px; min-width: 0; }
+  .pairing-ticket-title { flex: 1 1 35ch; min-width: min(24ch, 100%); color: var(--ink-muted);
+    font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
+  .dep-review { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding-left: 0; }
+  .dep-review-label { font-size: 11px; font-weight: 700; color: var(--ink-muted); margin-right: 2px; }
+  .dep-candidate { display: inline-flex; align-items: center; gap: 6px; }
+  .dep-score { min-width: 20px; padding: 0 4px; border-radius: 999px; background: var(--surface-2);
+    color: var(--ink-faint); font-size: 10px; text-align: center; }
+  .pairing-audit { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  .pairing-audit > summary { cursor: pointer; list-style: none; padding: 10px 12px; color: var(--ink-muted);
+    font-size: 12px; font-weight: 600; user-select: none; }
+  .pairing-audit > summary::-webkit-details-marker { display: none; }
+  .pairing-audit > summary::before { content: "›"; display: inline-block; margin-right: 8px; color: var(--ink-faint); transition: transform .15s ease; }
+  .pairing-audit[open] > summary::before { transform: rotate(90deg); }
+  .pairing-audit-list { border-top: 1px solid var(--line); max-height: 360px; overflow: auto; }
+  @media (max-width: 620px) {
+    .pairing-summary { align-items: flex-start; flex-direction: column; }
+    .pairing-stats { justify-content: flex-start; }
+  }
   a.effort-badge { text-decoration: none; }
   a.effort-badge:hover { text-decoration: underline; text-underline-offset: 2px; border-color: currentColor; }
   /* kotak kode akses baru hasil signup — ditampilkan sekali */
