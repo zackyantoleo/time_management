@@ -9,6 +9,10 @@ const board = fs.readFileSync(path.join(root, 'assets/js/board.js'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'assets/js/app.js'), 'utf8');
 
 assert(html.includes('class="brand-mark"'), 'header must expose the compact CATET brand mark');
+for (const label of ['Board', 'Jira', 'Calendar', 'Work log']) {
+  assert(html.includes('aria-label="' + label + '"'),
+    'icon-only mobile tab must retain accessible name: ' + label);
+}
 assert(html.includes('class="desktop-shell board-view"'), 'board must use a dedicated desktop workbench shell');
 assert(html.includes('id="board-main"') && html.includes('id="board-sidebar"'),
   'board must split primary work from contextual sidebar');
