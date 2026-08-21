@@ -887,6 +887,72 @@ function renderSignedIn(editor) {
 /* ---------- sprint bar (di atas daftar tiket) ---------- */
 let sprintFormOpen = false;
 let sprintEditId = null; // satu sprint yang panel editnya terbuka (biar tak ambigu)
+let sprintPrdOpenId = null; // progressive disclosure: editor PRD hanya saat diminta
+
+function renderSprintPrd(s) {
+  const links = sprintPrdLinks(s);
+  const wrap = el("section", "sprint-prd-panel");
+  wrap.setAttribute("aria-label", "PRD references");
+
+  const head = el("div", "sprint-prd-head");
+  const heading = el("div");
+  heading.append(el("strong", null, "PRD references"));
+  heading.append(el("span", "cap-hint", "Tautan ini ikut sinkron dan tersedia sebagai konteks sprint untuk integrasi AI."));
+  head.append(heading);
+  const addToggle = el("button", "btn-line", sprintPrdOpenId === s.id ? "Cancel" : "+ Add PRD");
+  addToggle.type = "button";
+  addToggle.setAttribute("aria-expanded", String(sprintPrdOpenId === s.id));
+  addToggle.onclick = () => { sprintPrdOpenId = sprintPrdOpenId === s.id ? null : s.id; render(); };
+  head.append(addToggle);
+  wrap.append(head);
+
+  const list = el("div", "sprint-prd-list");
+  if (!links.length) list.append(el("p", "sprint-prd-empty", "Belum ada referensi PRD untuk sprint ini."));
+  for (const p of links) {
+    const item = el("div", "sprint-prd-item");
+    const link = el("a", "sprint-prd-link");
+    link.href = p.url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.title = p.url;
+    link.append(el("span", "sprint-prd-icon", "↗"), el("span", null, p.title));
+    const del = el("button", "icon-btn danger", "✕");
+    del.type = "button";
+    del.title = "Hapus referensi " + p.title;
+    del.setAttribute("aria-label", del.title);
+    del.onclick = () => {
+      if (confirm("Hapus referensi PRD “" + p.title + "” dari sprint ini?") && hapusSprintPrd(s, p.id)) render();
+    };
+    item.append(link, del);
+    list.append(item);
+  }
+  wrap.append(list);
+
+  if (sprintPrdOpenId === s.id) {
+    const form = el("form", "sprint-prd-form");
+    const title = document.createElement("input");
+    title.type = "text"; title.placeholder = "PRD title (e.g. Checkout revamp)";
+    title.setAttribute("aria-label", "PRD title"); title.maxLength = 120;
+    const url = document.createElement("input");
+    url.type = "text"; url.inputMode = "url"; url.placeholder = "https://docs…";
+    url.setAttribute("aria-label", "PRD URL"); url.required = true;
+    const error = el("span", "sprint-prd-error"); error.setAttribute("aria-live", "polite");
+    const save = el("button", "btn-solid", "Save link"); save.type = "submit";
+    form.append(title, url, save, error);
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      if (tambahSprintPrd(s, title.value, url.value)) {
+        sprintPrdOpenId = null; render(); return;
+      }
+      error.textContent = normalisasiSprintPrdUrl(url.value)
+        ? "Link itu sudah tersimpan." : "Masukkan URL http/https yang valid.";
+      url.setAttribute("aria-invalid", "true"); url.focus();
+    };
+    wrap.append(form);
+    setTimeout(() => title.focus(), 0);
+  }
+  return wrap;
+}
 
 // Baris satu sprint + panel edit (nama, tanggal, daftar task, selesai/hapus).
 function sprintRow(s, sec) {
@@ -908,6 +974,12 @@ function sprintRow(s, sec) {
   if (pairCount) {
     row.append(el("span", "pairing-sprint-count", pairCount + " pairing"));
   }
+  const prdLinks = sprintPrdLinks(s);
+  if (prdLinks.length) {
+    const prdCount = el("span", "sprint-prd-count", prdLinks.length + " PRD");
+    prdCount.title = prdLinks.map((p) => p.title).join(" · ");
+    row.append(prdCount);
+  }
 
   const edit = el("button", "icon-btn" + (sprintEditId === s.id ? " in-sprint" : ""), "✎");
   edit.title = "Ubah sprint / lihat isinya"; edit.setAttribute("aria-label", edit.title);
@@ -921,6 +993,7 @@ function sprintRow(s, sec) {
   const ed = el("div", "task-editor");
   const pairing = renderSprintPairing(s);
   if (pairing) ed.append(pairing);
+  ed.append(renderSprintPrd(s));
   ed.style.borderLeft = "3px solid var(--p-tinggi)";
   ed.style.paddingLeft = "10px";
 
