@@ -88,6 +88,7 @@ function render() {
 // Offline di HP: service worker hanya jalan bila di-serve lewat https/localhost,
 // tidak dari file:// atau lingkungan tanpa dukungan SW.
 function initApp() {
+  initThemeToggle();
   $("#tab-papan").onclick = () => setView("papan");
   $("#tab-jira").onclick = () => setView("jira");
   $("#tab-kalender").onclick = () => setView("kalender");
