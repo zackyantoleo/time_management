@@ -22,6 +22,7 @@ function resolveDue() {
 let capSprintId = null; // chip "🏃 Sprint": sprint tujuan untuk tugas baru
 
 function addTask(text, jalankan) {
+  if (!jiraProxy()) return;
   text = text.trim();
   if (!text) return;
   const s = scoreOpen ? hitungSkor() : null;

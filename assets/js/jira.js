@@ -41,6 +41,35 @@ function normalisasiJira(j) {
   return j;
 }
 normalisasiJira(jira);
+
+// Data Catet bersifat per akun. Tanpa kode akses, jangan biarkan cache akun
+// sebelumnya tetap terlihat atau nanti ikut terunggah ke akun lain. Preferensi
+// perangkat (tab aktif, reminder, dsb.) sengaja tidak ikut dihapus.
+function kosongkanDataLokalTanpaAkses() {
+  const proxy = jira.proxy || ""; // Worker custom tetap diperlukan untuk signup/sign in.
+  for (const key of [
+    "catet.tasks.v1", "catet.worklog.v1", "catet.routines.v1",
+    "catet.routineday.v1", "catet.sprints.v1", "catet.dirty.v1",
+    "catet.dirtyAt.v1", "catet.syncAt.v1", "catet.synced.v1",
+  ]) localStorage.removeItem(key);
+
+  tasks = [];
+  worklog = [];
+  routines = [];
+  rday = null;
+  sprints = { list: [], aktif: null };
+  jira = normalisasiJira({ site: "", proxy, key: "", calIcs: "", items: [] });
+  localStorage.setItem(JIRA_KEY_STORE, JSON.stringify(jira));
+
+  // Variabel berikut baru tersedia setelah semua script selesai dimuat;
+  // cabang ini dipakai saat sign out tanpa perlu menggandakan fungsi reset.
+  if (typeof dailyPriority !== "undefined") dailyPriority = null;
+  if (typeof calEvents !== "undefined") calEvents = null;
+  if (typeof gridEvents !== "undefined") gridEvents = [];
+  if (typeof calAktif !== "undefined") calAktif = false;
+  if (typeof lapJira !== "undefined") lapJira = null;
+}
+if (!jira.key.trim()) kosongkanDataLokalTanpaAkses();
 // tanpaDirty=true untuk penyegaran MESIN (tarikan tiket/topik berkala,
 // rapikan inbox): tiap perangkat menariknya sendiri dari Jira, jadi tak
 // perlu mendorong state — dan tidak boleh, karena flag dirty membuat
@@ -355,14 +384,14 @@ function depBadge(dep) {
 }
 
 /* ---------- sinkronisasi otomatis lewat proxy (Cloudflare Worker) ---------- */
-// Alamat proxy bawaan — semua perangkat otomatis tersambung tanpa setup apa
-// pun. Otorisasi di Worker berbasis Origin, jadi tidak ada kunci rahasia di
-// sini. (jira.proxy hanya dipakai kalau seseorang sengaja memasang Worker
-// sendiri dan mengisinya lewat konsol.)
+// Alamat Worker mentah hanya dipakai oleh alur autentikasi (mis. /signup).
+// Endpoint data memakai jiraProxy(), yang sengaja kosong sebelum access code
+// terpasang agar tidak ada sync anonim ke Cloudflare.
 const DEFAULT_PROXY = "https://catet-jira-proxy.zackyanto-leo.workers.dev";
-function jiraProxy() { return (jira.proxy || DEFAULT_PROXY).trim().replace(/\/+$/, ""); }
+function workerUrl() { return (jira.proxy || DEFAULT_PROXY).trim().replace(/\/+$/, ""); }
+function jiraProxy() { return jira.key && jira.key.trim() ? workerUrl() : ""; }
 // Kode akses (multi-user; per perangkat, tidak ikut sinkron) — dikirim di
-// semua permintaan ke Worker. Kosong = mode lama tanpa auth.
+// semua permintaan data ke Worker.
 function headerAkses() { return jira.key ? { "X-Catet-Key": jira.key } : {}; }
 let jiraSyncMsg = "";
 let jiraSyncing = false;
@@ -768,7 +797,7 @@ function renderSignedOut(editor) {
     if (!namaIn.value.trim()) { alert("Isi nama dulu."); return; }
     buat.disabled = true;
     try {
-      const r = await fetch(jiraProxy() + "/signup", {
+      const r = await fetch(workerUrl() + "/signup", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: namaIn.value.trim(), secret: secretIn.value }),
       });
@@ -798,8 +827,10 @@ function renderSignedIn(editor) {
   const keluar = el("button", "btn-line", "Sign out");
   keluar.style.marginLeft = "auto";
   keluar.onclick = () => {
-    if (!confirm("Sign out dari perangkat ini?\nData lokal tetap ada; kredensial di server tidak dihapus.")) return;
-    jira.key = ""; profil = null; kodeBaru = null; saveJira(true); setSyncStatus(""); render();
+    if (!confirm("Sign out dari perangkat ini?\nCache data akun di browser ini akan dibersihkan; data di server tidak dihapus.")) return;
+    kosongkanDataLokalTanpaAkses();
+    profil = null; kodeBaru = null; setSyncStatus("");
+    location.reload(); // batalkan request akun lama yang mungkin masih berjalan
   };
   bar.append(keluar);
   editor.append(bar);
