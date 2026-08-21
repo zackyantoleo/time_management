@@ -78,6 +78,57 @@ function rekonsiliasiSprintJira(feed) {
 function sprintById(id) { return sprints.list.find((s) => s.id === id) || null; }
 function sprintSelesai(s) { return !!(s && s.status === "selesai"); }
 function sprintAktifList() { return sprints.list.filter((s) => !sprintSelesai(s)); }
+
+// Referensi PRD milik sprint. Disimpan di objek sprint agar otomatis ikut
+// backup + sinkron state, dan bisa dibaca integrasi AI dari stores.sprints.
+// Hanya URL web yang diterima; javascript:/data: sengaja ditolak.
+function normalisasiSprintPrdUrl(raw) {
+  let value = String(raw || "").trim();
+  if (!value) return null;
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(value)) value = "https://" + value;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return url.href;
+  } catch { return null; }
+}
+function sprintPrdLinks(s) {
+  if (!s || !Array.isArray(s.prdLinks)) return [];
+  return s.prdLinks.map((p) => {
+    const url = normalisasiSprintPrdUrl(p && p.url);
+    if (!url) return null;
+    return {
+      id: String(p.id || url),
+      title: String(p.title || "").trim() || "PRD",
+      url,
+      createdAt: p.createdAt || null,
+    };
+  }).filter(Boolean);
+}
+function tambahSprintPrd(s, title, rawUrl) {
+  if (!s) return false;
+  const url = normalisasiSprintPrdUrl(rawUrl);
+  const links = sprintPrdLinks(s);
+  if (!url || links.some((p) => p.url === url)) return false;
+  // Jangan sekalian membuang entri legacy/invalid saat menambah link baru.
+  // Mutasi destruktif hanya boleh terjadi lewat aksi hapus eksplisit.
+  s.prdLinks = Array.isArray(s.prdLinks) ? s.prdLinks : [];
+  s.prdLinks.push({
+    id: uid(), title: String(title || "").trim() || "PRD", url,
+    createdAt: new Date().toISOString(),
+  });
+  saveSprints();
+  return true;
+}
+function hapusSprintPrd(s, id) {
+  if (!s) return false;
+  const links = Array.isArray(s.prdLinks) ? s.prdLinks : [];
+  const berikutnya = links.filter((p) => String((p && p.id) || (p && p.url)) !== id);
+  if (berikutnya.length === links.length) return false;
+  s.prdLinks = berikutnya;
+  saveSprints();
+  return true;
+}
 // Sprint aktif = target tombol "＋ Sprint"; hanya dari sprint yang belum ditutup.
 function sprintAktif() {
   const dipilih = sprintById(sprints.aktif);
