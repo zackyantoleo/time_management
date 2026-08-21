@@ -44,6 +44,25 @@ function setView(v) {
 }
 
 function render() {
+  const signedIn = !!jiraProxy();
+  document.body.classList.toggle("signed-out", !signedIn);
+  if (!signedIn) {
+    dailyPriority = null;
+    const targets = [$("#sections"), $("#jiraview"), $("#calview"), $("#worklog")];
+    for (const n of targets) if (n) n.innerHTML = "";
+    if (view === "settings") renderSettings();
+    else {
+      const target = view === "papan" ? $("#sections")
+        : view === "jira" ? $("#jiraview")
+        : view === "kalender" ? $("#calview") : $("#worklog");
+      target.append(el("div", "empty-note auth-empty",
+        "Belum ada data. Sign in dengan access code lewat ⚙ Settings."));
+    }
+    $("#tab-jira").textContent = "🎫 Jira";
+    updateSprintChip();
+    renderTitle();
+    return;
+  }
   if (view === "papan") { renderDailyPriority(); renderFocus(); renderSections(); }
   else if (view === "jira") renderJiraInbox();
   else if (view === "kalender") renderCalendar();

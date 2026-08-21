@@ -503,6 +503,14 @@
   }
   .jira-import input[type="password"] { flex: 0 1 180px; min-width: 120px; }
 
+  /* Sebelum sign in hanya panel Account dan placeholder kosong yang tampil. */
+  body.signed-out .focus-card,
+  body.signed-out .capture,
+  body.signed-out #daily-priority,
+  body.signed-out #search,
+  body.signed-out #settingsview > section { display: none; }
+  .auth-empty { margin-top: 24px; }
+
   /* ---- View tabs ---- */
   /* Sticky: tab + kotak cari selalu terjangkau walau daftar tugas panjang. */
   .tabs-row {

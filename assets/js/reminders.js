@@ -114,6 +114,7 @@ function beep() {
 }
 
 function checkDue() {
+  if (!jiraProxy()) return;
   const now = new Date();
   let changed = false;
   let dueNow = [];
