@@ -21,6 +21,11 @@ const SEARCH_PLACEHOLDER = {
   log: "Search work log…",
   settings: "",
 };
+function labelTabJira() {
+  const btn = $("#tab-jira");
+  btn.innerHTML = "<span aria-hidden=\"true\">◫</span><span class=\"tab-label\">Jira" +
+    (jira.items.length ? " (" + jira.items.length + ")" : "") + "</span>";
+}
 
 function setView(v) {
   view = v;
@@ -43,12 +48,19 @@ function setView(v) {
   render();
 }
 
+function updateBoardLayout() {
+  if (view !== "papan") return;
+  renderSprintContext();
+  renderRoutineContext();
+}
+
 function render() {
   const signedIn = !!jiraProxy();
   document.body.classList.toggle("signed-out", !signedIn);
   if (!signedIn) {
     dailyPriority = null;
-    const targets = [$("#sections"), $("#jiraview"), $("#calview"), $("#worklog")];
+    const targets = [$("#focus-card"), $("#daily-priority"), $("#sections"),
+      $("#sprint-context"), $("#routine-context"), $("#jiraview"), $("#calview"), $("#worklog")];
     for (const n of targets) if (n) n.innerHTML = "";
     if (view === "settings") renderSettings();
     else {
@@ -58,17 +70,17 @@ function render() {
       target.append(el("div", "empty-note auth-empty",
         "Belum ada data. Sign in dengan access code lewat ⚙ Settings."));
     }
-    $("#tab-jira").textContent = "🎫 Jira";
+    labelTabJira();
     updateSprintChip();
     renderTitle();
     return;
   }
-  if (view === "papan") { renderDailyPriority(); renderFocus(); renderSections(); }
+  if (view === "papan") { renderDailyPriority(); renderFocus(); renderSections(); updateBoardLayout(); }
   else if (view === "jira") renderJiraInbox();
   else if (view === "kalender") renderCalendar();
   else if (view === "settings") renderSettings();
   else renderWorklog();
-  $("#tab-jira").textContent = "🎫 Jira" + (jira.items.length ? " (" + jira.items.length + ")" : "");
+  labelTabJira();
   updateSprintChip();
   renderTitle();
 }
@@ -81,6 +93,12 @@ function initApp() {
   $("#tab-kalender").onclick = () => setView("kalender");
   $("#tab-log").onclick = () => setView("log");
   $("#settings-btn").onclick = () => setView("settings");
+  $("#capture-more").onclick = () => {
+    const panel = $("#capture-options");
+    const open = panel.classList.toggle("hidden") === false;
+    $("#capture-more").setAttribute("aria-expanded", String(open));
+    $("#capture-more").textContent = open ? "Less" : "Options";
+  };
   $("#search").addEventListener("input", (e) => {
     searchQuery = e.target.value;
     searchPerTab[view] = searchQuery;

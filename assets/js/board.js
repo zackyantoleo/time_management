@@ -2,6 +2,75 @@
 // section per prioritas, bagian Selesai, dan badge judul tab.
 "use strict";
 
+function renderSprintContext() {
+  const host = $("#sprint-context");
+  if (!host) return;
+  host.innerHTML = "";
+  const s = sprintAktif();
+  if (!s) return;
+  const card = el("section", "context-card sprint-context-card");
+  const head = el("div", "context-head");
+  head.append(el("h2", null, "Sprint aktif"), el("span", null, fmtSisaSprint(s)));
+  card.append(head, el("strong", "context-title", s.nama));
+  const semua = tasks.filter((t) => t.sprintId === s.id);
+  const selesai = semua.filter((t) => t.status === "selesai").length;
+  const pct = semua.length ? Math.round(selesai / semua.length * 100) : 0;
+  const meta = el("div", "context-meta");
+  meta.append(el("span", null, selesai + " dari " + semua.length + " task selesai"), el("strong", null, pct + "%"));
+  const progress = el("div", "context-progress");
+  const bar = el("i"); bar.style.width = pct + "%"; progress.append(bar);
+  card.append(meta, progress);
+  const foot = el("div", "context-foot");
+  foot.append(el("span", null, "Berakhir " + fmtDayName(s.selesai)),
+    el("strong", null, sisaTugasSprint(s.id).length + " task tersisa"));
+  card.append(foot);
+  host.append(card);
+
+  const prds = sprintPrdLinks(s);
+  const prdCard = el("section", "context-card");
+  const prdHead = el("div", "context-head");
+  prdHead.append(el("h2", null, "PRD sprint"), el("span", null, prds.length + " dokumen"));
+  prdCard.append(prdHead);
+  if (!prds.length) prdCard.append(el("p", "context-empty", "Belum ada referensi PRD."));
+  for (const p of prds.slice(0, 4)) {
+    const a = el("a", "context-prd-link");
+    a.href = p.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+    const icon = el("span", "context-prd-icon", "↗");
+    const text = el("span"); text.append(el("strong", null, p.title), el("small", null, new URL(p.url).hostname));
+    a.append(icon, text); prdCard.append(a);
+  }
+  const manage = el("button", "context-manage", prds.length ? "Kelola PRD" : "+ Tambah PRD");
+  manage.type = "button";
+  manage.onclick = () => {
+    sprintEditId = s.id;
+    sprintPrdOpenId = prds.length ? null : s.id;
+    setView("jira");
+  };
+  prdCard.append(manage);
+  host.append(prdCard);
+}
+
+function renderRoutineContext() {
+  const host = $("#routine-context");
+  if (!host) return;
+  host.innerHTML = "";
+  const items = todaysRoutines();
+  if (!items.length) return;
+  const done = items.filter((r) => rday.doneIds.includes(r.id)).length;
+  const card = el("section", "context-card");
+  const head = el("div", "context-head");
+  head.append(el("h2", null, "Rutinitas hari ini"), el("span", null, done + " / " + items.length));
+  card.append(head);
+  for (const r of items) {
+    const row = el("button", "context-routine" + (rday.doneIds.includes(r.id) ? " done" : ""));
+    row.type = "button"; row.onclick = () => { toggleRoutine(r); render(); };
+    row.append(el("span", "context-check", rday.doneIds.includes(r.id) ? "✓" : ""),
+      el("span", null, r.text), el("time", "mono", r.time || ""));
+    card.append(row);
+  }
+  host.append(card);
+}
+
 function renderDailyPriority() {
   const card = $("#daily-priority");
   if (!card) return;
@@ -339,7 +408,7 @@ function renderSections() {
 
   const frag = document.createDocumentFragment();
   if (!q && typeof renderMeetings === "function") renderMeetings(frag); // jadwal Google Calendar
-  if (!q) renderRoutines(frag); // saat mencari, fokus ke hasil tugas saja
+  // Rutinitas pindah ke panel konteks; board utama tetap fokus pada pekerjaan.
 
   // Jatah sprint dihitung sekali per render, dipakai kedua filter di bawah.
   const kuotaSet = typeof sprintKuotaHariIni === "function" ? sprintKuotaHariIni() : null;

@@ -9,14 +9,15 @@
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="assets/css/styles.css">
+<link rel="stylesheet" href="assets/css/calm-workbench.css">
 </head>
 <body>
 
 <div class="app">
   <header class="top">
     <div class="brand">
-      <h1>Catet</h1>
-      <span class="tag">catatan cepat berprioritas</span>
+      <span class="brand-mark" aria-hidden="true">C</span>
+      <div><h1>CATET</h1><span class="tag">calm workbench</span></div>
     </div>
     <div class="top-actions">
       <button class="btn-ghost" id="settings-btn" title="Settings" aria-pressed="false">⚙️</button>
@@ -25,24 +26,29 @@
 
   <div class="tabs-row">
     <nav class="tabs" role="tablist" aria-label="Tampilan">
-      <button class="tab" id="tab-papan" role="tab" aria-selected="true">📋 Board</button>
-      <button class="tab" id="tab-jira" role="tab" aria-selected="false">🎫 Jira</button>
-      <button class="tab" id="tab-kalender" role="tab" aria-selected="false">📅 Calendar</button>
-      <button class="tab" id="tab-log" role="tab" aria-selected="false">🗒 Work log</button>
+      <button class="tab" id="tab-papan" role="tab" aria-selected="true"><span aria-hidden="true">⌂</span><span class="tab-label">Board</span></button>
+      <button class="tab" id="tab-jira" role="tab" aria-selected="false"><span aria-hidden="true">◫</span><span class="tab-label">Jira</span></button>
+      <button class="tab" id="tab-kalender" role="tab" aria-selected="false"><span aria-hidden="true">▦</span><span class="tab-label">Calendar</span></button>
+      <button class="tab" id="tab-log" role="tab" aria-selected="false"><span aria-hidden="true">≡</span><span class="tab-label">Log</span></button>
     </nav>
     <input type="search" id="search" placeholder="Search tasks / tickets / logs…" aria-label="Cari">
   </div>
 
-  <section class="focus-card board-view" id="focus-card" aria-live="polite"></section>
+  <div class="desktop-shell board-view">
+  <main id="board-main">
+  <section class="focus-card" id="focus-card" aria-live="polite"></section>
 
-  <section class="daily-priority board-view hidden" id="daily-priority" aria-live="polite"></section>
+  <section class="daily-priority hidden" id="daily-priority" aria-live="polite"></section>
 
-  <section class="capture board-view" aria-label="Tambah catatan">
+  <section class="capture" aria-label="Tambah catatan">
     <div class="capture-row1">
-      <input type="text" id="cap-text" placeholder="Catat cepat… mis. “kabari mas Budi soal deploy” lalu Enter" autofocus>
+      <span class="capture-plus" aria-hidden="true">+</span>
+      <input type="text" id="cap-text" placeholder="Apa yang perlu kamu catat?" autofocus>
+      <button class="btn-ghost capture-more" id="capture-more" type="button" aria-expanded="false" aria-controls="capture-options">Options</button>
       <button class="btn-line" id="cap-run" title="Simpan lalu langsung jadikan In progress">▶ Run</button>
       <button class="btn-solid" id="cap-save">Save</button>
     </div>
+    <div class="capture-options hidden" id="capture-options">
     <div class="capture-row2">
       <div class="cap-group" role="group" aria-label="Prioritas">
         <span class="cap-label">Priority</span>
@@ -77,9 +83,16 @@
       </div>
       <div class="score-verdict" id="score-verdict">Pilih dampak (dan usaha) — saran prioritas &amp; kapan mulai muncul di sini.</div>
     </div>
+    </div>
   </section>
 
-  <div id="sections" class="board-view"></div>
+  <div id="sections"></div>
+  </main>
+  <aside id="board-sidebar" aria-label="Konteks kerja">
+    <div id="sprint-context"></div>
+    <div id="routine-context"></div>
+  </aside>
+  </div>
 
   <div id="jiraview" class="hidden"></div>
 
