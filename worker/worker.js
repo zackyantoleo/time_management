@@ -61,6 +61,10 @@ const SKEMA = [
   "CREATE TABLE IF NOT EXISTS states (user_id TEXT PRIMARY KEY, blob TEXT NOT NULL, updated_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS priority_snapshots (user_id TEXT PRIMARY KEY, blob TEXT NOT NULL, updated_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL, jira_site TEXT, jira_email TEXT, jira_token TEXT, cal_ics_url TEXT, created_at TEXT NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS state_documents (user_id TEXT NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('tasks', 'routines', 'sprints', 'jira_overrides')), schema_version INTEGER NOT NULL CHECK (schema_version >= 2), revision INTEGER NOT NULL CHECK (revision >= 1), blob TEXT NOT NULL CHECK (json_valid(blob)), updated_at TEXT NOT NULL, PRIMARY KEY (user_id, kind))",
+  "CREATE TABLE IF NOT EXISTS worklog_entries (user_id TEXT NOT NULL, id TEXT NOT NULL, task_id TEXT, occurred_at TEXT NOT NULL, local_date TEXT NOT NULL, text TEXT NOT NULL, priority TEXT, minutes INTEGER NOT NULL DEFAULT 0 CHECK (minutes >= 0), metadata TEXT CHECK (metadata IS NULL OR json_valid(metadata)), deleted_at TEXT, PRIMARY KEY (user_id, id))",
+  "CREATE INDEX IF NOT EXISTS idx_worklog_user_date ON worklog_entries (user_id, local_date DESC, occurred_at DESC)",
+  "CREATE INDEX IF NOT EXISTS idx_worklog_user_task ON worklog_entries (user_id, task_id)",
 ];
 // Kolom yang ditambahkan setelah tabel pertama dibuat (instalasi lama).
 const MIGRASI = ["ALTER TABLE users ADD COLUMN cal_ics_url TEXT"];
@@ -95,6 +99,49 @@ async function d1q(env, sql, params, mode) {
     } else throw e;
     return await jalan();
   }
+}
+
+function jumlahPerubahan(result) {
+  if (!result) return 0;
+  if (Number.isInteger(result.changes)) return result.changes;
+  return result.meta && Number.isInteger(result.meta.changes) ? result.meta.changes : 0;
+}
+
+const STATE_V2_KINDS = new Set(["tasks", "routines", "sprints", "jira_overrides"]);
+function stateV2Valid(kind, data) {
+  if (kind === "tasks") return Array.isArray(data);
+  if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+  if (kind === "routines") {
+    return Array.isArray(data.routines) && !!data.routineDay &&
+      typeof data.routineDay === "object" && !Array.isArray(data.routineDay);
+  }
+  if (kind === "sprints") return Array.isArray(data.list);
+  if (kind === "jira_overrides") {
+    return !!data.depOverrides && typeof data.depOverrides === "object" &&
+      !Array.isArray(data.depOverrides);
+  }
+  return false;
+}
+function dokumenV2(row) {
+  return {
+    kind: row.kind,
+    schemaVersion: row.schema_version,
+    revision: row.revision,
+    data: JSON.parse(row.blob),
+  };
+}
+function worklogV2(row) {
+  return {
+    id: row.id,
+    taskId: row.task_id || null,
+    occurredAt: row.occurred_at,
+    localDate: row.local_date,
+    text: row.text,
+    priority: row.priority || null,
+    minutes: row.minutes,
+    metadata: row.metadata ? JSON.parse(row.metadata) : null,
+    deletedAt: row.deleted_at || null,
+  };
 }
 
 async function sha256hex(s) {
@@ -351,6 +398,97 @@ async function tangani(request, env) {
       return json({ error: "Kode akses tidak valid atau belum diisi — masukkan kode dari admin (tab Jira → Access)." }, 401);
     }
     const uid = user ? user.id : "default";
+
+    // Schema v2 selalu membutuhkan user terautentikasi. Berbeda dari /state
+    // legacy, endpoint ini tidak pernah jatuh ke row "default" anonim.
+    if (url0.pathname.startsWith("/v2/") && !user) {
+      return json({ error: "Schema v2 membutuhkan kode akses valid." }, 401);
+    }
+
+    // GET/PUT /v2/state/:kind — satu dokumen per domain dengan revision CAS.
+    // Writer basi ditolak 409 agar satu perangkat tidak diam-diam menimpa yang lain.
+    if (url0.pathname.startsWith("/v2/state/")) {
+      if (!env.CATET_DB) return json({ error: "Schema v2 membutuhkan D1." }, 500);
+      const kind = decodeURIComponent(url0.pathname.slice("/v2/state/".length));
+      if (!STATE_V2_KINDS.has(kind)) return json({ error: "Jenis state v2 tidak dikenal." }, 404);
+      if (request.method === "GET") {
+        const row = await d1q(env,
+          "SELECT kind, schema_version, revision, blob, updated_at FROM state_documents WHERE user_id = ?1 AND kind = ?2",
+          [uid, kind], "first");
+        return row ? json(dokumenV2(row)) : json({ kind, schemaVersion: 2, revision: 0, data: null });
+      }
+      if (request.method === "PUT") {
+        let body; try { body = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
+        if (!body || !Number.isInteger(body.schemaVersion) || body.schemaVersion < 2 ||
+          !Number.isInteger(body.revision) || body.revision < 0 || !stateV2Valid(kind, body.data)) {
+          return json({ error: "schemaVersion, revision, dan data tidak valid untuk jenis ini." }, 400);
+        }
+        const blob = JSON.stringify(body.data);
+        if (blob.length > 256 * 1024) return json({ error: "Dokumen terlalu besar (maks 256 KB)." }, 413);
+        const updatedAt = new Date().toISOString();
+        if (body.revision === 0) {
+          const result = await d1q(env,
+            "INSERT INTO state_documents (user_id, kind, schema_version, revision, blob, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(user_id, kind) DO NOTHING",
+            [uid, kind, body.schemaVersion, 1, blob, updatedAt], "run");
+          if (jumlahPerubahan(result) === 1) {
+            return json({ ok: true, kind, schemaVersion: body.schemaVersion, revision: 1 }, 201);
+          }
+        } else {
+          const result = await d1q(env,
+            "UPDATE state_documents SET blob = ?1, schema_version = ?2, revision = revision + 1, updated_at = ?3 WHERE user_id = ?4 AND kind = ?5 AND revision = ?6",
+            [blob, body.schemaVersion, updatedAt, uid, kind, body.revision], "run");
+          if (jumlahPerubahan(result) === 1) {
+            return json({ ok: true, kind, schemaVersion: body.schemaVersion, revision: body.revision + 1 });
+          }
+        }
+        const current = await d1q(env,
+          "SELECT revision FROM state_documents WHERE user_id = ?1 AND kind = ?2", [uid, kind], "first");
+        // revision > 0 pada row yang belum ada berarti kontrak client rusak,
+        // bukan konflik dengan writer lain.
+        if (!current) return json({ error: "Dokumen belum ada; buat dengan revision 0." }, 404);
+        return json({ error: "State berubah di perangkat lain.", currentRevision: current ? current.revision : 0 }, 409);
+      }
+    }
+
+    // GET/POST /v2/worklogs — histori append-only; duplicate id ditolak.
+    if (url0.pathname === "/v2/worklogs") {
+      if (!env.CATET_DB) return json({ error: "Schema v2 membutuhkan D1." }, 500);
+      if (request.method === "GET") {
+        const since = url0.searchParams.get("since") || "0000-01-01";
+        const limit = Math.min(Math.max(parseInt(url0.searchParams.get("limit") || "200", 10) || 200, 1), 500);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(since)) return json({ error: "Parameter since harus YYYY-MM-DD." }, 400);
+        const rs = await d1q(env,
+          "SELECT id, task_id, occurred_at, local_date, text, priority, minutes, metadata, deleted_at FROM worklog_entries WHERE user_id = ?1 AND local_date >= ?2 ORDER BY local_date DESC, occurred_at DESC LIMIT ?3",
+          [uid, since, limit], "all");
+        return json({ items: ((rs && rs.results) || []).map(worklogV2) });
+      }
+      if (request.method === "POST") {
+        let body; try { body = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
+        const occurred = body && typeof body.occurredAt === "string" ? new Date(body.occurredAt) : null;
+        const localDateObj = body && /^\d{4}-\d{2}-\d{2}$/.test(body.localDate || "")
+          ? new Date(body.localDate + "T00:00:00Z") : null;
+        if (!body || typeof body.id !== "string" || !body.id.trim() || body.id.length > 100 ||
+          typeof body.text !== "string" || !body.text.trim() || body.text.length > 5000 ||
+          !occurred || isNaN(occurred) || !localDateObj || isNaN(localDateObj) ||
+          localDateObj.toISOString().slice(0, 10) !== body.localDate ||
+          !Number.isInteger(body.minutes) || body.minutes < 0 || body.minutes > 24 * 60) {
+          return json({ error: "Format worklog tidak valid." }, 400);
+        }
+        let metadata = null;
+        try { metadata = body.metadata == null ? null : JSON.stringify(body.metadata); }
+        catch { return json({ error: "Metadata worklog harus bisa diserialisasi ke JSON." }, 400); }
+        if (body.metadata != null && metadata === undefined) {
+          return json({ error: "Metadata worklog harus berupa nilai JSON." }, 400);
+        }
+        if (metadata && metadata.length > 64 * 1024) return json({ error: "Metadata worklog terlalu besar." }, 413);
+        const result = await d1q(env,
+          "INSERT INTO worklog_entries (user_id, id, task_id, occurred_at, local_date, text, priority, minutes, metadata, deleted_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) ON CONFLICT(user_id, id) DO NOTHING",
+          [uid, body.id.trim(), body.taskId || null, occurred.toISOString(), body.localDate,
+            body.text.trim(), body.priority || null, body.minutes, metadata, null], "run");
+        if (jumlahPerubahan(result) !== 1) return json({ error: "Worklog dengan id ini sudah ada." }, 409);
+        return json({ ok: true, id: body.id.trim() }, 201);
+      }
+    }
 
     // Snapshot prioritas dipisah dari blob state agar scheduler tidak pernah
     // menimpa edit browser. PUT hanya untuk user berkode atau service token.
