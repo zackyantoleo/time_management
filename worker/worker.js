@@ -190,6 +190,25 @@ function parseProp(line) {
 function unescapeText(s) {
   return s.replace(/\\n/gi, " ").replace(/\\,/g, ",").replace(/\\;/g, ";").replace(/\\\\/g, "\\").trim();
 }
+function urlsFromText(raw) {
+  const text = String(raw || "");
+  const found = [];
+  const re = /https?:\/\/[^\s<>"'\\]+/gi;
+  let match;
+  while ((match = re.exec(text))) {
+    let url = match[0].replace(/[),.;]+$/g, "");
+    try {
+      const parsed = new URL(url);
+      if (parsed.hostname === "www.google.com" && parsed.pathname === "/url" && parsed.searchParams.get("q")) {
+        url = parsed.searchParams.get("q");
+      }
+      if (!/^https?:$/i.test(new URL(url).protocol)) continue;
+    } catch { continue; }
+    if (!found.includes(url)) found.push(url);
+    if (found.length >= 4) break;
+  }
+  return found;
+}
 // Wall-clock (di zona tz) → instant UTC. Koreksi offset sekali; zona tanpa DST
 // (mis. Asia/Jakarta) selalu tepat.
 function wallToUTC(y, mo, d, h, mi, s, tz) {
@@ -231,6 +250,7 @@ function expandEvent(ev, winA, winB, tz) {
     summary: ev.summary, location: ev.location, allDay: ev.start.allDay,
     start: inst.toISOString(), date: ev.start.allDay ? isoDate(wall) : null,
     end: new Date(inst.getTime() + durMs).toISOString(),
+    urls: urlsFromText(ev.description || ""),
   });
   const isoDate = (w) => String(w.y).padStart(4, "0") + "-" + String(w.mo).padStart(2, "0") + "-" + String(w.d).padStart(2, "0");
   const dalam = (inst) => inst >= winA && inst <= winB;
@@ -293,7 +313,7 @@ function acaraDalamJendela(icsText, from, to, tz) {
   const events = [];
   let cur = null;
   for (const line of lines) {
-    if (line === "BEGIN:VEVENT") { cur = { exdate: [], summary: "", location: "" }; continue; }
+    if (line === "BEGIN:VEVENT") { cur = { exdate: [], summary: "", location: "", description: "" }; continue; }
     if (line === "END:VEVENT") {
       if (cur && cur.start && cur.status !== "CANCELLED") events.push(cur);
       cur = null; continue;
@@ -304,6 +324,7 @@ function acaraDalamJendela(icsText, from, to, tz) {
     else if (p.name === "DTEND") cur.end = parseDT(p, tz);
     else if (p.name === "SUMMARY") cur.summary = unescapeText(p.value).slice(0, 200);
     else if (p.name === "LOCATION") cur.location = unescapeText(p.value).slice(0, 200);
+    else if (p.name === "DESCRIPTION") cur.description = unescapeText(p.value).slice(0, 4000);
     else if (p.name === "RRULE") cur.rrule = p.value.trim();
     else if (p.name === "EXDATE") cur.exdate.push(...p.value.split(",").map((s) => s.trim()));
     else if (p.name === "STATUS") cur.status = p.value.trim().toUpperCase();
