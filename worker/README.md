@@ -110,10 +110,32 @@ blok `[[d1_databases]]` dan tempel id-nya, lalu:
 wrangler deploy
 ```
 
-Tabelnya dibuat otomatis saat pertama dipakai. Instalasi lama yang memakai
+Tabel dasar dibuat otomatis saat pertama dipakai. Instalasi lama yang memakai
 KV tidak perlu langkah ekstra: data di KV dimigrasi otomatis ke D1 saat
 akses pertama, dan setelah itu blok `[[kv_namespaces]]` di `wrangler.toml`
 boleh dihapus. (Tanpa D1, Worker tetap jalan memakai KV seperti dulu.)
+
+### Schema v2 persistence
+
+Schema v2 bersifat **additive**: tabel `states` lama tetap tersedia selama
+client browser dimigrasikan bertahap. Terapkan migration sebelum memakai
+endpoint v2:
+
+```bash
+cd worker
+wrangler d1 migrations apply catet-db --remote
+wrangler deploy
+```
+
+Endpoint baru selalu membutuhkan access code valid, walaupun fallback anonim
+legacy belum dimatikan:
+
+- `GET/PUT /v2/state/:kind` — dokumen `tasks`, `routines`, `sprints`, atau
+  `jira_overrides`; setiap PUT membawa `revision`, stale writer mendapat `409`.
+- `GET/POST /v2/worklogs` — histori append-only; ID duplikat mendapat `409`.
+
+Jangan dual-write dari client sebelum alur migrasi data dan rollback sudah
+diverifikasi. Endpoint `/state` tetap source of truth untuk client v1.
 
 Selesai — tidak ada pengaturan tambahan di aplikasi (Catet memakai alamat
 proxy bawaan). Status sinkron tampil kecil di footer

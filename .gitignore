@@ -1,3 +1,4 @@
 .claude
 graphify-out/
 tests/screenshots/
+worker/.wrangler/
