@@ -520,7 +520,11 @@ async function syncJira(manual) {
     // mengisi tiket yang belum punya issue link/key di description.
     const nativeDeps = {};
     for (const f of feed) {
-      if (Array.isArray(f.deps) && f.deps.length) {
+      const qaMeta = {
+        summary: f.summary || "", issueType: f.issueType || "",
+        labels: Array.isArray(f.labels) ? f.labels : [],
+      };
+      if (Array.isArray(f.deps) && f.deps.length && CatetDependencyMatcher.isQa(qaMeta)) {
         nativeDeps[f.key] = {
           ready: f.deps.every((d) => d.done),
           readyAt: f.deps.every((d) => d.done)

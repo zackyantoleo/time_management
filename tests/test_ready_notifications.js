@@ -41,25 +41,27 @@ function dep(isReady, dev = 'DEV-1', readyAt = null) {
   assert.strictEqual(JSON.stringify(result.state.items['QA-1'].devKeys), JSON.stringify(['DEV-9']));
 }
 
-// A reliable Jira Done timestamp can recover a recent event on first observation.
+// Baseline stays silent even if Jira says the dependency was Done recently.
 {
   const readyAt = NOW - 2 * DAY;
   const result = ready.reconcile(ready.normalize(null), {
     'QA-RECENT': dep(true, 'DEV-RECENT', new Date(readyAt).toISOString()),
   }, {}, NOW);
-  assert.strictEqual(result.added.includes('QA-RECENT'), true);
-  assert.strictEqual(result.state.items['QA-RECENT'].readyAt, readyAt);
-  assert.strictEqual(result.state.items['QA-RECENT'].expiresAt, readyAt + 7 * DAY);
+  assert.strictEqual(result.added.length, 0);
+  assert.strictEqual(result.state.items['QA-RECENT'], undefined);
 }
 
-// An old ready timestamp must not resurrect historical backlog.
+// Once observed after baseline, retention starts at observation, not old Jira timestamp.
 {
-  const readyAt = NOW - 8 * DAY;
-  const result = ready.reconcile(ready.normalize(null), {
-    'QA-OLD': dep(true, 'DEV-OLD', new Date(readyAt).toISOString()),
-  }, {}, NOW);
-  assert.strictEqual(result.added.length, 0);
-  assert.strictEqual(result.state.items['QA-OLD'], undefined);
+  let state = ready.reconcile(ready.normalize(null), { 'QA-LATE': dep(false) }, {}, NOW).state;
+  const sourceAt = NOW - 6 * DAY;
+  const observedAt = NOW + DAY;
+  const result = ready.reconcile(state, {
+    'QA-LATE': dep(true, 'DEV-LATE', new Date(sourceAt).toISOString()),
+  }, {}, observedAt);
+  assert.strictEqual(result.state.items['QA-LATE'].readyAt, observedAt);
+  assert.strictEqual(result.state.items['QA-LATE'].sourceReadyAt, sourceAt);
+  assert.strictEqual(result.state.items['QA-LATE'].expiresAt, observedAt + 7 * DAY);
 }
 
 // Feed disappearance is unknown, not false; reappearance must not alert.

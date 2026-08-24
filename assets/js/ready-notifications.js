@@ -36,10 +36,7 @@
       const wasReady = previous[key] === true;
       current[key] = isReady;
       const sourceReadyAt = dep && dep.readyAt ? Date.parse(dep.readyAt) : NaN;
-      const recentSourceEvent = isReady && Number.isFinite(sourceReadyAt) &&
-        sourceReadyAt <= now && sourceReadyAt + RETENTION_MS > now;
-      if (isReady && !wasReady && (!baseline || recentSourceEvent)) {
-        const eventAt = recentSourceEvent ? sourceReadyAt : now;
+      if (!baseline && isReady && !wasReady) {
         const info = meta[key] || {};
         state.items[key] = {
           key,
@@ -48,8 +45,9 @@
           sprintId: info.sprintId == null ? null : String(info.sprintId),
           sprintName: info.sprintName == null ? null : String(info.sprintName),
           devKeys: Array.isArray(dep.keys) ? dep.keys.map(String) : [],
-          readyAt: eventAt,
-          expiresAt: eventAt + RETENTION_MS,
+          readyAt: now,
+          sourceReadyAt: Number.isFinite(sourceReadyAt) ? sourceReadyAt : null,
+          expiresAt: now + RETENTION_MS,
         };
         added.push(key);
       }

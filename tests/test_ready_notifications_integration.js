@@ -30,6 +30,8 @@ assert(worker.includes('const doneAt = done ? (f.resolutiondate || f.statuscateg
   'Worker must expose authoritative Jira Done time for readiness retention');
 assert(jira.includes('readyAt: f.deps.every((d) => d.done)'),
   'native dependency readiness must carry the final Done timestamp');
+assert(jira.includes('CatetDependencyMatcher.isQa(qaMeta)'),
+  'native Jira links must create readiness only for tickets classified as QA');
 assert(matcher.includes('doneAt: dev.doneAt || null'),
   'inferred dependency readiness must preserve Jira Done timestamp');
 assert(css.includes('.ready-alert-panel') && css.includes('.ready-alert-item'),

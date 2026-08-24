@@ -9,6 +9,8 @@ vm.createContext(ctx);
 vm.runInContext(source, ctx);
 const matcher = ctx.CatetDependencyMatcher;
 assert(matcher, 'CatetDependencyMatcher must be exported globally');
+assert.strictEqual(matcher.isQa({ summary: 'Test payment callback', issueType: 'Test', labels: [] }), true);
+assert.strictEqual(matcher.isQa({ summary: 'Implement payment callback', issueType: 'Task', labels: ['backend'] }), false);
 assert.deepStrictEqual(Array.from(matcher.words('promotionName voucherID')), ['promo', 'name', 'voucher', 'id'],
   'camelCase API/business field names must become separate matching concepts');
 
