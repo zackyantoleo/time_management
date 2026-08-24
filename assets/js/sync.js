@@ -114,6 +114,9 @@ function kumpulkanStores() {
   if (j) {
     delete j.key; delete j.proxy; delete j.calIcs;
     delete j.pairingIssues; delete j.depSuggestions; delete j.depWarnings;
+    // Edge history readiness bersifat per-device. Setiap perangkat menurunkannya
+    // dari timestamp Jira; cloud snapshot jangan menimpa state observer lokal.
+    delete j.readyNotifications;
   }
   return {
     tasks: ambil("catet.tasks.v1"),
@@ -175,6 +178,7 @@ function terapkanRemote(stores) {
     stores.jira.pairingIssues = jira.pairingIssues;
     stores.jira.depSuggestions = jira.depSuggestions;
     stores.jira.depWarnings = jira.depWarnings;
+
     // Data server bisa berasal dari versi lama (belum punya bau, dsb.) —
     // lengkapi dulu, jangan sampai render crash karena struktur bolong.
     normalisasiJira(stores.jira);

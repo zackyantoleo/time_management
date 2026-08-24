@@ -73,6 +73,7 @@ function render() {
     labelTabJira();
     updateSprintChip();
     renderTitle();
+    renderReadyNotifications();
     return;
   }
   if (view === "papan") { renderDailyPriority(); renderFocus(); renderSections(); updateBoardLayout(); }
@@ -83,6 +84,7 @@ function render() {
   labelTabJira();
   updateSprintChip();
   renderTitle();
+  renderReadyNotifications();
 }
 
 // Offline di HP: service worker hanya jalan bila di-serve lewat https/localhost,
@@ -94,6 +96,15 @@ function initApp() {
   $("#tab-kalender").onclick = () => setView("kalender");
   $("#tab-log").onclick = () => setView("log");
   $("#settings-btn").onclick = () => setView("settings");
+  $("#ready-alert-btn").onclick = () => {
+    const panel = $("#ready-alert-panel");
+    const open = panel.classList.toggle("hidden");
+    $("#ready-alert-btn").setAttribute("aria-expanded", String(!open));
+  };
+  $("#ready-alert-close").onclick = () => {
+    $("#ready-alert-panel").classList.add("hidden");
+    $("#ready-alert-btn").setAttribute("aria-expanded", "false");
+  };
   $("#capture-more").onclick = () => {
     const panel = $("#capture-options");
     const open = panel.classList.toggle("hidden") === false;

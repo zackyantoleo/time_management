@@ -21,10 +21,23 @@
       <div><h1>CATET</h1><span class="tag">calm workbench</span></div>
     </div>
     <div class="top-actions">
+      <button class="btn-ghost ready-alert-btn" id="ready-alert-btn" type="button" aria-label="Tiket baru siap dites" aria-expanded="false" hidden><span aria-hidden="true">✓</span><span id="ready-alert-count" class="ready-alert-count">0</span></button>
       <button class="btn-ghost theme-toggle" id="theme-toggle" type="button" aria-label="Gunakan tema gelap" aria-pressed="false">☾</button>
       <button class="btn-ghost" id="settings-btn" title="Settings" aria-pressed="false">⚙️</button>
     </div>
   </header>
+
+  <section class="ready-alert-panel hidden" id="ready-alert-panel" aria-labelledby="ready-alert-title">
+    <div class="ready-alert-head">
+      <div>
+        <span class="ready-alert-eyebrow">QA SIGNAL</span>
+        <h2 id="ready-alert-title">Baru siap dites</h2>
+        <p>Tiket akan tetap muncul selama 7 hari sejak dependency development-nya ready.</p>
+      </div>
+      <button class="icon-btn" id="ready-alert-close" type="button" aria-label="Tutup panel tiket siap dites">✕</button>
+    </div>
+    <div class="ready-alert-list" id="ready-alert-list"></div>
+  </section>
 
   <div class="tabs-row">
     <nav class="tabs" role="tablist" aria-label="Tampilan">
@@ -138,6 +151,7 @@
 <script src="assets/js/util.js"></script>
 <script src="assets/js/priority-engine.js"></script>
 <script src="assets/js/dependency-matcher.js"></script>
+<script src="assets/js/ready-notifications.js"></script>
 <script src="assets/js/tasks.js"></script>
 <script src="assets/js/sprints.js"></script>
 <script src="assets/js/capture.js"></script>

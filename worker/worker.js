@@ -701,7 +701,7 @@ async function tangani(request, env) {
     if (request.method === "GET" && url.pathname === "/tickets") {
       const jql = "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC";
       const sf = await sprintFieldId(site, authHeaders); // id field Sprint (bisa null)
-      const ticketFields = "summary,status,created,issuetype,parent,components,labels,issuelinks,description";
+      const ticketFields = "summary,status,created,issuetype,parent,components,labels,issuelinks,description,resolutiondate,statuscategorychangedate";
       let assignedToken = "", assignedIssues = [];
       const seenAssignedTokens = new Set();
       do {
@@ -721,7 +721,7 @@ async function tangani(request, env) {
       const data = { issues: assignedIssues };
       const KEY_G = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/g;
       const beres = (st) => !!st && ((st.statusCategory && st.statusCategory.key === "done") || /^done$/i.test(st.name || ""));
-      const statusByKey = new Map(); // key → { status, done }
+      const statusByKey = new Map(); // key → { status, done, doneAt }
       const depsByTiket = new Map(); // key tiket → Set(key dependensi)
       for (const i of data.issues || []) {
         const f = i.fields || {};
@@ -731,7 +731,13 @@ async function tangani(request, env) {
           if (!lain || !lain.key) continue;
           set.add(lain.key);
           const st = lain.fields && lain.fields.status;
-          if (st) statusByKey.set(lain.key, { status: st.name || "?", done: beres(st) });
+          if (st) {
+            const done = beres(st);
+            statusByKey.set(lain.key, {
+              status: st.name || "?", done,
+              doneAt: done ? (lain.fields.resolutiondate || lain.fields.statuscategorychangedate || null) : null,
+            });
+          }
         }
         for (const m of JSON.stringify(f.description || "").matchAll(KEY_G)) set.add(m[0]);
         set.delete(i.key);
@@ -745,10 +751,16 @@ async function tangani(request, env) {
         .map((k) => k.trim()).filter((k) => KEY_1.test(k)).slice(0, 50);
       for (const i of data.issues || []) {
         const st = i.fields && i.fields.status;
-        if (st) statusByKey.set(i.key, { status: st.name || "?", done: beres(st) });
+        if (st) {
+          const done = beres(st);
+          statusByKey.set(i.key, {
+            status: st.name || "?", done,
+            doneAt: done ? (i.fields.resolutiondate || i.fields.statuscategorychangedate || null) : null,
+          });
+        }
       }
       const tanya = [...new Set([...[...depsByTiket.values()].flatMap((s) => [...s]), ...papanKeys])]
-        .filter((k) => !statusByKey.has(k)).slice(0, 100);
+        .filter((k) => !statusByKey.has(k) || (statusByKey.get(k).done && !statusByKey.get(k).doneAt)).slice(0, 100);
       if (tanya.length) {
         const rb = await fetch(site + "/rest/api/3/issue/bulkfetch", {
           method: "POST",
@@ -813,6 +825,7 @@ async function tangani(request, env) {
               summary: f.summary || "",
               status: st && st.name || null,
               done: beres(st),
+              doneAt: beres(st) ? (f.resolutiondate || f.statuscategorychangedate || null) : null,
               created: f.created || null,
               issueType: f.issuetype && f.issuetype.name || "",
               parentKey: f.parent && f.parent.key || null,
