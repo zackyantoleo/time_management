@@ -107,7 +107,7 @@
       const chosen = overrides[qa.key];
       if (chosen && byKey.has(chosen) && isDeliveryDev(byKey.get(chosen))) {
         const dev = byKey.get(chosen);
-        matches.push({ qaKey: qa.key, devKey: dev.key, status: dev.status || "?", done: !!dev.done,
+        matches.push({ qaKey: qa.key, devKey: dev.key, status: dev.status || "?", done: !!dev.done, doneAt: dev.doneAt || null,
           source: "manual", score: 100, evidence: ["dipilih manual di CATET"], sprintId: qa.sprintId || null });
         coveredDevs.add(dev.key);
         continue;
@@ -121,7 +121,7 @@
       const margin = best ? best.score - (second ? second.score : 0) : 0;
       const auto = best && (hard || (best.score >= 58 && margin >= 15) || (best.score >= 78 && margin >= 8));
       if (auto) {
-        matches.push({ qaKey: qa.key, devKey: best.dev.key, status: best.dev.status || "?", done: !!best.dev.done,
+        matches.push({ qaKey: qa.key, devKey: best.dev.key, status: best.dev.status || "?", done: !!best.dev.done, doneAt: best.dev.doneAt || null,
           source: best.source, score: best.score, evidence: best.evidence, sprintId: qa.sprintId || null });
         coveredDevs.add(best.dev.key);
         continue;

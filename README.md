@@ -28,6 +28,10 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
   dan entri log kerja.
 - **Tab Jira terpisah** — tiket yang belum diambil punya tab sendiri (🎫,
   dengan penghitung), jadi papan utama tetap pendek dan fokus.
+- **Baru siap dites** — indikator ✓ di header menampilkan tiket QA yang
+  dependency development-nya baru menjadi Done. Tiket sprint maupun non-sprint
+  muncul selama 7 hari; baseline pertama tidak menganggap backlog ready sebagai
+  event baru.
 - **Prioritas terpisah dari waktu** — bisa mencatat "tiket ini prioritasnya
   tinggi tapi bisa dikerjakan nanti" atau "kabari orang ini besok pagi":
   - Prioritas: Urgent / Tinggi / Sedang / Rendah

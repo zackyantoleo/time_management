@@ -5,6 +5,7 @@
 
 /* ---------- Jira: autolink + inbox tiket ---------- */
 const JIRA_KEY_STORE = "catet.jira.v1";
+const READY_NOTIFICATIONS_KEY = "catet.readyNotifications.v1";
 const JIRA_RE = /\b([A-Z][A-Z0-9]{1,9}-\d+)\b/g;
 let jira = (() => {
   try {
@@ -29,6 +30,14 @@ function normalisasiJira(j) {
   j.depSuggestions = j.depSuggestions || {};
   j.depWarnings = Array.isArray(j.depWarnings) ? j.depWarnings : [];
   j.pairingIssues = Array.isArray(j.pairingIssues) ? j.pairingIssues : [];
+  let readyState = j.readyNotifications;
+  try {
+    const localReady = JSON.parse(localStorage.getItem(READY_NOTIFICATIONS_KEY));
+    if (localReady && Number(localReady.lastObservedAt || 0) > Number((readyState || {}).lastObservedAt || 0)) readyState = localReady;
+  } catch {}
+  j.readyNotifications = typeof CatetReadyNotifications !== "undefined"
+    ? CatetReadyNotifications.normalize(readyState)
+    : (readyState || { initialized: false, readiness: {}, items: {} });
   j.items = Array.isArray(j.items) ? j.items : [];
   // Topik BAU (Business as Usual): tiket "wadah worklog" di project khusus
   // (mis. TDBU) untuk kerjaan di luar task sprint — meeting, deployment, dst.
@@ -51,6 +60,7 @@ function kosongkanDataLokalTanpaAkses() {
     "catet.tasks.v1", "catet.worklog.v1", "catet.routines.v1",
     "catet.routineday.v1", "catet.sprints.v1", "catet.dirty.v1",
     "catet.dirtyAt.v1", "catet.syncAt.v1", "catet.synced.v1",
+    READY_NOTIFICATIONS_KEY,
   ]) localStorage.removeItem(key);
 
   tasks = [];
@@ -79,6 +89,10 @@ if (!jira.key.trim()) kosongkanDataLokalTanpaAkses();
 function saveJira(tanpaDirty) {
   localStorage.setItem(JIRA_KEY_STORE, JSON.stringify(jira));
   if (!tanpaDirty && typeof syncDirty === "function") syncDirty();
+}
+function saveReadyNotificationsLocal() {
+  jira.readyNotifications = CatetReadyNotifications.normalize(jira.readyNotifications);
+  localStorage.setItem(READY_NOTIFICATIONS_KEY, JSON.stringify(jira.readyNotifications));
 }
 function jiraSite() { return (jira.site || "").trim().replace(/\/+$/, ""); }
 function jiraUrl(key) { return jiraSite() + "/browse/" + key; }
@@ -206,6 +220,84 @@ function warningTiket(key) {
   return (jira.depWarnings || []).find((x) => x && x.key === key) || null;
 }
 function suggestionTiket(key) { return jira.depSuggestions && jira.depSuggestions[key] || null; }
+
+function metadataReady(feed) {
+  const result = {};
+  const sprintMeta = new Map();
+  for (const issue of jira.pairingIssues || []) {
+    sprintMeta.set(issue.key, {
+      summary: issue.summary || "", status: issue.status || "",
+      sprintId: issue.sprintId || null, sprintName: issue.sprintName || null,
+    });
+  }
+  for (const issue of feed || []) {
+    const sprint = issue.sprint || {};
+    result[issue.key] = {
+      summary: issue.summary || "", status: issue.status || "",
+      sprintId: sprint.jiraId == null ? null : sprint.jiraId,
+      sprintName: sprint.name || null,
+    };
+  }
+  for (const [key, meta] of sprintMeta) result[key] = { ...(result[key] || {}), ...meta };
+  for (const task of tasks) {
+    const match = String(task.text || "").match(JIRA_RE);
+    if (!match || result[match[0]]) continue;
+    const sprint = (sprints.list || []).find((item) => String(item.id) === String(task.sprintId));
+    result[match[0]] = {
+      summary: String(task.text || "").replace(match[0], "").replace(/^\s*[—:-]\s*/, ""),
+      status: task.status || "", sprintId: task.sprintId || null,
+      sprintName: sprint && sprint.nama || null,
+    };
+  }
+  return result;
+}
+
+function rekonsiliasiReadyNotifications(feed, nowMs) {
+  const result = CatetReadyNotifications.reconcile(
+    jira.readyNotifications, jira.deps, metadataReady(feed), nowMs
+  );
+  jira.readyNotifications = result.state;
+  saveReadyNotificationsLocal();
+  return result.added;
+}
+
+function readyNotificationsAktif() {
+  return CatetReadyNotifications.visible(jira.readyNotifications);
+}
+
+function renderReadyNotifications() {
+  const button = $("#ready-alert-btn");
+  const panel = $("#ready-alert-panel");
+  const list = $("#ready-alert-list");
+  if (!button || !panel || !list) return;
+  const items = readyNotificationsAktif();
+  button.hidden = items.length === 0;
+  $("#ready-alert-count").textContent = String(items.length);
+  button.setAttribute("aria-label", items.length + " tiket baru siap dites");
+  if (!items.length) {
+    panel.classList.add("hidden");
+    button.setAttribute("aria-expanded", "false");
+    list.innerHTML = "";
+    return;
+  }
+  list.innerHTML = "";
+  for (const item of items) {
+    const row = el("article", "ready-alert-item");
+    const main = el("div", "ready-alert-main");
+    const top = el("div", "ready-alert-item-top");
+    const link = el("a", "jira-key", item.key);
+    link.href = jiraUrl(item.key); link.target = "_blank"; link.rel = "noopener noreferrer";
+    top.append(link, el("span", "ready-alert-age", fmtAgo(new Date(item.readyAt).toISOString())));
+    main.append(top, el("div", "ready-alert-summary", item.summary || "Tiket QA siap dites"));
+    const meta = el("div", "ready-alert-meta");
+    meta.append(el("span", "effort-badge dep-ready", "Ready to test"));
+    meta.append(el("span", "ready-alert-scope", item.sprintName ? item.sprintName : "Non-sprint"));
+    if (item.devKeys && item.devKeys.length) meta.append(el("span", "ready-alert-scope", "Dev " + item.devKeys.join(", ")));
+    main.append(meta);
+    row.append(main);
+    list.append(row);
+  }
+}
 function warningBadge(w) {
   const label = w.type === "dev-missing-qa" ? "⚠ QA ticket belum ditemukan"
     : w.type === "qa-ambiguous" ? "⚠ pilih tiket dev" : "⚠ dev ticket belum ditemukan";
@@ -222,6 +314,7 @@ function terapkanHasilPasangan(result, nativeDeps) {
     if (next[m.qaKey]) continue; // relasi eksplisit Jira selalu menang
     next[m.qaKey] = {
       ready: !!m.done, keys: [m.devKey], source: m.source,
+      readyAt: m.done ? (m.doneAt || null) : null,
       wait: m.done ? [] : [{ key: m.devKey, status: m.status || "?" }],
       evidence: m.evidence || [], score: m.score || null,
     };
@@ -427,9 +520,16 @@ async function syncJira(manual) {
     // mengisi tiket yang belum punya issue link/key di description.
     const nativeDeps = {};
     for (const f of feed) {
-      if (Array.isArray(f.deps) && f.deps.length) {
+      const qaMeta = {
+        summary: f.summary || "", issueType: f.issueType || "",
+        labels: Array.isArray(f.labels) ? f.labels : [],
+      };
+      if (Array.isArray(f.deps) && f.deps.length && CatetDependencyMatcher.isQa(qaMeta)) {
         nativeDeps[f.key] = {
           ready: f.deps.every((d) => d.done),
+          readyAt: f.deps.every((d) => d.done)
+            ? f.deps.map((d) => d.doneAt).filter(Boolean).sort().at(-1) || null
+            : null,
           keys: f.deps.map((d) => d.key),
           wait: f.deps.filter((d) => !d.done).map((d) => ({ key: d.key, status: d.status })),
           source: "jira-native",
@@ -438,6 +538,7 @@ async function syncJira(manual) {
     }
     jira.pairingIssues = Array.isArray(data.pairingIssues) ? data.pairingIssues : [];
     hitungPasangan(nativeDeps);
+    rekonsiliasiReadyNotifications(feed);
     // Tiket hasil sinkron yang sudah tidak muncul di Jira (selesai/di-reassign)
     // ikut hilang; tiket hasil impor manual dibiarkan.
     jira.items = jira.items.filter((x) => x.src !== "sync" || feedKeys.has(x.key));
