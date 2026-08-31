@@ -148,5 +148,20 @@
     return { matches, suggestions, warnings, generatedAt: new Date().toISOString() };
   }
 
-  root.CatetDependencyMatcher = { isQa, isDev: isDeliveryDev, scorePair, matchSprintIssues, words };
+  function assignedKeysFromIssues(issues) {
+    const all = Array.isArray(issues) ? issues.filter((x) => x && x.key) : [];
+    if (!all.some((x) => Object.prototype.hasOwnProperty.call(x, "assignedToMe"))) return null;
+    return new Set(all.filter((x) => x.assignedToMe).map((x) => x.key));
+  }
+  function reviewKey(item) { return item && (item.key || item.qaKey) || null; }
+  function filterAssignedReview(items, assignedKeys) {
+    const list = Array.isArray(items) ? items : [];
+    if (!assignedKeys) return list;
+    return list.filter((item) => assignedKeys.has(reviewKey(item)));
+  }
+
+  root.CatetDependencyMatcher = {
+    isQa, isDev: isDeliveryDev, scorePair, matchSprintIssues, words,
+    assignedKeysFromIssues, filterAssignedReview,
+  };
 })(typeof globalThis !== "undefined" ? globalThis : this);
