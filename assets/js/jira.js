@@ -305,13 +305,20 @@ function warningBadge(w) {
   b.title = w.message || label;
   return b;
 }
+function kunciTiketAssigned() {
+  return typeof CatetDependencyMatcher === "object"
+    ? CatetDependencyMatcher.assignedKeysFromIssues(jira.pairingIssues)
+    : null;
+}
 function terapkanHasilPasangan(result, nativeDeps) {
   const next = { ...(nativeDeps || {}) };
   const nativeKeys = new Set(Object.keys(next));
   const nativeDevKeys = new Set(Object.values(next).flatMap((dep) => dep && Array.isArray(dep.keys) ? dep.keys : []));
+  const assignedKeys = kunciTiketAssigned();
+  const milikSaya = (key) => !assignedKeys || assignedKeys.has(key);
   for (const [key, dep] of Object.entries(next)) dep.source = "jira-native";
   for (const m of result.matches || []) {
-    if (next[m.qaKey]) continue; // relasi eksplisit Jira selalu menang
+    if (next[m.qaKey] || !milikSaya(m.qaKey)) continue; // relasi eksplisit Jira selalu menang
     next[m.qaKey] = {
       ready: !!m.done, keys: [m.devKey], source: m.source,
       readyAt: m.done ? (m.doneAt || null) : null,
@@ -321,8 +328,13 @@ function terapkanHasilPasangan(result, nativeDeps) {
   }
   jira.deps = next;
   jira.depSuggestions = {};
-  for (const s of (result.suggestions || []).filter((s) => !nativeKeys.has(s.qaKey))) jira.depSuggestions[s.qaKey] = s;
-  jira.depWarnings = (result.warnings || []).filter((w) => !nativeKeys.has(w.key) && !nativeDevKeys.has(w.key));
+  for (const s of CatetDependencyMatcher.filterAssignedReview(
+    (result.suggestions || []).filter((s) => !nativeKeys.has(s.qaKey)), assignedKeys
+  )) jira.depSuggestions[s.qaKey] = s;
+  jira.depWarnings = CatetDependencyMatcher.filterAssignedReview(
+    (result.warnings || []).filter((w) => !nativeKeys.has(w.key) && !nativeDevKeys.has(w.key)),
+    assignedKeys
+  );
 }
 function hitungPasangan(nativeDeps) {
   if (typeof CatetDependencyMatcher !== "object") return;
@@ -537,6 +549,17 @@ async function syncJira(manual) {
       }
     }
     jira.pairingIssues = Array.isArray(data.pairingIssues) ? data.pairingIssues : [];
+    // Worker baru mengirim assignedToMe. Worker lama / cache tanpa flag
+    // distempel dari feed assignee=currentUser() supaya list pairing tidak
+    // menumpahkan tiket sprint milik orang lain.
+    const assignedFeedKeys = new Set(feed.map((f) => f.key));
+    if (assignedFeedKeys.size) {
+      jira.pairingIssues = jira.pairingIssues.map((issue) =>
+        issue && Object.prototype.hasOwnProperty.call(issue, "assignedToMe")
+          ? issue
+          : { ...issue, assignedToMe: assignedFeedKeys.has(issue && issue.key) }
+      );
+    }
     hitungPasangan(nativeDeps);
     rekonsiliasiReadyNotifications(feed);
     // Tiket hasil sinkron yang sudah tidak muncul di Jira (selesai/di-reassign)

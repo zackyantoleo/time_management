@@ -40,5 +40,13 @@ assert(!jira.includes('row.append(el("span", "jira-summary", w.summary || ""), w
 assert(css.includes('.pairing-sprint-review'), 'inline sprint pairing review must be styled');
 assert(css.includes('.pairing-audit'), 'collapsible audit list must be styled');
 assert(worker.includes('sprint in ('), 'worker candidate source remains Jira sprint query');
+assert(worker.includes('assignedToMe: assignedKeys.has(i.key)'),
+  'worker must mark pairing candidates that belong to the assigned-user feed');
+assert(jira.includes('CatetDependencyMatcher.filterAssignedReview'),
+  'pairing review must drop warnings that are not assigned to the current user');
+assert(jira.includes('kunciTiketAssigned()'),
+  'pairing apply/render must read assigned-to-me keys from the candidate cache');
+assert(jira.includes('assignedToMe: assignedFeedKeys.has(issue && issue.key)'),
+  'sync must stamp assigned-to-me from the current-user feed when Worker omits the flag');
 
 console.log(JSON.stringify({ ok: true }));

@@ -28,6 +28,9 @@ function issue(key, summary, extra = {}) {
     linkedKeys: extra.linkedKeys || [],
     mentionedKeys: extra.mentionedKeys || [],
     created: extra.created || '2026-08-01T00:00:00Z',
+    ...(Object.prototype.hasOwnProperty.call(extra, 'assignedToMe')
+      ? { assignedToMe: extra.assignedToMe }
+      : {}),
   };
 }
 
@@ -99,4 +102,27 @@ assert(!r5.warnings.some((x) => x.key === 'DEV-207'), 'reverse native link means
 assert(!r5.warnings.some((x) => x.key === 'EPIC-10' || x.key === 'SPIKE-1'),
   'epics and spikes must not be called missing QA');
 
-console.log(JSON.stringify({ ok: true, cases: 6 }));
+// Review list is assigned-user only. Matcher still sees the whole sprint so
+// Zack's QA ticket can pair with someone else's dev ticket; the UI must not
+// dump every unmatched ticket in the sprint.
+const mixedSprint = [
+  issue('QA-201', 'Test assigned voucher expiry', { issueType: 'Test', labels: ['qa'], assignedToMe: true }),
+  issue('QA-202', 'Test someone else checkout', { issueType: 'Test', labels: ['qa'], assignedToMe: false }),
+  issue('DEV-301', 'Implement voucher expiry', { assignedToMe: false }),
+  issue('DEV-302', 'Implement checkout', { assignedToMe: false }),
+];
+const r6 = matcher.matchSprintIssues(mixedSprint, { overrides: {} });
+assert(r6.warnings.some((x) => x.key === 'QA-202'), 'matcher still audits the whole sprint');
+assert(r6.warnings.some((x) => x.key === 'DEV-301' || x.key === 'DEV-302'),
+  'unmatched teammate dev tickets remain matcher warnings');
+const assignedKeys = matcher.assignedKeysFromIssues(mixedSprint);
+assert.deepStrictEqual([...assignedKeys].sort(), ['QA-201']);
+const review = matcher.filterAssignedReview(r6.warnings, assignedKeys);
+assert(review.some((x) => x.key === 'QA-201'), 'assigned QA stays in the pairing list');
+assert(!review.some((x) => x.key === 'QA-202'), 'other people\'s QA tickets must leave the pairing list');
+assert(!review.some((x) => x.key === 'DEV-301' || x.key === 'DEV-302'),
+  'unassigned unmatched dev tickets must leave the pairing list');
+assert.deepStrictEqual(matcher.filterAssignedReview(r6.warnings, null), r6.warnings,
+  'legacy candidate cache without assigned flags must not hide the list');
+
+console.log(JSON.stringify({ ok: true, cases: 7 }));

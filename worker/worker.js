@@ -784,8 +784,11 @@ async function tangani(request, env) {
       }
       // Candidate pool pasangan QA↔dev: semua issue di sprint aktif yang terlihat
       // pada feed user. Query kedua sengaja meliputi Done; status Done adalah
-      // sinyal yang dibutuhkan badge "ready to test". Kalau Jira menolak query
-      // ini, feed utama tetap berfungsi dan klien hanya tidak mendapat warning.
+      // sinyal yang dibutuhkan badge "ready to test". Flag assignedToMe menandai
+      // tiket yang juga ada di feed assignee=currentUser(); klien memakai flag
+      // itu untuk menyembunyikan review pairing milik orang lain. Kalau Jira
+      // menolak query ini, feed utama tetap berfungsi dan klien hanya tidak
+      // mendapat warning.
       let pairingIssues = [];
       if (sf) {
         const activeSprintIds = [...new Set((data.issues || []).flatMap((i) => {
@@ -811,6 +814,7 @@ async function tangani(request, env) {
           // Jangan menghasilkan warning dari candidate pool parsial: lebih baik
           // tidak ada warning daripada menuduh pasangan hilang dari data bolong.
           if (!pairingComplete) pairRaw = [];
+          const assignedKeys = new Set((data.issues || []).map((i) => i.key));
           pairingIssues = pairRaw.map((i) => {
             const f = i.fields || {};
             const arr = Array.isArray(f[sf]) ? f[sf] : [];
@@ -835,6 +839,7 @@ async function tangani(request, env) {
               mentionedKeys: [...new Set(mentions)],
               sprintId: aktif && aktif.id != null ? String(aktif.id) : null,
               sprintName: aktif && aktif.name || null,
+              assignedToMe: assignedKeys.has(i.key),
             };
           });
         }

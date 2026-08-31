@@ -30,6 +30,8 @@ assert(jira.includes('hapusPilihanDependency'), 'manual confirmation must be rev
 assert(board.includes('warningBadge(warn)'), 'board must surface missing-pair warnings');
 assert(worker.includes('pairingIssues'), 'worker must return sprint pairing metadata');
 assert(worker.includes('sprint in ('), 'worker must search complete active sprints');
+assert(worker.includes('assignedToMe'), 'worker pairing metadata must say which sprint issues are assigned to the current user');
+assert(jira.includes('filterAssignedReview'), 'inferred pairing review must keep only tickets assigned to the current user');
 assert(!worker.includes('description: f.description'), 'raw Jira description must not be returned to browser');
 
 console.log(JSON.stringify({ ok: true }));

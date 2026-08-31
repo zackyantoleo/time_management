@@ -76,6 +76,9 @@ try {
   assert.equal(q.parentKey, "EPIC-9");
   assert.deepStrictEqual(q.components, ["Loyalty"]);
   assert.equal(q.sprintId, "77");
+  assert.equal(q.assignedToMe, true, "assigned open tickets must be flagged for pairing review");
+  assert.equal(body.pairingIssues.find((x) => x.key === "DEV-201").assignedToMe, false,
+    "sprint teammates stay in the candidate pool but are not assigned-to-me");
   assert(!("description" in q), "raw Jira descriptions must not be returned to the browser matcher");
   assert(calls.some((x) => decodeURIComponent(x).includes("sprint in (77)")), "worker must query all issues in the active sprint");
   assert.equal(assignedPage, 2, "assigned ticket seed search must follow Jira nextPageToken");
