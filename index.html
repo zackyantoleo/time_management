@@ -32,11 +32,18 @@
       <div>
         <span class="ready-alert-eyebrow">QA SIGNAL</span>
         <h2 id="ready-alert-title">Baru siap dites</h2>
-        <p>Tiket akan tetap muncul selama 7 hari sejak dependency development-nya ready.</p>
+        <p>Transisi dependency ready tetap 7 hari. PR related yang sudah merged tampil di daftar terpisah di bawah.</p>
       </div>
       <button class="icon-btn" id="ready-alert-close" type="button" aria-label="Tutup panel tiket siap dites">✕</button>
     </div>
     <div class="ready-alert-list" id="ready-alert-list"></div>
+    <div class="pr-merge-alert-section">
+      <div class="pr-merge-alert-head">
+        <h3>PR related sudah merged</h3>
+        <span id="pr-merge-alert-updated"></span>
+      </div>
+      <div class="pr-merge-alert-list" id="pr-merge-alert-list"></div>
+    </div>
   </section>
 
   <div class="tabs-row">

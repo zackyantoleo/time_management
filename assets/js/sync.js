@@ -33,6 +33,7 @@ const PUSH_DEBOUNCE_MS = 3000;
 // Ringkasan snapshot prioritas harian dari endpoint terpisah. Bukan bagian
 // blob state, sehingga scheduler tidak pernah menimpa task dari browser.
 let dailyPriority = null;
+let prMergeSnapshot = { generatedAt: null, items: [] };
 
 async function pullDailyPriority() {
   if (!syncAktif()) return;
@@ -46,6 +47,20 @@ async function pullDailyPriority() {
 }
 function refreshDailyPriority() {
   if (document.visibilityState === "visible") pullDailyPriority();
+}
+
+async function pullPrMergeSnapshot() {
+  if (!syncAktif()) return;
+  try {
+    const r = await fetch(jiraProxy() + "/pr-merge-snapshot", { headers: headerAkses() });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+    prMergeSnapshot = {
+      generatedAt: data.generatedAt || null,
+      items: Array.isArray(data.items) ? data.items : [],
+    };
+    renderReadyNotifications();
+  } catch { /* List opsional; sinkronisasi CATET utama tetap berjalan. */ }
 }
 
 let syncPushTimer = null;
@@ -280,6 +295,7 @@ async function initSync() {
     if (document.visibilityState === "visible") {
       pullState(true);
       pullDailyPriority();
+      pullPrMergeSnapshot();
     }
   });
   setInterval(() => {
@@ -289,6 +305,7 @@ async function initSync() {
   setInterval(refreshDailyPriority, 5 * 60 * 1000);
   try { await pullState(true); } finally { syncReady = true; }
   await pullDailyPriority();
+  await pullPrMergeSnapshot();
   if (jiraProxy()) syncJira(false);
   if (syncPendingPush) {
     const segera = syncPendingSegera;
