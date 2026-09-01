@@ -328,7 +328,19 @@ function renderPrMergeSnapshot() {
     dev.append(el("span", "ready-alert-scope", "Dev " + item.devKey));
     const pr = el("a", "pr-merge-link", "PR #" + item.prId + " · " + (item.prName || "Buka Bitbucket"));
     pr.href = item.prUrl; pr.target = "_blank"; pr.rel = "noopener noreferrer";
-    dev.append(pr);
+    const acknowledge = el("button", "btn-ghost btn-xs pr-merge-ack", "Acknowledge");
+    acknowledge.type = "button";
+    acknowledge.addEventListener("click", async () => {
+      acknowledge.disabled = true;
+      acknowledge.textContent = "Saving…";
+      try { await acknowledgePrMerge(item.qaKey + "|" + item.devKey + "|" + item.prId); }
+      catch (error) {
+        acknowledge.disabled = false;
+        acknowledge.textContent = "Retry";
+        alert(error.message);
+      }
+    });
+    dev.append(pr, acknowledge);
     row.append(dev);
     list.append(row);
   }

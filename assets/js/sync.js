@@ -63,6 +63,18 @@ async function pullPrMergeSnapshot() {
   } catch { /* List opsional; sinkronisasi CATET utama tetap berjalan. */ }
 }
 
+async function acknowledgePrMerge(eventKey) {
+  if (!syncAktif()) throw new Error("Kode akses CATET belum tersedia.");
+  const response = await fetch(jiraProxy() + "/pr-merge-snapshot/ack", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...headerAkses() },
+    body: JSON.stringify({ eventKey }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "Gagal acknowledge PR merge.");
+  await pullPrMergeSnapshot();
+}
+
 let syncPushTimer = null;
 let syncStatus = ""; // teks kecil di footer
 let syncLastPull = 0;

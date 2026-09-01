@@ -1,7 +1,7 @@
 // Service worker Catet: network-first dengan cache fallback, supaya aplikasi
 // tetap bisa dibuka di HP saat tidak ada koneksi. Versi cache dinaikkan saat
 // daftar aset berubah.
-const CACHE = "catet-v61";
+const CACHE = "catet-v62";
 const ASSETS = [
   "./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png",
   "assets/css/styles.css", "assets/css/calm-workbench.css", "assets/js/theme.js",
