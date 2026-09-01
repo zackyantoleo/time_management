@@ -271,10 +271,13 @@ function renderReadyNotifications() {
   const list = $("#ready-alert-list");
   if (!button || !panel || !list) return;
   const items = readyNotificationsAktif();
-  button.hidden = items.length === 0;
-  $("#ready-alert-count").textContent = String(items.length);
-  button.setAttribute("aria-label", items.length + " tiket baru siap dites");
-  if (!items.length) {
+  const mergeItems = typeof prMergeSnapshot === "object" && Array.isArray(prMergeSnapshot.items)
+    ? prMergeSnapshot.items : [];
+  const total = items.length + mergeItems.length;
+  button.hidden = total === 0;
+  $("#ready-alert-count").textContent = String(total);
+  button.setAttribute("aria-label", total + " signal QA");
+  if (!total) {
     panel.classList.add("hidden");
     button.setAttribute("aria-expanded", "false");
     list.innerHTML = "";
@@ -295,6 +298,38 @@ function renderReadyNotifications() {
     if (item.devKeys && item.devKeys.length) meta.append(el("span", "ready-alert-scope", "Dev " + item.devKeys.join(", ")));
     main.append(meta);
     row.append(main);
+    list.append(row);
+  }
+  renderPrMergeSnapshot();
+}
+
+function renderPrMergeSnapshot() {
+  const list = $("#pr-merge-alert-list");
+  const updated = $("#pr-merge-alert-updated");
+  if (!list || !updated) return;
+  const items = typeof prMergeSnapshot === "object" && Array.isArray(prMergeSnapshot.items)
+    ? prMergeSnapshot.items : [];
+  updated.textContent = prMergeSnapshot && prMergeSnapshot.generatedAt
+    ? "update " + fmtAgo(prMergeSnapshot.generatedAt) : "";
+  list.innerHTML = "";
+  if (!items.length) {
+    list.append(el("p", "pr-merge-empty", "Belum ada PR merged terkait tiket QA aktif."));
+    return;
+  }
+  for (const item of items) {
+    const row = el("article", "pr-merge-alert-item");
+    const top = el("div", "ready-alert-item-top");
+    const qa = el("a", "jira-key", item.qaKey);
+    qa.href = jiraUrl(item.qaKey); qa.target = "_blank"; qa.rel = "noopener noreferrer";
+    top.append(qa, el("span", "effort-badge dep-ready", "PR merged"),
+      el("span", "ready-alert-age", fmtAgo(item.mergedAt)));
+    row.append(top, el("div", "ready-alert-summary", item.qaSummary || "Tiket QA"));
+    const dev = el("div", "ready-alert-meta");
+    dev.append(el("span", "ready-alert-scope", "Dev " + item.devKey));
+    const pr = el("a", "pr-merge-link", "PR #" + item.prId + " · " + (item.prName || "Buka Bitbucket"));
+    pr.href = item.prUrl; pr.target = "_blank"; pr.rel = "noopener noreferrer";
+    dev.append(pr);
+    row.append(dev);
     list.append(row);
   }
 }

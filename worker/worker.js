@@ -60,6 +60,7 @@ function toJiraDate(iso) {
 const SKEMA = [
   "CREATE TABLE IF NOT EXISTS states (user_id TEXT PRIMARY KEY, blob TEXT NOT NULL, updated_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS priority_snapshots (user_id TEXT PRIMARY KEY, blob TEXT NOT NULL, updated_at TEXT NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS pr_merge_snapshots (user_id TEXT PRIMARY KEY, blob TEXT NOT NULL, updated_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL, jira_site TEXT, jira_email TEXT, jira_token TEXT, cal_ics_url TEXT, created_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS state_documents (user_id TEXT NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('tasks', 'routines', 'sprints', 'jira_overrides')), schema_version INTEGER NOT NULL CHECK (schema_version >= 2), revision INTEGER NOT NULL CHECK (revision >= 1), blob TEXT NOT NULL CHECK (json_valid(blob)), updated_at TEXT NOT NULL, PRIMARY KEY (user_id, kind))",
   "CREATE TABLE IF NOT EXISTS worklog_entries (user_id TEXT NOT NULL, id TEXT NOT NULL, task_id TEXT, occurred_at TEXT NOT NULL, local_date TEXT NOT NULL, text TEXT NOT NULL, priority TEXT, minutes INTEGER NOT NULL DEFAULT 0 CHECK (minutes >= 0), metadata TEXT CHECK (metadata IS NULL OR json_valid(metadata)), deleted_at TEXT, PRIMARY KEY (user_id, id))",
@@ -415,7 +416,16 @@ async function tangani(request, env) {
     const priorityServiceOk = url0.pathname === "/priority-snapshot" &&
       !!env.PRIORITY_SERVICE_TOKEN &&
       request.headers.get("Authorization") === "Bearer " + env.PRIORITY_SERVICE_TOKEN;
-    if (env.REQUIRE_AUTH === "1" && !user && !priorityServiceOk) {
+    const prMergeServiceOk = url0.pathname === "/pr-merge-snapshot" &&
+      !!env.PRIORITY_SERVICE_TOKEN &&
+      request.headers.get("Authorization") === "Bearer " + env.PRIORITY_SERVICE_TOKEN;
+    // Service-token access only authorizes the writer; X-Catet-Key still selects
+    // the destination user. Without a valid user, writing to legacy "default"
+    // would silently make the snapshot invisible to authenticated CATET clients.
+    if (prMergeServiceOk && !user) {
+      return json({ error: "Kode akses CATET tujuan tidak valid." }, 401);
+    }
+    if (env.REQUIRE_AUTH === "1" && !user && !priorityServiceOk && !prMergeServiceOk) {
       return json({ error: "Kode akses tidak valid atau belum diisi — masukkan kode dari admin (tab Jira → Access)." }, 401);
     }
     const uid = user ? user.id : "default";
@@ -539,6 +549,47 @@ async function tangani(request, env) {
         const updatedAt = new Date().toISOString();
         await d1q(env,
           "INSERT INTO priority_snapshots (user_id, blob, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(user_id) DO UPDATE SET blob = ?2, updated_at = ?3",
+          [uid, raw, updatedAt], "run");
+        return json({ ok: true, updatedAt });
+      }
+    }
+
+    // Snapshot PR merge terkait tiket QA. Dipisah dari blob state agar poller
+    // VPS tidak pernah menimpa edit browser. Writer memakai service token yang
+    // sama dengan priority snapshot; pembaca tetap wajib akun/service token.
+    if (url0.pathname === "/pr-merge-snapshot") {
+      if (!env.CATET_DB) return json({ error: "PR merge snapshot membutuhkan D1." }, 500);
+      if (request.method === "GET") {
+        const row = await d1q(env, "SELECT blob FROM pr_merge_snapshots WHERE user_id = ?1", [uid], "first");
+        return json(row ? JSON.parse(row.blob) : { generatedAt: null, items: [] });
+      }
+      if (request.method === "PUT") {
+        if (!user && !prMergeServiceOk) return json({ error: "PR merge snapshot write membutuhkan kode akses atau service token." }, 401);
+        let body;
+        try { body = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
+        const validKey = (value) => typeof value === "string" && /^[A-Z][A-Z0-9]{1,9}-\d+$/.test(value);
+        const validUrl = (value, host) => {
+          if (typeof value !== "string" || value.length > 1000) return false;
+          try { const u = new URL(value); return u.protocol === "https:" && u.hostname === host; }
+          catch { return false; }
+        };
+        const invalidItem = (item) => !item || !validKey(item.qaKey) || !validKey(item.devKey) ||
+          typeof item.qaSummary !== "string" || item.qaSummary.length > 500 ||
+          typeof item.qaStatus !== "string" || item.qaStatus.length > 100 ||
+          typeof item.devSummary !== "string" || item.devSummary.length > 500 ||
+          typeof item.prId !== "string" || !/^\d+$/.test(item.prId) ||
+          typeof item.prName !== "string" || item.prName.length > 500 ||
+          !validUrl(item.prUrl, "bitbucket.org") || item.status !== "MERGED" ||
+          typeof item.mergedAt !== "string" || isNaN(new Date(item.mergedAt));
+        if (!body || typeof body.generatedAt !== "string" || isNaN(new Date(body.generatedAt)) ||
+          !Array.isArray(body.items) || body.items.length > 500 || body.items.some(invalidItem)) {
+          return json({ error: "Format PR merge snapshot tidak valid." }, 400);
+        }
+        const raw = JSON.stringify(body);
+        if (raw.length > 512 * 1024) return json({ error: "PR merge snapshot terlalu besar (maks 512 KB)." }, 413);
+        const updatedAt = new Date().toISOString();
+        await d1q(env,
+          "INSERT INTO pr_merge_snapshots (user_id, blob, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(user_id) DO UPDATE SET blob = ?2, updated_at = ?3",
           [uid, raw, updatedAt], "run");
         return json({ ok: true, updatedAt });
       }

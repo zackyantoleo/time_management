@@ -2,3 +2,4 @@
 graphify-out/
 tests/screenshots/
 worker/.wrangler/
+worker/node_modules/
