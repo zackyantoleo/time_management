@@ -595,6 +595,29 @@ async function tangani(request, env) {
       }
     }
 
+    if (url0.pathname === "/pr-merge-snapshot/ack" && request.method === "POST") {
+      if (!user || !env.CATET_DB) return json({ error: "Acknowledge membutuhkan kode akses CATET valid." }, 401);
+      let body;
+      try { body = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
+      const eventKey = typeof body.eventKey === "string" ? body.eventKey : "";
+      if (!/^[A-Z][A-Z0-9]{1,9}-\d+\|[A-Z][A-Z0-9]{1,9}-\d+\|\d+$/.test(eventKey)) {
+        return json({ error: "Event PR merge tidak valid." }, 400);
+      }
+      const row = await d1q(env, "SELECT blob FROM pr_merge_snapshots WHERE user_id = ?1", [uid], "first");
+      if (!row) return json({ error: "Snapshot PR merge belum tersedia." }, 404);
+      let snapshot;
+      try { snapshot = JSON.parse(row.blob); } catch { return json({ error: "Snapshot PR merge rusak." }, 500); }
+      snapshot.items = (Array.isArray(snapshot.items) ? snapshot.items : [])
+        .filter((item) => `${item.qaKey}|${item.devKey}|${item.prId}` !== eventKey);
+
+      const updatedAt = new Date().toISOString();
+      snapshot.generatedAt = updatedAt;
+      await d1q(env,
+        "UPDATE pr_merge_snapshots SET blob = ?2, updated_at = ?3 WHERE user_id = ?1",
+        [uid, JSON.stringify(snapshot), updatedAt], "run");
+      return json({ ok: true, acknowledged: eventKey, pending: snapshot.items.length });
+    }
+
     // GET /me · POST /me/jira · POST /me/calendar — profil & kredensial user.
     if (url0.pathname.startsWith("/me")) {
       if (!user) return json({ error: "Butuh kode akses (tab Jira → Access)." }, 401);
