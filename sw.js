@@ -1,15 +1,16 @@
 // Service worker Catet: network-first dengan cache fallback, supaya aplikasi
 // tetap bisa dibuka di HP saat tidak ada koneksi. Versi cache dinaikkan saat
 // daftar aset berubah.
-const CACHE = "catet-v63";
+const CACHE = "catet-v64";
 const ASSETS = [
-  "./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png",
-  "assets/css/styles.css", "assets/css/calm-workbench.css", "assets/js/theme.js",
+  "./", "index.html", "weekly-wrapped.html", "manifest.webmanifest", "icon-192.png", "icon-512.png",
+  "assets/css/styles.css", "assets/css/calm-workbench.css", "assets/css/weekly-wrapped.css", "assets/js/theme.js",
   "assets/js/util.js", "assets/js/priority-engine.js", "assets/js/dependency-matcher.js", "assets/js/ready-notifications.js", "assets/js/tasks.js", "assets/js/sprints.js",
   "assets/js/capture.js", "assets/js/routines.js", "assets/js/jira.js",
   "assets/js/calendar.js", "assets/js/board.js", "assets/js/worklog.js",
   "assets/js/reminders.js", "assets/js/sync.js", "assets/js/backup.js",
-  "assets/js/settings.js", "assets/js/app.js",
+  "assets/js/settings.js", "assets/js/app.js", "assets/js/weekly-wrapped.js",
+  "assets/data/weekly-wrapped.sample.json",
 ];
 
 self.addEventListener("install", (e) => {

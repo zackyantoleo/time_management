@@ -1,0 +1,132 @@
+{
+  "period": {
+    "start": "2026-08-24",
+    "end": "2026-08-30",
+    "label": "24–30 Agustus 2026"
+  },
+  "objective": "Membuktikan workflow QA yang reusable, bukan sekadar menyelesaikan aktivitas terpisah.",
+  "slides": [
+    {
+      "eyebrow": "Zack Weekly Wrapped",
+      "title": "Minggu ini, tanpa noise.",
+      "body": "Satu review singkat untuk melihat outcome, gap, dan keputusan berikutnya—bukan dashboard kesibukan.",
+      "tone": "accent",
+      "metric": "24–30 Agt",
+      "metric_label": "periode review"
+    },
+    {
+      "eyebrow": "What shipped",
+      "title": "Workflow Fullstack Auto → OctoPerf berhasil dikunci.",
+      "body": "Scenario-aware HAR contract tervalidasi dan siap dipakai untuk import manual.",
+      "tone": "success",
+      "metric": "12/12",
+      "metric_label": "repository checks passed"
+    },
+    {
+      "eyebrow": "Quality signal",
+      "title": "Buktinya bukan sekadar commit.",
+      "body": "Satu journey menghasilkan 913 request entries dan lolos contract validation.",
+      "tone": "info",
+      "metric": "913",
+      "metric_label": "sanitized request entries"
+    },
+    {
+      "eyebrow": "Where it leaked",
+      "title": "Fokus delivery masih terpecah.",
+      "body": "K6UI PR-06C tetap carry-over ketika workflow lain selesai. Dua line aktif membuat keputusan prioritas kabur.",
+      "tone": "warning",
+      "metric": "1/2",
+      "metric_label": "commitments shipped"
+    },
+    {
+      "eyebrow": "Next move",
+      "title": "Tutup loop sebelum membuka line baru.",
+      "body": "Validasi HAR di OctoPerf, beri keputusan eksplisit pada PR-06C, lalu kunci kontrak evidence Cycle 1.",
+      "tone": "accent",
+      "metric": "3",
+      "metric_label": "bounded outcomes"
+    },
+    {
+      "eyebrow": "Provisional verdict",
+      "title": "Hasil nyata, tapi execution masih bocor lewat carry-over.",
+      "body": "Skor sementara hanya memakai dimensi dengan evidence. Buka report untuk audit trail lengkap.",
+      "tone": "dark",
+      "metric": "3.8/5",
+      "metric_label": "provisional score"
+    }
+  ],
+  "report": {
+    "status": "Sample fixture — bukan verdict resmi",
+    "summary": "Minggu kuat pada quality dan delivery workflow, tetapi priority alignment belum bersih karena satu delivery line tetap carry-over.",
+    "commitments": [
+      {
+        "outcome": "Stabilkan alur Fullstack Auto ke OctoPerf",
+        "status": "shipped",
+        "evidence_refs": ["ev-har-contract", "ev-test-run"]
+      },
+      {
+        "outcome": "Majukan delivery K6UI berikutnya",
+        "status": "carry-over",
+        "evidence_refs": ["ev-k6ui-state"]
+      }
+    ],
+    "claims": [
+      {
+        "title": "Kontrak Fullstack Auto ke OctoPerf benar-benar dikirim",
+        "kind": "fact",
+        "impact": "Mengurangi langkah manual sebelum validasi scenario di OctoPerf.",
+        "confidence": "high",
+        "evidence_refs": ["ev-har-contract", "ev-test-run"]
+      },
+      {
+        "title": "Fokus delivery terpecah antara stabilisasi workflow dan K6UI",
+        "kind": "inference",
+        "impact": "Satu delivery line tetap carry-over meski workflow lain berhasil dikunci.",
+        "confidence": "medium",
+        "evidence_refs": ["ev-har-contract", "ev-k6ui-state"],
+        "corrective_action": "Batasi WIP delivery menjadi satu sebelum membuka line berikutnya."
+      }
+    ],
+    "scorecard": [
+      {"dimension": "Delivery & impact", "score": 4, "confidence": "medium"},
+      {"dimension": "Quality/testing depth", "score": 4, "confidence": "high"},
+      {"dimension": "Priority alignment", "score": 3, "confidence": "medium"},
+      {"dimension": "Ownership & escalation", "score": null, "confidence": "insufficient"},
+      {"dimension": "Communication", "score": null, "confidence": "insufficient"},
+      {"dimension": "Learning & growth", "score": 4, "confidence": "medium"}
+    ],
+    "evidence": [
+      {
+        "id": "ev-har-contract",
+        "source": "GitHub",
+        "ref": "Fullstack Auto PR #33",
+        "observation": "Scenario-aware command menghasilkan HAR tervalidasi untuk import manual OctoPerf.",
+        "sensitivity": "sanitized"
+      },
+      {
+        "id": "ev-test-run",
+        "source": "Test artifact",
+        "ref": "local verification summary",
+        "observation": "Repository checks lulus 12/12 dan satu journey menghasilkan 913 request entries.",
+        "sensitivity": "sanitized"
+      },
+      {
+        "id": "ev-k6ui-state",
+        "source": "Second Brain",
+        "ref": "K6UI JMeter Transition Roadmap",
+        "observation": "PR-06C masih menjadi delivery line aktif dan belum tercatat selesai pada periode ini.",
+        "sensitivity": "sanitized"
+      }
+    ],
+    "next_week": {
+      "outcomes": [
+        "Import satu HAR ke OctoPerf dan jalankan Validate satu iterasi.",
+        "Tutup atau pecah scope K6UI PR-06C secara eksplisit.",
+        "Tetapkan kontrak sumber untuk siklus Weekly Wrapped berikutnya."
+      ],
+      "stop": "Membuka line delivery baru sebelum carry-over diberi keputusan.",
+      "blocker": "Belum ada indeks test artifact lintas repo.",
+      "success_definition": "Dua delivery line punya keputusan selesai/carry-over yang dibuktikan evidence."
+    }
+  }
+}
