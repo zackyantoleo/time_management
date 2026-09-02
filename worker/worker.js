@@ -61,6 +61,7 @@ const SKEMA = [
   "CREATE TABLE IF NOT EXISTS states (user_id TEXT PRIMARY KEY, blob TEXT NOT NULL, updated_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS priority_snapshots (user_id TEXT PRIMARY KEY, blob TEXT NOT NULL, updated_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS pr_merge_snapshots (user_id TEXT PRIMARY KEY, blob TEXT NOT NULL, updated_at TEXT NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS weekly_wrapped_reports (user_id TEXT PRIMARY KEY, report_id TEXT NOT NULL, blob TEXT NOT NULL CHECK (json_valid(blob)), updated_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL, jira_site TEXT, jira_email TEXT, jira_token TEXT, cal_ics_url TEXT, created_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS state_documents (user_id TEXT NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('tasks', 'routines', 'sprints', 'jira_overrides')), schema_version INTEGER NOT NULL CHECK (schema_version >= 2), revision INTEGER NOT NULL CHECK (revision >= 1), blob TEXT NOT NULL CHECK (json_valid(blob)), updated_at TEXT NOT NULL, PRIMARY KEY (user_id, kind))",
   "CREATE TABLE IF NOT EXISTS worklog_entries (user_id TEXT NOT NULL, id TEXT NOT NULL, task_id TEXT, occurred_at TEXT NOT NULL, local_date TEXT NOT NULL, text TEXT NOT NULL, priority TEXT, minutes INTEGER NOT NULL DEFAULT 0 CHECK (minutes >= 0), metadata TEXT CHECK (metadata IS NULL OR json_valid(metadata)), deleted_at TEXT, PRIMARY KEY (user_id, id))",
@@ -106,6 +107,51 @@ function jumlahPerubahan(result) {
   if (!result) return 0;
   if (Number.isInteger(result.changes)) return result.changes;
   return result.meta && Number.isInteger(result.meta.changes) ? result.meta.changes : 0;
+}
+
+function validateWeeklyWrappedReport(body) {
+  const isoDate = /^\d{4}-\d{2}-\d{2}$/;
+  const isoWeek = /^\d{4}-W\d{2}$/;
+  const tones = new Set(["accent", "success", "info", "warning", "dark"]);
+  const kinds = new Set(["fact", "inference", "recommendation"]);
+  const confidence = new Set(["high", "medium", "low", "insufficient"]);
+  const commitmentStatus = new Set(["shipped", "carry-over", "cancelled", "changed"]);
+  const text = (value, max = 2000) => typeof value === "string" && value.trim() && value.length <= max;
+
+  if (!body || body.schema_version !== 1 || !isoWeek.test(body.report_id || "") ||
+      !text(body.generated_at, 60) || isNaN(new Date(body.generated_at)) ||
+      !body.period || !isoDate.test(body.period.start || "") || !isoDate.test(body.period.end || "") ||
+      !text(body.period.label, 100) || body.period.timezone !== "Asia/Jakarta" ||
+      !text(body.objective) || !Array.isArray(body.slides) || body.slides.length < 3 || body.slides.length > 10 ||
+      !body.report || !text(body.report.status, 200) || !text(body.report.summary)) return false;
+
+  if (body.slides.some((slide) => !slide || !text(slide.eyebrow, 120) || !text(slide.title, 500) ||
+      !text(slide.body, 2000) || !text(slide.metric, 100) || !text(slide.metric_label, 150) || !tones.has(slide.tone))) return false;
+  const evidence = body.report.evidence;
+  if (!Array.isArray(evidence) || !evidence.length || evidence.length > 100) return false;
+  const ids = new Set();
+  for (const item of evidence) {
+    if (!item || !text(item.id, 100) || ids.has(item.id) || !text(item.source, 100) || !text(item.ref, 500) ||
+        !text(item.observation, 4000) || item.sensitivity !== "sanitized") return false;
+    ids.add(item.id);
+  }
+  const validRefs = (refs) => Array.isArray(refs) && refs.length > 0 && refs.length <= 20 && refs.every((ref) => ids.has(ref));
+  if (!Array.isArray(body.report.commitments) || body.report.commitments.length > 20 ||
+      body.report.commitments.some((item) => !item || !text(item.outcome, 1000) ||
+        !commitmentStatus.has(item.status) || !validRefs(item.evidence_refs))) return false;
+  if (!Array.isArray(body.report.claims) || body.report.claims.length > 30 ||
+      body.report.claims.some((item) => !item || !text(item.title, 1000) || !text(item.impact, 3000) ||
+        !kinds.has(item.kind) || !confidence.has(item.confidence) || !validRefs(item.evidence_refs) ||
+        (item.kind === "inference" && !text(item.corrective_action, 3000)))) return false;
+  if (!Array.isArray(body.report.scorecard) || !body.report.scorecard.length || body.report.scorecard.length > 20 ||
+      body.report.scorecard.some((item) => !item || !text(item.dimension, 200) || !confidence.has(item.confidence) ||
+        (item.score === null ? item.confidence !== "insufficient" :
+          (!Number.isInteger(item.score) || item.score < 1 || item.score > 5)))) return false;
+  const next = body.report.next_week;
+  if (!next || !Array.isArray(next.outcomes) || next.outcomes.length > 3 ||
+      next.outcomes.some((item) => !text(item, 1500)) || !text(next.stop, 1500) ||
+      !text(next.blocker, 1500) || !text(next.success_definition, 2000)) return false;
+  return JSON.stringify(body).length <= 256 * 1024;
 }
 
 const STATE_V2_KINDS = new Set(["tasks", "routines", "sprints", "jira_overrides"]);
@@ -419,13 +465,16 @@ async function tangani(request, env) {
     const prMergeServiceOk = url0.pathname === "/pr-merge-snapshot" &&
       !!env.PRIORITY_SERVICE_TOKEN &&
       request.headers.get("Authorization") === "Bearer " + env.PRIORITY_SERVICE_TOKEN;
+    const weeklyWrappedServiceOk = url0.pathname === "/weekly-wrapped" &&
+      !!env.WEEKLY_WRAPPED_SERVICE_TOKEN &&
+      request.headers.get("Authorization") === "Bearer " + env.WEEKLY_WRAPPED_SERVICE_TOKEN;
     // Service-token access only authorizes the writer; X-Catet-Key still selects
     // the destination user. Without a valid user, writing to legacy "default"
     // would silently make the snapshot invisible to authenticated CATET clients.
-    if (prMergeServiceOk && !user) {
+    if ((prMergeServiceOk || weeklyWrappedServiceOk) && !user) {
       return json({ error: "Kode akses CATET tujuan tidak valid." }, 401);
     }
-    if (env.REQUIRE_AUTH === "1" && !user && !priorityServiceOk && !prMergeServiceOk) {
+    if (env.REQUIRE_AUTH === "1" && !user && !priorityServiceOk && !prMergeServiceOk && !weeklyWrappedServiceOk) {
       return json({ error: "Kode akses tidak valid atau belum diisi — masukkan kode dari admin (tab Jira → Access)." }, 401);
     }
     const uid = user ? user.id : "default";
@@ -519,6 +568,35 @@ async function tangani(request, env) {
         if (jumlahPerubahan(result) !== 1) return json({ error: "Worklog dengan id ini sudah ada." }, 409);
         return json({ ok: true, id: body.id.trim() }, 201);
       }
+    }
+
+    // Snapshot Weekly Wrapped dipisah dari state canonical CATET. Engine privat
+    // hanya dapat menulis report tersanitasi dengan dedicated service token;
+    // browser membaca report milik user melalui access code CATET yang sudah ada.
+    if (url0.pathname === "/weekly-wrapped") {
+      if (!env.CATET_DB) return json({ error: "Weekly Wrapped membutuhkan D1." }, 500);
+      if (request.method === "GET") {
+        if (!user) return json({ error: "Weekly Wrapped membutuhkan kode akses CATET valid." }, 401);
+        const row = await d1q(env,
+          "SELECT blob, updated_at FROM weekly_wrapped_reports WHERE user_id = ?1", [uid], "first");
+        if (!row) return json({ report: null, updatedAt: null });
+        const report = JSON.parse(row.blob);
+        report.updated_at = row.updated_at;
+        return json(report);
+      }
+      if (request.method === "PUT") {
+        if (!weeklyWrappedServiceOk) return json({ error: "Weekly Wrapped write membutuhkan service token khusus." }, 401);
+        let body;
+        try { body = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
+        if (!validateWeeklyWrappedReport(body)) return json({ error: "Format Weekly Wrapped tidak valid atau belum tersanitasi." }, 400);
+        const raw = JSON.stringify(body);
+        const updatedAt = new Date().toISOString();
+        await d1q(env,
+          "INSERT INTO weekly_wrapped_reports (user_id, report_id, blob, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(user_id) DO UPDATE SET report_id = ?2, blob = ?3, updated_at = ?4",
+          [uid, body.report_id, raw, updatedAt], "run");
+        return json({ ok: true, reportId: body.report_id, updatedAt });
+      }
+      return json({ error: "Method tidak didukung." }, 405);
     }
 
     // Snapshot prioritas dipisah dari blob state agar scheduler tidak pernah
