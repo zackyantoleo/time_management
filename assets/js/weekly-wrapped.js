@@ -1,7 +1,9 @@
 // weekly-wrapped.js — slideshow-first presentation followed by an auditable report.
 "use strict";
 
-const WRAPPED_DATA_URL = "assets/data/weekly-wrapped.sample.json";
+const WRAPPED_DEMO_URL = "assets/data/weekly-wrapped.sample.json";
+const WRAPPED_PROXY_DEFAULT = "https://catet-jira-proxy.zackyanto-leo.workers.dev";
+const WRAPPED_JIRA_KEY = "catet.jira.v1";
 const SLIDE_MS = 8000;
 let wrappedData = null;
 let slideIndex = 0;
@@ -14,6 +16,42 @@ function wrappedEl(tag, className, text) {
   if (className) node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
+}
+
+function wrappedConnection() {
+  try {
+    const jira = JSON.parse(localStorage.getItem(WRAPPED_JIRA_KEY) || "null") || {};
+    const key = typeof jira.key === "string" ? jira.key.trim() : "";
+    const proxy = typeof jira.proxy === "string" && jira.proxy.trim() ? jira.proxy.trim() : WRAPPED_PROXY_DEFAULT;
+    return { key, proxy: proxy.replace(/\/+$/, "") };
+  } catch { return { key: "", proxy: WRAPPED_PROXY_DEFAULT }; }
+}
+function headerAksesWrapped(key) { return key ? { "X-Catet-Key": key } : {}; }
+function setWrappedSource(source, label) {
+  const badge = document.querySelector("#wrapped-source-status");
+  badge.dataset.source = source;
+  badge.textContent = label;
+}
+async function fetchWeeklyWrappedReport() {
+  const { key, proxy } = wrappedConnection();
+  if (key) {
+    try {
+      const response = await fetch(proxy + "/weekly-wrapped", { headers: headerAksesWrapped(key), cache: "no-store" });
+      if (response.ok) {
+        const report = await response.json();
+        if (report && report.schema_version === 1 && report.report) {
+          setWrappedSource("live", "Live report");
+          return report;
+        }
+      } else if (response.status !== 404) {
+        console.warn("Weekly Wrapped live report unavailable", response.status);
+      }
+    } catch (error) { console.warn("Weekly Wrapped live report unavailable", error.message); }
+  }
+  const demo = await fetch(WRAPPED_DEMO_URL, { cache: "no-store" });
+  if (!demo.ok) throw new Error(`demo HTTP ${demo.status}`);
+  setWrappedSource("demo", key ? "Demo · no report yet" : "Demo · connect CATET");
+  return demo.json();
 }
 
 function wrappedRefs(ids) {
@@ -200,7 +238,7 @@ function renderEvidence() {
 }
 
 function validateWrappedData(data) {
-  if (!data || !Array.isArray(data.slides) || data.slides.length < 1 || !data.report) throw new Error("missing story/report");
+  if (!data || (data.schema_version !== undefined && data.schema_version !== 1) || !Array.isArray(data.slides) || data.slides.length < 1 || !data.report) throw new Error("missing story/report");
   if (!Array.isArray(data.report.scorecard) || !Array.isArray(data.report.evidence)) throw new Error("invalid report collections");
   if (data.report.evidence.some((item) => item.sensitivity !== "sanitized")) throw new Error("unsanitized evidence rejected");
   if ((data.report.next_week?.outcomes || []).length > 3) throw new Error("more than three next-week outcomes");
@@ -233,9 +271,7 @@ function bindWrappedEvents() {
 
 async function initWrapped() {
   try {
-    const response = await fetch(WRAPPED_DATA_URL, {cache: "no-store"});
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    wrappedData = await response.json();
+    wrappedData = await fetchWeeklyWrappedReport();
     validateWrappedData(wrappedData);
     document.querySelector("#wrapped-period").textContent = wrappedData.period.label;
     document.querySelector("#report-summary").textContent = wrappedData.report.summary;

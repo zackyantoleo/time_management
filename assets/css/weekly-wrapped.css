@@ -26,6 +26,9 @@
 .brand-copy strong { font-size: 17px; letter-spacing: -.02em; }
 .brand-copy small { color: var(--ink-faint); font-size: 10px; letter-spacing: .05em; }
 .wrapped-period { color: var(--ink-muted); font-size: 12px; }
+.wrapped-source-status { padding: 5px 8px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.wrapped-source-status[data-source="live"] { background: var(--accent-soft); color: var(--accent); }
+.wrapped-source-status[data-source="demo"] { background: var(--wrapped-warning-soft); color: var(--wrapped-warning); }
 
 .wrapped-story { min-height: calc(100vh - 110px); display: grid; grid-template-rows: auto minmax(500px, 1fr) auto auto; gap: 14px; }
 .story-progress { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 5px; }
