@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weekly Wrapped — CATET</title>
+<meta name="theme-color" content="#147d6f">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script src="assets/js/theme.js"></script>
+<link rel="stylesheet" href="assets/css/styles.css">
+<link rel="stylesheet" href="assets/css/calm-workbench.css">
+<link rel="stylesheet" href="assets/css/weekly-wrapped.css">
+</head>
+<body class="wrapped-body">
+<div class="wrapped-app">
+  <header class="top wrapped-top">
+    <a class="brand wrapped-brand" href="index.html" aria-label="Kembali ke CATET">
+      <span class="brand-mark" aria-hidden="true">C</span>
+      <span class="brand-copy"><strong>CATET</strong><small>weekly wrapped</small></span>
+    </a>
+    <div class="top-actions">
+      <span class="wrapped-period" id="wrapped-period">Memuat periode…</span>
+      <button class="btn-ghost theme-toggle" id="theme-toggle" type="button" aria-label="Gunakan tema gelap" aria-pressed="false">☾</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="wrapped-story" id="wrapped-story" aria-label="Weekly Wrapped slideshow">
+      <div class="story-progress" id="story-progress" aria-label="Progress slideshow"></div>
+      <article class="story-card" id="story-card" aria-live="polite" tabindex="0">
+        <div class="story-copy">
+          <span class="story-eyebrow" id="story-eyebrow"></span>
+          <h1 id="story-title">Memuat Weekly Wrapped…</h1>
+          <p id="story-body"></p>
+        </div>
+        <div class="story-metric" aria-label="Metric utama">
+          <strong id="story-metric"></strong>
+          <span id="story-metric-label"></span>
+        </div>
+        <div class="story-index mono" id="story-index"></div>
+      </article>
+      <div class="story-controls">
+        <button class="btn-line" id="story-prev" type="button">← Previous</button>
+        <button class="btn-ghost" id="story-pause" type="button" aria-pressed="false">Pause</button>
+        <button class="btn-solid" id="story-next" type="button">Next →</button>
+        <button class="btn-solid hidden" id="view-report" type="button">View full report ↓</button>
+      </div>
+      <p class="story-hint">Gunakan ← → atau swipe. Auto-advance berhenti saat kamu berinteraksi.</p>
+    </section>
+
+    <section class="wrapped-report hidden" id="wrapped-report" aria-labelledby="report-title">
+      <header class="report-hero">
+        <div>
+          <span class="section-eyebrow">Full report</span>
+          <h1 id="report-title">Evidence before vibes.</h1>
+          <p id="report-summary"></p>
+        </div>
+        <div class="report-score"><strong id="overall-score">—</strong><span>provisional / 5</span></div>
+      </header>
+
+      <div class="report-grid report-overview">
+        <section class="report-panel">
+          <div class="panel-heading"><div><span class="section-eyebrow">Promise vs reality</span><h2>Commitments</h2></div></div>
+          <div id="commitment-list"></div>
+        </section>
+        <section class="report-panel">
+          <div class="panel-heading"><div><span class="section-eyebrow">Evidence coverage</span><h2>Scorecard</h2></div></div>
+          <div id="scorecard-list"></div>
+        </section>
+      </div>
+
+      <section class="report-section">
+        <div class="panel-heading"><div><span class="section-eyebrow">Fact ≠ inference</span><h2>What actually happened</h2></div><p>Kesimpulan dipisahkan dari observasi. Kritik tanpa evidence tidak naik panggung.</p></div>
+        <div class="claim-grid" id="claim-list"></div>
+      </section>
+
+      <section class="report-section next-week-section">
+        <div class="panel-heading"><div><span class="section-eyebrow">Bounded plan</span><h2>Next week</h2></div><p>Maksimal tiga outcome. Daftar panjang bukan prioritas.</p></div>
+        <div class="next-week-grid">
+          <ol class="next-outcomes" id="next-outcomes"></ol>
+          <aside class="next-guardrails" id="next-guardrails"></aside>
+        </div>
+      </section>
+
+      <section class="report-section">
+        <div class="panel-heading"><div><span class="section-eyebrow">Audit trail</span><h2>Evidence ledger</h2></div><p>Sanitized summary only. Raw payload tidak disimpan di report.</p></div>
+        <div class="evidence-list" id="evidence-list"></div>
+      </section>
+
+      <footer class="wrapped-footer">
+        <button class="btn-line" id="replay-story" type="button">Replay slideshow ↑</button>
+        <a class="btn-ghost wrapped-link" href="index.html">Back to CATET</a>
+        <span id="report-status"></span>
+      </footer>
+    </section>
+
+    <section class="wrapped-error hidden" id="wrapped-error" role="alert">
+      <h1>Weekly Wrapped gagal dimuat.</h1>
+      <p>Data report tidak tersedia atau formatnya invalid. Coba refresh setelah report di-generate ulang.</p>
+      <a class="btn-line wrapped-link" href="index.html">Back to CATET</a>
+    </section>
+  </main>
+</div>
+<script src="assets/js/weekly-wrapped.js"></script>
+</body>
+</html>
