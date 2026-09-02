@@ -6,48 +6,41 @@ function renderSprintContext() {
   const host = $("#sprint-context");
   if (!host) return;
   host.innerHTML = "";
-  const s = sprintAktif();
-  if (!s) return;
+  const aktif = sprintAktifList();
+  if (!aktif.length) return;
+
   const card = el("section", "context-card sprint-context-card");
   const head = el("div", "context-head");
-  head.append(el("h2", null, "Sprint aktif"), el("span", null, fmtSisaSprint(s)));
-  card.append(head, el("strong", "context-title", s.nama));
-  const semua = tasks.filter((t) => t.sprintId === s.id);
-  const selesai = semua.filter((t) => t.status === "selesai").length;
-  const pct = semua.length ? Math.round(selesai / semua.length * 100) : 0;
-  const meta = el("div", "context-meta");
-  meta.append(el("span", null, selesai + " dari " + semua.length + " task selesai"), el("strong", null, pct + "%"));
-  const progress = el("div", "context-progress");
-  const bar = el("i"); bar.style.width = pct + "%"; progress.append(bar);
-  card.append(meta, progress);
-  const foot = el("div", "context-foot");
-  foot.append(el("span", null, "Berakhir " + fmtDayName(s.selesai)),
-    el("strong", null, sisaTugasSprint(s.id).length + " task tersisa"));
-  card.append(foot);
-  host.append(card);
+  head.append(el("h2", null, "Progress sprint"), el("span", null, aktif.length + " sprint aktif"));
+  card.append(head);
 
-  const prds = sprintPrdLinks(s);
-  const prdCard = el("section", "context-card");
-  const prdHead = el("div", "context-head");
-  prdHead.append(el("h2", null, "PRD sprint"), el("span", null, prds.length + " dokumen"));
-  prdCard.append(prdHead);
-  if (!prds.length) prdCard.append(el("p", "context-empty", "Belum ada referensi PRD."));
-  for (const p of prds.slice(0, 4)) {
-    const a = el("a", "context-prd-link");
-    a.href = p.url; a.target = "_blank"; a.rel = "noopener noreferrer";
-    const icon = el("span", "context-prd-icon", "↗");
-    const text = el("span"); text.append(el("strong", null, p.title), el("small", null, new URL(p.url).hostname));
-    a.append(icon, text); prdCard.append(a);
+  for (const s of aktif) {
+    const item = el("article", "sprint-progress-item");
+    const title = el("div", "sprint-progress-title");
+    title.append(el("strong", "context-title", s.nama), el("span", null, fmtSisaSprint(s)));
+    item.append(title);
+
+    const semua = tasks.filter((t) => t.sprintId === s.id);
+    const selesai = semua.filter((t) => t.status === "selesai").length;
+    const pct = semua.length ? Math.round(selesai / semua.length * 100) : 0;
+    const meta = el("div", "context-meta");
+    meta.append(el("span", null, selesai + " dari " + semua.length + " task selesai"), el("strong", null, pct + "%"));
+    const progress = el("div", "context-progress");
+    progress.setAttribute("role", "progressbar");
+    progress.setAttribute("aria-label", "Progress " + s.nama);
+    progress.setAttribute("aria-valuemin", "0");
+    progress.setAttribute("aria-valuemax", "100");
+    progress.setAttribute("aria-valuenow", String(pct));
+    const bar = el("i"); bar.style.width = pct + "%"; progress.append(bar);
+    item.append(meta, progress);
+
+    const foot = el("div", "context-foot");
+    foot.append(el("span", null, "Berakhir " + fmtDayName(s.selesai)),
+      el("strong", null, sisaTugasSprint(s.id).length + " task tersisa"));
+    item.append(foot);
+    card.append(item);
   }
-  const manage = el("button", "context-manage", prds.length ? "Kelola PRD" : "+ Tambah PRD");
-  manage.type = "button";
-  manage.onclick = () => {
-    sprintEditId = s.id;
-    sprintPrdOpenId = prds.length ? null : s.id;
-    setView("jira");
-  };
-  prdCard.append(manage);
-  host.append(prdCard);
+  host.append(card);
 }
 
 function renderRoutineContext() {

@@ -24,10 +24,12 @@ assert(html.indexOf('id="capture-options"') < html.indexOf('id="sections"'),
 assert(html.includes('id="sprint-context"') && html.includes('id="routine-context"'),
   'desktop sidebar must reserve sprint and routine context');
 assert(app.includes('function updateBoardLayout()'), 'render cycle must populate contextual board sidebar');
-assert(board.includes('function renderSprintContext()'), 'board must render active sprint progress and PRDs');
+assert(board.includes('function renderSprintContext()'), 'board must render sprint progress');
+assert(board.includes('const aktif = sprintAktifList()'), 'board must render every active sprint, not only the selected sprint');
+assert(!board.includes('"PRD sprint"') && !board.includes('sprintPrdLinks('),
+  'board sidebar must not render or load sprint PRD documents');
+assert(board.includes('role", "progressbar"'), 'each sprint progress must expose an accessible progressbar');
 assert(board.includes('function renderRoutineContext()'), 'board must render today routines in the sidebar');
-assert(board.includes('sprintEditId = s.id') && board.includes('setView("jira")'),
-  'PRD context card must lead to its existing sprint editor');
 assert(css.includes('.desktop-shell') && css.includes('grid-template-columns: minmax(0,1fr) 300px'),
   'desktop workbench needs the approved two-column layout');
 assert(css.includes('@media (max-width: 760px)') && css.includes('grid-template-columns: 1fr'),
@@ -35,6 +37,7 @@ assert(css.includes('@media (max-width: 760px)') && css.includes('grid-template-
 assert(css.includes('.focus-card:not(.empty)') && css.includes('--focus-surface'),
   'active focus must receive the approved high-emphasis treatment');
 assert(css.includes('.capture-options.hidden'), 'secondary capture options must be truly collapsible');
-assert(css.includes('.context-prd-link'), 'sprint PRD links need dedicated compact styling');
+assert(css.includes('.sprint-progress-item + .sprint-progress-item'),
+  'multiple sprint progress rows need a scannable visual separator');
 
 console.log('calm workbench UI tests: OK');
