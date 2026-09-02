@@ -92,6 +92,10 @@ li.task:first-child { border-top:0; }
 .context-head h2 { margin:0; font-size:12px; }
 .context-head > span { margin-left:auto; color:var(--ink-faint); font-size:10px; }
 .context-title { display:block; font-size:14px; }
+.sprint-progress-item + .sprint-progress-item { margin-top:13px; padding-top:13px; border-top:1px solid color-mix(in srgb,var(--line) 66%,transparent); }
+.sprint-progress-title { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+.sprint-progress-title .context-title { min-width:0; overflow-wrap:anywhere; }
+.sprint-progress-title > span { flex:0 0 auto; color:var(--ink-faint); font-size:10px; }
 .context-meta,.context-foot { display:flex; justify-content:space-between; gap:8px; color:var(--ink-muted); font-size:10.5px; }
 .context-meta { margin-top:8px; }
 .context-progress { height:6px; border-radius:5px; overflow:hidden; background:color-mix(in srgb,var(--line) 70%,transparent); margin-top:7px; }
