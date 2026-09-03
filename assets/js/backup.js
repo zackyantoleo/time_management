@@ -20,15 +20,16 @@ function exportData() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-// Restore penuh: menimpa data browser ini dengan isi file (termasuk alamat
-// proxy + kunci, supaya perangkat baru langsung ikut tersambung ke sinkron).
+// Restore penuh: menimpa data browser ini dengan isi file (termasuk weekly
+// check-in; kredensial perangkat tetap mengikuti field yang ada di backup).
 function importDataFromText(text) {
   let data;
   try { data = JSON.parse(text); }
   catch { alert("File tidak valid (bukan JSON)."); return; }
   const s = data && data.stores ? data.stores : data;
   const dikenali = s && typeof s === "object" &&
-    (Array.isArray(s.tasks) || Array.isArray(s.sprints) || (s.jira && Array.isArray(s.jira.items)));
+    (Array.isArray(s.tasks) || Array.isArray(s.sprints) || (s.weekly && typeof s.weekly === "object") ||
+      (s.jira && Array.isArray(s.jira.items)));
   if (!dikenali) { alert("File ini bukan cadangan Catet yang dikenali."); return; }
   const n = Array.isArray(s.tasks) ? s.tasks.length : 0;
   if (!confirm("Impor akan MENGGANTI semua data di browser ini dengan isi file (" +
@@ -39,6 +40,7 @@ function importDataFromText(text) {
   put("catet.routines.v1", s.routines);
   put("catet.routineday.v1", s.routineday);
   put("catet.sprints.v1", s.sprints);
+  put("catet.weekly.v1", s.weekly);
   put("catet.jira.v1", s.jira);
   // Tandai perlu di-push kalau sinkron aktif, lalu muat ulang biar semua state
   // terbaca bersih dari localStorage.

@@ -152,6 +152,7 @@ function kumpulkanStores() {
     routineday: ambil("catet.routineday.v1"),
     jira: j,
     sprints: ambil("catet.sprints.v1"),
+    weekly: ambil("catet.weekly.v1"),
   };
 }
 
@@ -195,6 +196,7 @@ function terapkanRemote(stores) {
   tulis("catet.routines.v1", stores.routines);
   tulis("catet.routineday.v1", stores.routineday);
   tulis("catet.sprints.v1", stores.sprints);
+  tulis("catet.weekly.v1", stores.weekly);
   if (stores.jira != null) {
     // Cache hasil Jira tetap milik perangkat ini. Server hanya membawa state
     // durable (terutama depOverrides); jangan hilangkan warning/status terakhir
@@ -218,6 +220,7 @@ function terapkanRemote(stores) {
   if (stores.routines != null) routines = stores.routines;
   if (stores.routineday != null) rday = stores.routineday;
   if (stores.sprints != null) sprints = stores.sprints;
+  if (stores.weekly != null) weekly = normalisasiWeeklyStore(stores.weekly);
   if (stores.jira != null) jira = stores.jira;
   render();
 }

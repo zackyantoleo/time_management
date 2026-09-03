@@ -124,6 +124,42 @@
   <div id="worklog" class="hidden"></div>
 
   <div id="settingsview" class="hidden">
+    <section class="section weekly-checkin-section" id="weekly-checkin-section">
+      <div class="section-head weekly-checkin-head">
+        <div><span class="section-eyebrow">Weekly Wrapped input</span><h2>Weekly check-in</h2><p id="weekly-period-label"></p></div>
+        <a class="btn-ghost tab-link" href="weekly-wrapped.html">Open Wrapped →</a>
+      </div>
+      <div class="weekly-checkin-grid">
+        <form class="routine-card weekly-form" id="weekly-start-form">
+          <div class="weekly-form-head"><div><span class="section-eyebrow">Start of week</span><h3>Commit to outcomes</h3></div><button class="btn-ghost" id="weekly-add-outcome" type="button">+ Outcome</button></div>
+          <p class="weekly-help">Maksimal tiga hasil, bukan daftar aktivitas. Setiap outcome wajib punya definition of done.</p>
+          <div id="weekly-outcomes"></div>
+          <label class="weekly-field"><span>Capacity exception</span><textarea name="capacityException" rows="2" maxlength="1000" placeholder="Cuti, incident, meeting besar, atau constraint lain (optional)"></textarea></label>
+          <div class="weekly-form-foot"><span class="weekly-form-status" role="status"></span><button class="btn-solid" type="submit">Save commitment</button></div>
+        </form>
+
+        <form class="routine-card weekly-form" id="weekly-end-form">
+          <div class="weekly-form-head"><div><span class="section-eyebrow">End of week</span><h3>Reflect with evidence</h3></div></div>
+          <p class="weekly-help">Isi singkat dan konkret. Ini context manusia untuk engine privat, bukan diagnosis performa otomatis.</p>
+          <div class="weekly-reflection-grid">
+            <label class="weekly-field"><span>Highest impact *</span><textarea name="highestImpact" rows="2" maxlength="1500"></textarea></label>
+            <label class="weekly-field"><span>Hidden work</span><textarea name="hiddenWork" rows="2" maxlength="1500"></textarea></label>
+            <label class="weekly-field"><span>Unfinished / failed *</span><textarea name="unfinished" rows="2" maxlength="1500"></textarea></label>
+            <label class="weekly-field"><span>Decision to change *</span><textarea name="decisionToChange" rows="2" maxlength="1500"></textarea></label>
+            <label class="weekly-field weekly-wide"><span>External feedback</span><textarea name="externalFeedback" rows="2" maxlength="1500"></textarea></label>
+            <label class="weekly-field weekly-wide"><span>Rating context</span><textarea name="wellbeingContext" rows="2" maxlength="1000" placeholder="Kenapa focus, energy, atau load berada di angka tersebut? (optional)"></textarea></label>
+          </div>
+          <p class="weekly-help">Skala 1–5: focus/energy makin tinggi makin baik; load 5 berarti beban paling berat.</p>
+          <div class="weekly-ratings">
+            <label class="weekly-rating"><span>Focus</span><select name="focus" aria-label="Focus score"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select></label>
+            <label class="weekly-rating"><span>Energy</span><select name="energy" aria-label="Energy score"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select></label>
+            <label class="weekly-rating"><span>Load</span><select name="load" aria-label="Load score"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select></label>
+          </div>
+          <div class="weekly-form-foot"><span class="weekly-form-status" role="status"></span><button class="btn-solid" type="submit">Save reflection</button></div>
+        </form>
+      </div>
+    </section>
+
     <div id="settings-access"></div>
 
     <section class="section s-jira" style="margin-top:18px">
@@ -140,7 +176,7 @@
       <div class="section-head"><h2>Backup</h2></div>
       <div class="routine-card">
         <div class="routine-row">
-          <span class="r-text">Unduh atau pulihkan semua data (tugas, rutinitas, sprint, log kerja) sebagai file .json — jaring pengaman yang tidak bergantung ke sinkron cloud.</span>
+          <span class="r-text">Unduh atau pulihkan semua data (tugas, rutinitas, sprint, log kerja, weekly check-in) sebagai file .json — jaring pengaman yang tidak bergantung ke sinkron cloud.</span>
           <button class="btn-line" id="export-btn" title="Unduh cadangan semua data sebagai file .json">⬇<span class="btn-label"> Export</span></button>
           <button class="btn-line" id="import-btn" title="Pulihkan data dari file .json (mengganti data di browser ini)">⬆<span class="btn-label"> Import</span></button>
           <input type="file" id="import-file" accept="application/json,.json" hidden>
@@ -169,6 +205,7 @@
 <script src="assets/js/board.js"></script>
 <script src="assets/js/worklog.js"></script>
 <script src="assets/js/reminders.js"></script>
+<script src="assets/js/weekly-checkin.js"></script>
 <script src="assets/js/sync.js"></script>
 <script src="assets/js/backup.js"></script>
 <script src="assets/js/settings.js"></script>
