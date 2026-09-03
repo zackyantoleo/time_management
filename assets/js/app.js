@@ -120,6 +120,7 @@ function initApp() {
   initCapture();
   initReminders();
   initBackup();
+  initWeeklyCheckin();
   backfillWorklog();
   arsipkanTugasSelesai(); // setelah backfill — log-nya dijamin sudah tercatat
   // checkDue melewatkan render saat tab tersembunyi; segarkan waktu relatif

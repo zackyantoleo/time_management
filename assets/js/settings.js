@@ -10,4 +10,5 @@ function renderSettings() {
   const wrap = $("#settings-access");
   wrap.innerHTML = "";
   renderAksesSection(wrap); // kode akses, kredensial Jira, Google Calendar (jira.js/calendar.js)
+  renderWeeklyCheckin();
 }

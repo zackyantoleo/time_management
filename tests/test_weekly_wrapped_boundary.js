@@ -21,6 +21,8 @@ assert(wrapped.includes('assets/data/weekly-wrapped.sample.json'), 'viewer may r
 assert(html.includes('id="wrapped-source-status"'), 'viewer must disclose whether data is live or demo');
 assert(!wrapped.includes('function buildReport') && !wrapped.includes('function analyzeEvidence'),
   'CATET must remain a viewer, not an analysis/generation engine');
-assert(sw.includes('catet-v65'), 'service worker cache must be bumped for the boundary refactor');
+const cacheVersion = Number((sw.match(/const CACHE = "catet-v(\d+)"/) || [])[1]);
+assert(Number.isInteger(cacheVersion) && cacheVersion >= 65,
+  'service worker cache must not regress below the viewer-boundary release');
 
 console.log('Weekly Wrapped viewer/engine boundary contract passed.');
