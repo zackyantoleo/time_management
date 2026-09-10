@@ -1,5 +1,6 @@
 .claude
 graphify-out/
 tests/screenshots/
+test-results/
 worker/.wrangler/
 worker/node_modules/

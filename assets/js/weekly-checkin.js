@@ -173,7 +173,8 @@ function renderWeeklyCheckin() {
   if (!startForm || !endForm) return;
   const periodKey = weeklyPeriodKey();
   const saved = weekly.weeks[periodKey] || {};
-  $("#weekly-period-label").textContent = `${periodKey} · ${weeklyPeriodLabel()}`;
+  const periodLabel = $("#weekly-period-label");
+  if (periodLabel) periodLabel.textContent = `${periodKey} · ${weeklyPeriodLabel()}`;
 
   const outcomesHost = $("#weekly-outcomes"); outcomesHost.replaceChildren();
   const outcomes = saved.start && Array.isArray(saved.start.outcomes) ? saved.start.outcomes : [{}];

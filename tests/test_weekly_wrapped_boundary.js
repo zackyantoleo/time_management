@@ -17,6 +17,14 @@ assert(worker.includes('item.sensitivity !== "sanitized"'), 'Worker must reject 
 assert(worker.includes('Snapshot Weekly Wrapped dipisah'), 'report must be documented as derived state, not canonical CATET state');
 assert(wrapped.includes('fetchWeeklyWrappedReport'), 'CATET viewer must fetch its report through the Worker');
 assert(wrapped.includes('headerAksesWrapped'), 'CATET viewer must use the existing per-device CATET access key');
+assert(worker.includes('CREATE TABLE IF NOT EXISTS weekly_wrapped_corrections'), 'Worker needs a derived correction store separate from reports');
+assert(worker.includes('url0.pathname === "/weekly-wrapped/corrections"'), 'Worker must expose the weekly correction endpoint');
+assert(worker.includes('validateWeeklyWrappedCorrection'), 'Worker must validate correction payloads');
+assert(worker.includes('weeklyCorrectionBlocked'), 'Worker must reject email/URL/token in correction notes');
+assert(worker.includes('Correction harus menunjuk snapshot report'), 'corrections must bind to the stored snapshot generated_at');
+assert(!worker.includes('UPDATE weekly_wrapped_reports') || worker.includes('ON CONFLICT(user_id) DO UPDATE SET report_id'),
+  'report PUT may upsert reports, but correction path must not rewrite the report blob');
+assert(wrapped.includes('initWeeklyCorrection'), 'viewer must persist an explicit correction/ack record');
 assert(wrapped.includes('assets/data/weekly-wrapped.sample.json'), 'viewer may retain a clearly labelled demo fallback');
 assert(html.includes('id="wrapped-source-status"'), 'viewer must disclose whether data is live or demo');
 assert(!wrapped.includes('function buildReport') && !wrapped.includes('function analyzeEvidence'),

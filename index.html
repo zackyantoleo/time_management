@@ -129,7 +129,10 @@
         <div><span class="section-eyebrow">Weekly Wrapped input</span><h2>Weekly check-in</h2><p id="weekly-period-label"></p></div>
         <a class="btn-ghost tab-link" href="weekly-wrapped.html">Open Wrapped →</a>
       </div>
-      <div class="weekly-checkin-grid">
+      <details class="weekly-advanced" id="weekly-advanced">
+        <summary>Advanced</summary>
+        <p class="weekly-help">Form start/end-week opsional. Koreksi report ada di Wrapped: Looks right, Ada yang salah, atau Yang terlewat.</p>
+        <div class="weekly-checkin-grid">
         <form class="routine-card weekly-form" id="weekly-start-form">
           <div class="weekly-form-head"><div><span class="section-eyebrow">Start of week</span><h3>Commit to outcomes</h3></div><button class="btn-ghost" id="weekly-add-outcome" type="button">+ Outcome</button></div>
           <p class="weekly-help">Maksimal tiga hasil, bukan daftar aktivitas. Setiap outcome wajib punya definition of done.</p>
@@ -157,7 +160,8 @@
           </div>
           <div class="weekly-form-foot"><span class="weekly-form-status" role="status"></span><button class="btn-solid" type="submit">Save reflection</button></div>
         </form>
-      </div>
+        </div>
+      </details>
     </section>
 
     <div id="settings-access"></div>

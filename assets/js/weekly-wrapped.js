@@ -282,6 +282,17 @@ async function initWrapped() {
     renderNextWeek();
     renderEvidence();
     bindWrappedEvents();
+    if (typeof initWeeklyCheckin === "function") {
+      try { initWeeklyCheckin(); } catch (error) { console.warn("Weekly check-in init skipped", error); }
+    }
+    if (typeof initWeeklyCorrection === "function") {
+      const sourceBadge = document.querySelector("#wrapped-source-status");
+      initWeeklyCorrection({
+        report: wrappedData,
+        source: sourceBadge && sourceBadge.dataset.source === "live" ? "live" : "demo",
+        connection: wrappedConnection(),
+      });
+    }
     renderSlide(0);
     startAutoAdvance();
   } catch (error) {
