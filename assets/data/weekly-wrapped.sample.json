@@ -1,8 +1,12 @@
 {
+  "schema_version": 1,
+  "report_id": "2026-W35",
+  "generated_at": "2026-09-02T13:00:00.000Z",
   "period": {
     "start": "2026-08-24",
     "end": "2026-08-30",
-    "label": "24–30 Agustus 2026"
+    "label": "24–30 Agustus 2026",
+    "timezone": "Asia/Jakarta"
   },
   "objective": "Membuktikan workflow QA yang reusable, bukan sekadar menyelesaikan aktivitas terpisah.",
   "slides": [

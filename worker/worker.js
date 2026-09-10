@@ -62,6 +62,7 @@ const SKEMA = [
   "CREATE TABLE IF NOT EXISTS priority_snapshots (user_id TEXT PRIMARY KEY, blob TEXT NOT NULL, updated_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS pr_merge_snapshots (user_id TEXT PRIMARY KEY, blob TEXT NOT NULL, updated_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS weekly_wrapped_reports (user_id TEXT PRIMARY KEY, report_id TEXT NOT NULL, blob TEXT NOT NULL CHECK (json_valid(blob)), updated_at TEXT NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS weekly_wrapped_corrections (user_id TEXT NOT NULL, report_id TEXT NOT NULL, correction_id TEXT NOT NULL, blob TEXT NOT NULL CHECK (json_valid(blob)), idempotency_key TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (user_id, report_id))",
   "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL, jira_site TEXT, jira_email TEXT, jira_token TEXT, cal_ics_url TEXT, created_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS state_documents (user_id TEXT NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('tasks', 'routines', 'sprints', 'jira_overrides')), schema_version INTEGER NOT NULL CHECK (schema_version >= 2), revision INTEGER NOT NULL CHECK (revision >= 1), blob TEXT NOT NULL CHECK (json_valid(blob)), updated_at TEXT NOT NULL, PRIMARY KEY (user_id, kind))",
   "CREATE TABLE IF NOT EXISTS worklog_entries (user_id TEXT NOT NULL, id TEXT NOT NULL, task_id TEXT, occurred_at TEXT NOT NULL, local_date TEXT NOT NULL, text TEXT NOT NULL, priority TEXT, minutes INTEGER NOT NULL DEFAULT 0 CHECK (minutes >= 0), metadata TEXT CHECK (metadata IS NULL OR json_valid(metadata)), deleted_at TEXT, PRIMARY KEY (user_id, id))",
@@ -152,6 +153,38 @@ function validateWeeklyWrappedReport(body) {
       next.outcomes.some((item) => !text(item, 1500)) || !text(next.stop, 1500) ||
       !text(next.blocker, 1500) || !text(next.success_definition, 2000)) return false;
   return JSON.stringify(body).length <= 256 * 1024;
+}
+
+function weeklyCorrectionBlocked(note) {
+  const text = typeof note === "string" ? note : "";
+  return /https?:\/\//i.test(text)
+    || /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(text)
+    || /\b(?:ghp_|github_pat_|gho_|sk-|xox[baprs]-)[A-Za-z0-9_-]+/i.test(text)
+    || /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/.test(text);
+}
+
+function validateWeeklyWrappedCorrection(body) {
+  const isoWeek = /^\d{4}-W\d{2}$/;
+  const verdicts = new Set(["looks_right", "wrong", "missed"]);
+  if (!body || body.schema_version !== 1 || !isoWeek.test(body.report_id || "") ||
+      typeof body.generated_at !== "string" || !body.generated_at.trim() || isNaN(new Date(body.generated_at)) ||
+      !verdicts.has(body.verdict) || typeof body.note !== "string" || body.note.length > 500 ||
+      weeklyCorrectionBlocked(body.note)) return false;
+  const note = body.note.trim();
+  if (body.verdict === "missed" && !note) return false;
+  return true;
+}
+
+function normalizeWeeklyWrappedCorrection(body) {
+  const note = body.verdict === "looks_right" ? "" : body.note.trim();
+  return {
+    schema_version: 1,
+    report_id: body.report_id,
+    generated_at: body.generated_at,
+    verdict: body.verdict,
+    note,
+    idempotency_key: [body.report_id, body.generated_at, body.verdict, note].join("|"),
+  };
 }
 
 const STATE_V2_KINDS = new Set(["tasks", "routines", "sprints", "jira_overrides"]);
@@ -595,6 +628,58 @@ async function tangani(request, env) {
           "INSERT INTO weekly_wrapped_reports (user_id, report_id, blob, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(user_id) DO UPDATE SET report_id = ?2, blob = ?3, updated_at = ?4",
           [uid, body.report_id, raw, updatedAt], "run");
         return json({ ok: true, reportId: body.report_id, updatedAt });
+      }
+      return json({ error: "Method tidak didukung." }, 405);
+    }
+
+    // Koreksi dipisah dari report immutable dan dari state canonical CATET.
+    // Browser menulis record ringan milik user; service token privat tidak dipakai di sini.
+    if (url0.pathname === "/weekly-wrapped/corrections") {
+      if (!env.CATET_DB) return json({ error: "Weekly Wrapped membutuhkan D1." }, 500);
+      if (!user) return json({ error: "Koreksi Weekly Wrapped membutuhkan kode akses CATET valid." }, 401);
+      if (request.method === "GET") {
+        const reportId = url0.searchParams.get("report_id") || "";
+        if (!/^\d{4}-W\d{2}$/.test(reportId)) return json({ error: "report_id tidak valid." }, 400);
+        const row = await d1q(env,
+          "SELECT blob FROM weekly_wrapped_corrections WHERE user_id = ?1 AND report_id = ?2",
+          [uid, reportId], "first");
+        return json({ correction: row ? JSON.parse(row.blob) : null });
+      }
+      if (request.method === "POST") {
+        let body;
+        try { body = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
+        if (!validateWeeklyWrappedCorrection(body)) {
+          return json({ error: "Format koreksi tidak valid atau berisi data yang tidak boleh disimpan." }, 400);
+        }
+        const reportRow = await d1q(env,
+          "SELECT report_id, blob FROM weekly_wrapped_reports WHERE user_id = ?1", [uid], "first");
+        if (!reportRow || reportRow.report_id !== body.report_id) {
+          return json({ error: "Report untuk periode ini tidak ditemukan." }, 404);
+        }
+        const stored = JSON.parse(reportRow.blob);
+        if (stored.generated_at !== body.generated_at) {
+          return json({ error: "Correction harus menunjuk snapshot report yang sedang ditampilkan." }, 409);
+        }
+        const normalized = normalizeWeeklyWrappedCorrection(body);
+        const existing = await d1q(env,
+          "SELECT blob, idempotency_key FROM weekly_wrapped_corrections WHERE user_id = ?1 AND report_id = ?2",
+          [uid, normalized.report_id], "first");
+        if (existing && existing.idempotency_key === normalized.idempotency_key) {
+          return json(JSON.parse(existing.blob));
+        }
+        const previous = existing ? JSON.parse(existing.blob) : null;
+        const now = new Date().toISOString();
+        const record = {
+          ...normalized,
+          correction_id: previous && previous.correction_id ? previous.correction_id : ("corr-" + normalized.report_id),
+          revision: previous ? Number(previous.revision || 1) + 1 : 1,
+          saved_at: now,
+          source: "live",
+        };
+        await d1q(env,
+          "INSERT INTO weekly_wrapped_corrections (user_id, report_id, correction_id, blob, idempotency_key, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(user_id, report_id) DO UPDATE SET correction_id = ?3, blob = ?4, idempotency_key = ?5, updated_at = ?6",
+          [uid, record.report_id, record.correction_id, JSON.stringify(record), record.idempotency_key, now], "run");
+        return json(record);
       }
       return json({ error: "Method tidak didukung." }, 405);
     }

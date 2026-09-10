@@ -90,6 +90,59 @@
         <div class="evidence-list" id="evidence-list"></div>
       </section>
 
+      <section class="report-section wrapped-correction" id="wrapped-correction" aria-labelledby="correction-title">
+        <div class="panel-heading">
+          <div>
+            <span class="section-eyebrow">Quick correction</span>
+            <h2 id="correction-title">Does this look right?</h2>
+          </div>
+          <p>Tiga jalur ringan. Form panjang ada di Advanced, bukan syarat untuk melihat atau mengoreksi report.</p>
+        </div>
+        <div class="correction-actions">
+          <button class="btn-solid" id="correction-looks-right" type="button" data-correction-verdict="looks_right" aria-pressed="false">Looks right</button>
+          <button class="btn-line" id="correction-wrong" type="button" data-correction-verdict="wrong" aria-pressed="false">Ada yang salah</button>
+        </div>
+        <label class="weekly-field correction-note" id="correction-missed"><span>Yang terlewat</span><textarea id="correction-note" maxlength="500" rows="3" placeholder="Satu hal yang tidak tertangkap report"></textarea></label>
+        <div class="correction-foot">
+          <button class="btn-ghost" id="correction-save-missed" type="button" data-correction-verdict="missed">Simpan yang terlewat</button>
+          <span class="weekly-form-status" id="correction-status" role="status">Belum ada koreksi untuk report ini.</span>
+        </div>
+      </section>
+
+      <details class="wrapped-advanced" id="wrapped-advanced">
+        <summary>Advanced</summary>
+        <p class="weekly-help">Start/end-week lama tetap ada sebagai fallback. Tidak wajib diisi untuk melihat atau mengoreksi report.</p>
+        <p id="weekly-period-label"></p>
+        <div class="weekly-checkin-grid">
+          <form class="routine-card weekly-form" id="weekly-start-form">
+            <div class="weekly-form-head"><div><span class="section-eyebrow">Start of week</span><h3>Commit to outcomes</h3></div><button class="btn-ghost" id="weekly-add-outcome" type="button">+ Outcome</button></div>
+            <p class="weekly-help">Maksimal tiga hasil, bukan daftar aktivitas. Setiap outcome wajib punya definition of done.</p>
+            <div id="weekly-outcomes"></div>
+            <label class="weekly-field"><span>Capacity exception</span><textarea name="capacityException" rows="2" maxlength="1000" placeholder="Cuti, incident, meeting besar, atau constraint lain (optional)"></textarea></label>
+            <div class="weekly-form-foot"><span class="weekly-form-status" role="status"></span><button class="btn-solid" type="submit">Save commitment</button></div>
+          </form>
+          <form class="routine-card weekly-form" id="weekly-end-form">
+            <div class="weekly-form-head"><div><span class="section-eyebrow">End of week</span><h3>Reflect with evidence</h3></div></div>
+            <p class="weekly-help">Isi singkat dan konkret. Ini context manusia untuk engine privat, bukan diagnosis performa otomatis.</p>
+            <div class="weekly-reflection-grid">
+              <label class="weekly-field"><span>Highest impact *</span><textarea name="highestImpact" rows="2" maxlength="1500"></textarea></label>
+              <label class="weekly-field"><span>Hidden work</span><textarea name="hiddenWork" rows="2" maxlength="1500"></textarea></label>
+              <label class="weekly-field"><span>Unfinished / failed *</span><textarea name="unfinished" rows="2" maxlength="1500"></textarea></label>
+              <label class="weekly-field"><span>Decision to change *</span><textarea name="decisionToChange" rows="2" maxlength="1500"></textarea></label>
+              <label class="weekly-field weekly-wide"><span>External feedback</span><textarea name="externalFeedback" rows="2" maxlength="1500"></textarea></label>
+              <label class="weekly-field weekly-wide"><span>Rating context</span><textarea name="wellbeingContext" rows="2" maxlength="1000" placeholder="Kenapa focus, energy, atau load berada di angka tersebut? (optional)"></textarea></label>
+            </div>
+            <p class="weekly-help">Skala 1–5: focus/energy makin tinggi makin baik; load 5 berarti beban paling berat.</p>
+            <div class="weekly-ratings">
+              <label class="weekly-rating"><span>Focus</span><select name="focus" aria-label="Focus score"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select></label>
+              <label class="weekly-rating"><span>Energy</span><select name="energy" aria-label="Energy score"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select></label>
+              <label class="weekly-rating"><span>Load</span><select name="load" aria-label="Load score"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select></label>
+            </div>
+            <div class="weekly-form-foot"><span class="weekly-form-status" role="status"></span><button class="btn-solid" type="submit">Save reflection</button></div>
+          </form>
+        </div>
+      </details>
+
       <footer class="wrapped-footer">
         <button class="btn-line" id="replay-story" type="button">Replay slideshow ↑</button>
         <a class="btn-ghost wrapped-link" href="index.html">Back to CATET</a>
@@ -104,6 +157,9 @@
     </section>
   </main>
 </div>
+<script src="assets/js/util.js"></script>
+<script src="assets/js/weekly-checkin.js"></script>
+<script src="assets/js/weekly-correction.js"></script>
 <script src="assets/js/weekly-wrapped.js"></script>
 </body>
 </html>
