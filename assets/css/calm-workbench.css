@@ -26,6 +26,31 @@
 .theme-toggle { width:34px; height:34px; padding:0; display:grid; place-items:center; font-size:16px; }
 .ready-alert-btn { position:relative; min-width:46px; height:34px; padding:0 8px; display:flex; align-items:center; justify-content:center; gap:5px; border-color:color-mix(in srgb,var(--accent) 42%,var(--line)); color:var(--accent); background:var(--accent-soft); }
 .ready-alert-btn[hidden] { display:none; }
+.week-chip {
+  position:relative; display:inline-flex; align-items:center; gap:7px;
+  min-height:34px; padding:0 11px 0 9px; border-radius:999px; text-decoration:none;
+  border:1px solid color-mix(in srgb,var(--accent) 50%,var(--line));
+  background:var(--accent-soft); color:var(--accent); font-size:12px; font-weight:700;
+  letter-spacing:.04em; white-space:nowrap;
+}
+.week-chip[hidden] { display:none; }
+.week-chip:focus-visible { outline:2px solid var(--focus-ring); outline-offset:2px; }
+.week-chip-dot {
+  width:7px; height:7px; border-radius:50%; background:var(--accent);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent);
+  animation: weekChipPulse 2.4s var(--ease, cubic-bezier(.2,.6,.2,1)) infinite;
+}
+@keyframes weekChipPulse {
+  0%, 100% { box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent); }
+  50% { box-shadow:0 0 0 5px color-mix(in srgb,var(--accent) 8%,transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .week-chip-dot { animation: none; }
+}
+.week-chip-status {
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+  clip:rect(0,0,0,0); white-space:nowrap; border:0;
+}
 .ready-alert-count { min-width:18px; height:18px; padding:0 5px; border-radius:999px; display:grid; place-items:center; font-size:10px; font-weight:800; line-height:1; color:var(--accent-ink); background:var(--accent); }
 .ready-alert-panel { border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line)); border-radius:12px; padding:14px; background:var(--surface); box-shadow:var(--shadow); }
 .ready-alert-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
@@ -166,6 +191,7 @@ footer.foot { margin-top:8px; }
   .top-actions { flex:none; gap:6px; }
   .top-actions .btn-ghost { min-width:40px; min-height:40px; padding:6px; }
   .ready-alert-btn { min-width:52px !important; padding-inline:7px !important; }
+  .week-chip { min-height:44px; padding:0 10px 0 9px; font-size:12px; }
   .ready-alert-panel { padding:12px; }
   .ready-alert-head { gap:10px; }
   .ready-alert-head p { font-size:11px; }

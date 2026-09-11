@@ -22,6 +22,8 @@
     </div>
     <div class="top-actions">
       <button class="btn-ghost ready-alert-btn" id="ready-alert-btn" type="button" aria-label="Tiket baru siap dites" aria-expanded="false" hidden><span aria-hidden="true">✓</span><span id="ready-alert-count" class="ready-alert-count">0</span></button>
+      <a class="week-chip" id="wrapped-week-chip" href="weekly-wrapped.html" hidden><span class="week-chip-dot" aria-hidden="true"></span><span id="wrapped-week-chip-label" class="week-chip-label"></span></a>
+      <span class="week-chip-status" id="wrapped-week-chip-status" role="status" aria-atomic="true"></span>
       <button class="btn-ghost theme-toggle" id="theme-toggle" type="button" aria-label="Gunakan tema gelap" aria-pressed="false">☾</button>
       <button class="btn-ghost" id="settings-btn" title="Settings" aria-pressed="false">⚙️</button>
     </div>
@@ -52,7 +54,6 @@
       <button class="tab" id="tab-jira" role="tab" aria-label="Jira" aria-selected="false"><span aria-hidden="true">◫</span><span class="tab-label">Jira</span></button>
       <button class="tab" id="tab-kalender" role="tab" aria-label="Calendar" aria-selected="false"><span aria-hidden="true">▦</span><span class="tab-label">Calendar</span></button>
       <button class="tab" id="tab-log" role="tab" aria-label="Work log" aria-selected="false"><span aria-hidden="true">≡</span><span class="tab-label">Log</span></button>
-      <a class="tab tab-link" id="tab-wrapped" href="weekly-wrapped.html" role="tab" aria-label="Weekly Wrapped" aria-selected="false"><span aria-hidden="true">◉</span><span class="tab-label">Wrapped</span></a>
     </nav>
     <input type="search" id="search" placeholder="Search tasks / tickets / logs…" aria-label="Cari">
   </div>
@@ -210,6 +211,7 @@
 <script src="assets/js/worklog.js"></script>
 <script src="assets/js/reminders.js"></script>
 <script src="assets/js/weekly-checkin.js"></script>
+<script src="assets/js/weekly-wrapped-signal.js"></script>
 <script src="assets/js/sync.js"></script>
 <script src="assets/js/backup.js"></script>
 <script src="assets/js/settings.js"></script>

@@ -126,7 +126,10 @@ function initApp() {
   // checkDue melewatkan render saat tab tersembunyi; segarkan waktu relatif
   // yang basi begitu tab terlihat lagi.
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && !sedangMengetik()) render();
+    if (document.visibilityState === "visible" && !sedangMengetik()) {
+      render();
+      if (typeof refreshWrappedWeekChip === "function") refreshWrappedWeekChip();
+    }
   });
   setInterval(checkDue, 30000);
   setInterval(() => syncJira(false), 5 * 60 * 1000);
@@ -148,6 +151,7 @@ function initApp() {
     }).catch(() => {});
   }
   setView(view); // pulihkan tab terakhir (markup default HTML = papan)
+  initWrappedWeekChip();
   initSync(); // pull state → sinkron Jira → push tertunda (urutan di sync.js)
 }
 initApp();
