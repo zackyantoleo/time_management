@@ -889,6 +889,7 @@ async function pakaiKode(kode) {
   tarikProfil(true);
   syncJira(true);
   render();
+  if (typeof refreshWrappedWeekChip === "function") refreshWrappedWeekChip();
 }
 
 function renderAksesSection(wrap) {
