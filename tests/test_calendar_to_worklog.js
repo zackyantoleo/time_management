@@ -63,7 +63,7 @@ assert.equal(vm.runInContext(`shouldImportCalendarEvent(${JSON.stringify(tomorro
 assert.equal(vm.runInContext(`shouldImportCalendarEvent(${JSON.stringify(event)})`, context), true, "today must enter the log");
 
 assert.equal(
-  vm.runInContext(`importCalendarEventsToWorklog([${JSON.stringify(yesterday)}, ${JSON.stringify(event)}, ${JSON.stringify(tomorrow)}, ${JSON.stringify(event)}, { summary: "Absen Pulang", start: "2026-09-15T10:00:00.000Z" }])`, context),
+  vm.runInContext(`importCalendarEventsToWorklog([${JSON.stringify(yesterday)}, ${JSON.stringify(event)}, ${JSON.stringify(tomorrow)}, ${JSON.stringify(event)}, { summary: "Absen Pulang", start: "2026-09-15T10:00:00.000Z" }, { summary: "Absen Masuk", start: "2026-09-15T08:00:00.000Z" }])`, context),
   true,
 );
 assert.equal(vm.runInContext("worklog.length", context), 1, "duplicate calendar fetch must not duplicate log");
@@ -80,11 +80,12 @@ assert.equal(
 assert.equal(
   vm.runInContext('shouldImportCalendarEvent({ summary: "Meeting absen pulang?" })', context),
   false,
-  "case-insensitive Absen Pulang exclusion",
+  "case-insensitive Absen exclusion",
 );
 assert.equal(
   vm.runInContext('shouldImportCalendarEvent({ summary: "Absen Masuk", start: "2026-09-15T08:00:00.000Z" })', context),
-  true,
+  false,
+  "any Absen title must never enter the work log",
 );
 
 console.log("PASS calendar to worklog mapping");

@@ -70,7 +70,8 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
   (dihitung dari berapa lama tugas berada di slot "Sedang dikerjakan").
   Acara Google Calendar yang berhasil ditarik pada **tanggal lokal hari ini**
   juga otomatis masuk ke log pada jam mulai dan durasi sesuai kalender; event
-  **Absen Pulang** dikecualikan. Event kalender kemarin atau besok tidak
+  judul yang mengandung **Absen** (mis. Absen Masuk/Pulang) dikecualikan.
+  Event kalender kemarin atau besok tidak
   dibackfill menjadi log hari ini. Entri kalender hanya menambah log Catet
   (ikut sinkronisasi state bila aktif) dan tidak otomatis dikirim ke Jira —
   pilih tiket BAU/TDBU dulu, lalu tekan tombol kirim secara eksplisit. Tombol
