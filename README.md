@@ -68,9 +68,14 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
 - **Log kerja harian** — tab "🗒 Log kerja" berisi semua tugas yang selesai,
   dikelompokkan per hari lengkap dengan jam selesai dan total lama fokus
   (dihitung dari berapa lama tugas berada di slot "Sedang dikerjakan").
-  Tombol **Salin** menyalin log satu hari sebagai teks siap tempel ke
-  worklog Jira, laporan harian, atau standup. Log bersifat riwayat
-  tersendiri: membersihkan bagian "Selesai" di papan tidak menghapusnya.
+  Acara Google Calendar yang berhasil ditarik juga otomatis masuk ke log pada
+  jam mulai dan durasi sesuai kalender; event **Absen Pulang** dikecualikan.
+  Entri kalender hanya menambah log Catet (ikut sinkronisasi state bila aktif)
+  dan tidak otomatis dikirim ke Jira — pilih tiket BAU/TDBU dulu, lalu tekan
+  tombol kirim secara eksplisit. Tombol **Salin**
+  menyalin log satu hari sebagai teks siap tempel ke worklog Jira, laporan
+  harian, atau standup. Log bersifat riwayat tersendiri: membersihkan bagian
+  "Selesai" di papan tidak menghapusnya.
 - **Integrasi Jira ringan** — kode tiket (mis. `ERA-1234`) di teks tugas,
   kartu fokus, dan log kerja otomatis jadi link ke Jira (alamat situs bisa
   diatur di panel impor). Section **"Tiket Jira — belum diambil"** menampung

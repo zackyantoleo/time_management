@@ -9,6 +9,7 @@ const { default: worker } = await import("file://" + temp + "?v=" + Date.now());
 const ics = [
   "BEGIN:VCALENDAR",
   "BEGIN:VEVENT",
+  "UID:meeting-uid-1@example.com",
   "DTSTART:20260821T090000Z",
   "DTEND:20260821T110000Z",
   "SUMMARY:Grooming Product Synonym Search",
@@ -36,6 +37,7 @@ try {
   assert.equal(body.events.length, 1, JSON.stringify(body));
   assert.ok(Array.isArray(body.events[0].urls), "urls must be present");
   assert.equal(body.events[0].urls[0], "https://docs.google.com/document/d/abc123/edit");
+  assert.equal(body.events[0].id, "meeting-uid-1@example.com|2026-08-21T09:00:00.000Z");
   console.log("PASS calendar description urls");
 } finally {
   globalThis.fetch = originalFetch;
