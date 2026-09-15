@@ -2,7 +2,7 @@
 // dan kirim worklog ke Jira lewat proxy (tombol "→ Jira").
 "use strict";
 
-const PR_LABEL = { urgent: "urgent", tinggi: "high", sedang: "medium", rendah: "low", rutin: "routine", sprint: "sprint" };
+const PR_LABEL = { urgent: "urgent", tinggi: "high", sedang: "medium", rendah: "low", rutin: "routine", sprint: "sprint", kalender: "calendar" };
 
 // Badge menit fokus. Saat editable (belum terkirim ke Jira & proxy aktif),
 // jadi tombol: klik → input angka, supaya durasi worklog bisa dikoreksi atau
@@ -336,6 +336,7 @@ function renderWorklog() {
   const wrap = $("#worklog");
   wrap.innerHTML = "";
   const q = searchQuery.trim().toLowerCase();
+  if (jiraProxy() && typeof tarikKalender === "function") tarikKalender(false);
   if (jiraProxy()) tarikLaporanJira(false); // laporan Jira ditarik di latar
   // hari ber-worklog Jira dalam rentang filter (untuk log gabungan)
   const adaJiraHari = !q && !!(lapJira && lapJira.days &&
@@ -430,10 +431,12 @@ function renderWorklog() {
       // manual e.bauKey menang atas pencocokan otomatis cocokBau). Entri
       // "sprint" (catatan penutupan sprint) tidak dikirim ke mana-mana;
       // rutinitas boleh ke topik BAU (mis. daily standup → tiket meeting).
-      const ticketKey = (e.priority !== "rutin" && e.priority !== "sprint")
+      const ticketKey = (e.priority !== "rutin" && e.priority !== "sprint" && e.priority !== "kalender")
         ? (e.text.match(JIRA_RE) || [null])[0] : null;
-      const bau = (!ticketKey && e.priority !== "sprint")
-        ? (e.bauKey ? bauByKey(e.bauKey) : cocokBau(e.text)) : null;
+      const bau = e.priority === "kalender"
+        ? (e.bauKey ? bauByKey(e.bauKey) : null)
+        : ((!ticketKey && e.priority !== "sprint")
+          ? (e.bauKey ? bauByKey(e.bauKey) : cocokBau(e.text)) : null);
       const target = ticketKey || (bau && bau.key) || null;
       const bolehKirim = !!jiraProxy() && e.priority !== "sprint" && !e.jiraLogged;
       li.append(minsBadge(e, bolehKirim && !!target));
@@ -470,7 +473,11 @@ function renderWorklog() {
       // Tombol 🏢: pilih/ganti topik BAU untuk entri tanpa key eksplisit.
       // Pilihan diingat sebagai alias teks → entri berulang (rutinitas) cukup
       // dipilihkan sekali.
-      if (bolehKirim && !ticketKey && jira.bau && Array.isArray(jira.bau.items) && jira.bau.items.length) {
+      // Calendar event tidak auto-match ke BAU dan tidak mendapat tombol push
+      // sampai user memilih tiket TDBU secara eksplisit.
+      const pilihBauKalender = e.priority === "kalender" && !e.jiraLogged &&
+        jira.bau && Array.isArray(jira.bau.items) && jira.bau.items.length;
+      if (pilihBauKalender) {
         const pick = el("button", "icon-btn" + (bau ? " in-sprint" : ""), "🏢");
         pick.title = bau ? "Topik BAU: " + bau.key + " — " + bau.summary + " (klik untuk ganti)"
           : "Pilih topik BAU untuk worklog ini";

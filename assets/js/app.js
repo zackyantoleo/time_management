@@ -123,6 +123,9 @@ function initApp() {
   initWeeklyCheckin();
   backfillWorklog();
   arsipkanTugasSelesai(); // setelah backfill — log-nya dijamin sudah tercatat
+  // Calendar import berjalan setiap kali data kalender berhasil ditarik. Saat
+  // data sudah ada sebelum refresh, import ulang tetap aman karena idempotent.
+  if (typeof importLoadedCalendarEvents === "function") importLoadedCalendarEvents();
   // checkDue melewatkan render saat tab tersembunyi; segarkan waktu relatif
   // yang basi begitu tab terlihat lagi.
   document.addEventListener("visibilitychange", () => {

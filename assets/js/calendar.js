@@ -1,6 +1,7 @@
 // calendar.js — jadwal meeting dari Google Calendar (secret iCal URL).
-// Ditarik lewat Worker (GET /calendar), ditampilkan sebagai section
-// "Today's meetings" di Board. Read-only; kelola acaranya tetap di Google.
+// Ditarik lewat Worker (GET /calendar), ditampilkan di Board/Calendar, dan
+// diimpor idempoten ke Log kerja. Impor hanya membuat entri lokal; push Jira
+// tetap eksplisit lewat tombol di tab Log.
 "use strict";
 
 const CAL_TZ = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; } })();
@@ -21,10 +22,91 @@ let gridEvents = [];    // acara jendela 6 minggu bulan tampil
 let gridKey = "";       // "from|to" yang sedang dimuat (throttle per jendela)
 let gridLoading = false, gridMsg = "";
 
+const CALENDAR_WORKLOG_PRIORITY = "kalender";
+const CALENDAR_WORKLOG_MAX_MINUTES = 24 * 60;
+const CALENDAR_IGNORED_TITLE_RE = /\babsen\s+pulang\b/i;
+
+function calendarEventKey(e) {
+  // Occurrence key: UID saja tidak cukup untuk recurring event; start
+  // membedakan setiap occurrence. Worker lama tidak mengirim UID, jadi fallback
+  // tetap stabil selama detail acara tidak berubah.
+  const identity = String(e.id || e.uid || "");
+  return (identity ? identity : [e.summary || "", e.start || e.date || "", e.end || ""].join("|"));
+}
+
+function hashCalendarKey(raw) {
+  let hash = 2166136261;
+  for (let i = 0; i < raw.length; i++) {
+    hash ^= raw.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function shouldImportCalendarEvent(e) {
+  // Calendar adalah sumber rencana aktivitas; event future tetap dibuat di Log
+  // agar user bisa meninjau dan memilih tiket Jira lebih dulu.
+  return !!e && !CALENDAR_IGNORED_TITLE_RE.test(String(e.summary || ""));
+}
+
+function calendarEventToWorklog(e) {
+  const start = e.allDay ? (e.date + "T00:00:00") : e.start;
+  const startDate = new Date(start);
+  if (!Number.isFinite(startDate.getTime())) return null;
+  const endDate = e.end ? new Date(e.end) : startDate;
+  const duration = e.allDay || !Number.isFinite(endDate.getTime())
+    ? 0 : Math.round((endDate - startDate) / 60000);
+  const key = calendarEventKey(e);
+  const id = "calendar:" + hashCalendarKey(key);
+  return {
+    id,
+    taskId: id,
+    calendarEventKey: key,
+    calendarEvent: true,
+    date: e.allDay ? e.date : localDateStr(startDate),
+    ts: startDate.toISOString(),
+    text: e.summary || "(tanpa judul)",
+    priority: CALENDAR_WORKLOG_PRIORITY,
+    mins: Math.max(0, Math.min(CALENDAR_WORKLOG_MAX_MINUTES, duration)),
+  };
+}
+
+function importCalendarEventsToWorklog(events) {
+  if (!Array.isArray(events) || typeof worklog === "undefined") return false;
+  let changed = false;
+  const known = new Set(worklog.filter((e) => e && e.calendarEventKey).map((e) => e.calendarEventKey));
+  for (const event of events) {
+    if (!shouldImportCalendarEvent(event)) continue;
+    const key = calendarEventKey(event);
+    if (known.has(key)) continue;
+    const entry = calendarEventToWorklog(event);
+    if (!entry) continue;
+    worklog.push(entry);
+    known.add(key);
+    changed = true;
+  }
+  if (changed) {
+    // Calendar log tetap masuk state durable agar tersedia di perangkat lain;
+    // ini bukan push worklog ke Jira. Fallback menjaga kompatibilitas test/
+    // runtime lama yang hanya menyediakan penyimpanan mesin.
+    if (typeof saveWorklog === "function") saveWorklog();
+    else if (typeof saveWorklogTanpaSinkron === "function") saveWorklogTanpaSinkron();
+  }
+  return changed;
+}
+
+function importLoadedCalendarEvents() {
+  const events = [];
+  if (calEvents && Array.isArray(calEvents.events)) events.push(...calEvents.events);
+  if (Array.isArray(gridEvents)) events.push(...gridEvents);
+  return importCalendarEventsToWorklog(events);
+}
+
 async function tarikKalender(paksa) {
   if (!jiraProxy() || calLoading) return;
   if (!paksa && Date.now() - calAt < 10 * 60 * 1000) return; // throttle 10 mnt
   calLoading = true; calMsg = "";
+  let imported = false;
   if (view === "papan" || view === "kalender") render();
   try {
     const from = localDateStr(new Date(Date.now() - CAL_BACK * 86400000));
@@ -37,12 +119,13 @@ async function tarikKalender(paksa) {
     if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
     if (!data || !Array.isArray(data.events)) throw new Error("format tak dikenal");
     calEvents = data; calAktif = true;
+    imported = importLoadedCalendarEvents();
   } catch (e) {
     calMsg = (e && e.message ? e.message : "koneksi");
     if (/belum diisi/i.test(calMsg)) calAktif = false;
   }
   calAt = Date.now(); calLoading = false;
-  if (view === "papan" || view === "kalender") render();
+  if (view === "papan" || view === "kalender" || (view === "log" && imported)) render();
 }
 
 // Acara yang bertumpang-tindih dengan tanggal lokal tertentu.
@@ -157,6 +240,7 @@ async function tarikGrid(from, to, paksa) {
   const key = from + "|" + to;
   if (!paksa && gridKey === key) return;
   gridLoading = true; gridMsg = "";
+  let imported = false;
   if (view === "kalender") render();
   try {
     const ics = jira.calIcs ? "&ics=" + encodeURIComponent(jira.calIcs) : "";
@@ -166,12 +250,13 @@ async function tarikGrid(from, to, paksa) {
     if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
     if (!data || !Array.isArray(data.events)) throw new Error("format tak dikenal");
     gridEvents = data.events; gridKey = key; calAktif = true;
+    imported = importLoadedCalendarEvents();
   } catch (e) {
     gridMsg = (e && e.message ? e.message : "koneksi");
     if (/belum diisi/i.test(gridMsg)) calAktif = false;
   }
   gridLoading = false;
-  if (view === "kalender") render();
+  if (view === "kalender" || (view === "log" && imported)) render();
 }
 
 // Jendela grid: Senin pada/di sebelum tanggal 1, selama 42 hari (6 minggu).

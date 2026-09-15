@@ -327,6 +327,9 @@ const HARI_KODE = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
 function expandEvent(ev, winA, winB, tz) {
   const durMs = ev.end && ev.start ? (ev.end.instant - ev.start.instant) : 0;
   const buat = (inst, wall) => ({
+    // UID + occurrence start menjaga import worklog idempotent untuk recurring
+    // event. Event dari kalender lama tanpa UID tetap memakai fallback client.
+    id: ev.uid ? ev.uid + "|" + inst.toISOString() : undefined,
     summary: ev.summary, location: ev.location, allDay: ev.start.allDay,
     start: inst.toISOString(), date: ev.start.allDay ? isoDate(wall) : null,
     end: new Date(inst.getTime() + durMs).toISOString(),
@@ -400,7 +403,8 @@ function acaraDalamJendela(icsText, from, to, tz) {
     }
     if (!cur) continue;
     const p = parseProp(line); if (!p) continue;
-    if (p.name === "DTSTART") { cur.start = parseDT(p, tz); cur.tzid = p.params.TZID || null; }
+    if (p.name === "UID") cur.uid = unescapeText(p.value).slice(0, 300);
+    else if (p.name === "DTSTART") { cur.start = parseDT(p, tz); cur.tzid = p.params.TZID || null; }
     else if (p.name === "DTEND") cur.end = parseDT(p, tz);
     else if (p.name === "SUMMARY") cur.summary = unescapeText(p.value).slice(0, 200);
     else if (p.name === "LOCATION") cur.location = unescapeText(p.value).slice(0, 200);

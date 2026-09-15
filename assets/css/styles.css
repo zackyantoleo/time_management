@@ -596,6 +596,7 @@
   .log-dot.p-rendah { background: var(--p-rendah); }
   .log-dot.p-rutin { background: var(--accent); }
   .log-dot.p-sprint { background: var(--p-tinggi); }
+  .log-dot.p-kalender { background: #7f9f8b; }
   .log-text { flex: 1 1 auto; min-width: min(18ch, 100%); overflow-wrap: break-word; font-size: 14px; }
   .log-mins {
     font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
