@@ -26,12 +26,56 @@ const CALENDAR_WORKLOG_PRIORITY = "kalender";
 const CALENDAR_WORKLOG_MAX_MINUTES = 24 * 60;
 const CALENDAR_IGNORED_TITLE_RE = /\babsen\b/i;
 
+function calendarEventMinutes(e) {
+  if (!e || e.allDay) return 0;
+  const startDate = new Date(e.start);
+  const endDate = e.end ? new Date(e.end) : startDate;
+  if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime())) return 0;
+  return Math.max(0, Math.min(CALENDAR_WORKLOG_MAX_MINUTES, Math.round((endDate - startDate) / 60000)));
+}
+
 function calendarEventKey(e) {
-  // Occurrence key: UID saja tidak cukup untuk recurring event; start
-  // membedakan setiap occurrence. Worker lama tidak mengirim UID, jadi fallback
-  // tetap stabil selama detail acara tidak berubah.
-  const identity = String(e.id || e.uid || "");
-  return (identity ? identity : [e.summary || "", e.start || e.date || "", e.end || ""].join("|"));
+  // Content-based occurrence key. Jangan pakai worker UID/id: rollout UID
+  // mengubah key dan membuat entri dobel untuk acara yang sama.
+  const start = e && e.allDay ? String(e.date || "") : String((e && e.start) || "");
+  return [String((e && e.summary) || ""), start, String(calendarEventMinutes(e))].join("|");
+}
+
+function calendarWorklogFingerprint(entry) {
+  return [String((entry && entry.text) || ""), String((entry && (entry.ts || entry.date)) || ""),
+    String((entry && entry.mins) || 0)].join("|");
+}
+
+function preferCalendarWorklog(a, b) {
+  // Saat collapse duplicate, pertahankan entri yang sudah punya pilihan TDBU /
+  // status Jira, atau metadata lebih lengkap.
+  const score = (e) => (e && e.jiraLogged ? 4 : 0) + (e && e.bauKey ? 2 : 0) +
+    (e && e.id ? 1 : 0);
+  return score(b) > score(a) ? b : a;
+}
+
+function dedupeCalendarWorklogEntries() {
+  if (typeof worklog === "undefined" || !Array.isArray(worklog)) return false;
+  const kept = [];
+  const indexByFp = new Map();
+  let changed = false;
+  for (const entry of worklog) {
+    if (!entry || !entry.calendarEvent) { kept.push(entry); continue; }
+    const fingerprint = calendarWorklogFingerprint(entry);
+    const canonical = Object.assign({}, entry, { calendarEventKey: fingerprint });
+    if (indexByFp.has(fingerprint)) {
+      const idx = indexByFp.get(fingerprint);
+      kept[idx] = preferCalendarWorklog(kept[idx], canonical);
+      changed = true;
+      continue;
+    }
+    if (entry.calendarEventKey !== fingerprint) changed = true;
+    indexByFp.set(fingerprint, kept.length);
+    kept.push(canonical);
+  }
+  if (!changed) return false;
+  worklog.splice(0, worklog.length, ...kept);
+  return true;
 }
 
 function hashCalendarKey(raw) {
@@ -55,9 +99,6 @@ function calendarEventToWorklog(e) {
   const start = e.allDay ? (e.date + "T00:00:00") : e.start;
   const startDate = new Date(start);
   if (!Number.isFinite(startDate.getTime())) return null;
-  const endDate = e.end ? new Date(e.end) : startDate;
-  const duration = e.allDay || !Number.isFinite(endDate.getTime())
-    ? 0 : Math.round((endDate - startDate) / 60000);
   const key = calendarEventKey(e);
   const id = "calendar:" + hashCalendarKey(key);
   return {
@@ -69,22 +110,28 @@ function calendarEventToWorklog(e) {
     ts: startDate.toISOString(),
     text: e.summary || "(tanpa judul)",
     priority: CALENDAR_WORKLOG_PRIORITY,
-    mins: Math.max(0, Math.min(CALENDAR_WORKLOG_MAX_MINUTES, duration)),
+    mins: calendarEventMinutes(e),
   };
 }
 
 function importCalendarEventsToWorklog(events) {
   if (!Array.isArray(events) || typeof worklog === "undefined") return false;
-  let changed = false;
-  const known = new Set(worklog.filter((e) => e && e.calendarEventKey).map((e) => e.calendarEventKey));
+  let changed = dedupeCalendarWorklogEntries();
+  const known = new Set();
+  for (const entry of worklog) {
+    if (!entry || !entry.calendarEvent) continue;
+    known.add(entry.calendarEventKey || calendarWorklogFingerprint(entry));
+    known.add(calendarWorklogFingerprint(entry));
+  }
   for (const event of events) {
     if (!shouldImportCalendarEvent(event)) continue;
-    const key = calendarEventKey(event);
-    if (known.has(key)) continue;
     const entry = calendarEventToWorklog(event);
     if (!entry) continue;
+    const fingerprint = calendarWorklogFingerprint(entry);
+    if (known.has(entry.calendarEventKey) || known.has(fingerprint)) continue;
     worklog.push(entry);
-    known.add(key);
+    known.add(entry.calendarEventKey);
+    known.add(fingerprint);
     changed = true;
   }
   if (changed) {
