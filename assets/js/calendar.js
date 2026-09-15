@@ -24,7 +24,7 @@ let gridLoading = false, gridMsg = "";
 
 const CALENDAR_WORKLOG_PRIORITY = "kalender";
 const CALENDAR_WORKLOG_MAX_MINUTES = 24 * 60;
-const CALENDAR_IGNORED_TITLE_RE = /\babsen\s+pulang\b/i;
+const CALENDAR_IGNORED_TITLE_RE = /\babsen\b/i;
 
 function calendarEventKey(e) {
   // Occurrence key: UID saja tidak cukup untuk recurring event; start
