@@ -44,9 +44,11 @@ function hashCalendarKey(raw) {
 }
 
 function shouldImportCalendarEvent(e) {
-  // Calendar adalah sumber rencana aktivitas; event future tetap dibuat di Log
-  // agar user bisa meninjau dan memilih tiket Jira lebih dulu.
-  return !!e && !CALENDAR_IGNORED_TITLE_RE.test(String(e.summary || ""));
+  // Hanya event pada tanggal lokal hari ini yang menjadi log otomatis. Event
+  // kemarin/besok tetap tampil sebagai kalender, tetapi tidak backfill log.
+  if (!e || CALENDAR_IGNORED_TITLE_RE.test(String(e.summary || ""))) return false;
+  const eventDate = e.allDay ? String(e.date || "") : localDateStr(new Date(e.start));
+  return eventDate === localDateStr(new Date());
 }
 
 function calendarEventToWorklog(e) {
