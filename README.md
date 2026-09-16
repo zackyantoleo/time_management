@@ -73,8 +73,10 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
   judul yang mengandung **Absen** (mis. Absen Masuk/Pulang) dikecualikan.
   Event kalender kemarin atau besok tidak
   dibackfill menjadi log hari ini. Entri kalender hanya menambah log Catet
-  (ikut sinkronisasi state bila aktif) dan tidak otomatis dikirim ke Jira —
-  pilih tiket BAU/TDBU dulu, lalu tekan tombol kirim secara eksplisit. Tombol
+  (ikut sinkronisasi state bila aktif) dan tidak otomatis dikirim ke Jira.
+  Entri tanpa kode tiket Jira — tugas catatan yang selesai, rutinitas, atau
+  event kalender — memakai tombol 🏢 di baris log untuk pilih tiket BAU/TDBU,
+  lalu tombol kirim secara eksplisit. Tombol
   **Salin**
   menyalin log satu hari sebagai teks siap tempel ke worklog Jira, laporan
   harian, atau standup. Log bersifat riwayat tersendiri: membersihkan bagian

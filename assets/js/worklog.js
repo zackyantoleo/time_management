@@ -470,14 +470,12 @@ function renderWorklog() {
         };
         li.append(send);
       }
-      // Tombol 🏢: pilih/ganti topik BAU untuk entri tanpa key eksplisit.
-      // Pilihan diingat sebagai alias teks → entri berulang (rutinitas) cukup
-      // dipilihkan sekali.
-      // Calendar event tidak auto-match ke BAU dan tidak mendapat tombol push
-      // sampai user memilih tiket TDBU secara eksplisit.
-      const pilihBauKalender = e.priority === "kalender" && !e.jiraLogged &&
-        jira.bau && Array.isArray(jira.bau.items) && jira.bau.items.length;
-      if (pilihBauKalender) {
+      // Tombol 🏢: pilih/ganti topik BAU untuk entri tanpa key eksplisit
+      // (tugas catatan, rutinitas, event kalender). Pilihan diingat sebagai
+      // alias teks → entri berulang (rutinitas) cukup dipilihkan sekali.
+      // Calendar event tidak auto-match ke BAU (lihat `bau` di atas) dan
+      // tidak mendapat tombol push sampai user memilih tiket TDBU.
+      if (bolehKirim && !ticketKey && jira.bau && Array.isArray(jira.bau.items) && jira.bau.items.length) {
         const pick = el("button", "icon-btn" + (bau ? " in-sprint" : ""), "🏢");
         pick.title = bau ? "Topik BAU: " + bau.key + " — " + bau.summary + " (klik untuk ganti)"
           : "Pilih topik BAU untuk worklog ini";
