@@ -423,6 +423,47 @@ function acaraDalamJendela(icsText, from, to, tz) {
   return out;
 }
 
+function descriptionMentionsKey(desc, key) {
+  if (!desc || !key) return false;
+  const raw = typeof desc === "string" ? desc : JSON.stringify(desc);
+  if (raw.includes("/browse/" + key)) return true;
+  try {
+    return new RegExp("\\b" + key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b").test(raw);
+  } catch {
+    return raw.includes(key);
+  }
+}
+
+function asAdfDoc(desc) {
+  if (!desc) return { type: "doc", version: 1, content: [] };
+  if (typeof desc === "string") {
+    const text = desc.trim();
+    return {
+      type: "doc",
+      version: 1,
+      content: text ? [{ type: "paragraph", content: [{ type: "text", text }] }] : [],
+    };
+  }
+  if (desc && desc.type === "doc") {
+    return {
+      type: "doc",
+      version: desc.version || 1,
+      content: Array.isArray(desc.content) ? desc.content.slice() : [],
+    };
+  }
+  return { type: "doc", version: 1, content: [] };
+}
+
+function withDevChip(desc, site, devKey) {
+  const doc = asAdfDoc(desc);
+  const url = String(site || "").replace(/\/+$/, "") + "/browse/" + devKey;
+  doc.content.push({
+    type: "paragraph",
+    content: [{ type: "inlineCard", attrs: { url } }],
+  });
+  return doc;
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
@@ -862,8 +903,9 @@ async function tangani(request, env) {
     };
 
     // POST /pairing-link — unggah SATU pasangan yang sudah dipilih user menjadi
-    // native Jira issue link. Endpoint ini tidak pernah dipanggil matcher/sync.
-    // Idempoten: existing link dibaca sebelum POST dan diverifikasi lagi sesudahnya.
+    // native Jira issue link + chip tiket dev di description tiket QA.
+    // Endpoint ini tidak pernah dipanggil matcher/sync. Idempoten: existing
+    // link/chip dibaca sebelum write dan diverifikasi lagi sesudahnya.
     if (request.method === "POST" && url.pathname === "/pairing-link") {
       let body;
       try { body = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
@@ -877,7 +919,7 @@ async function tangani(request, env) {
       const sf = await sprintFieldId(site, authHeaders);
       if (!sf) return json({ error: "Field Sprint Jira tidak ditemukan; pairing dibatalkan." }, 502);
       const issueUrl = (key) => site + "/rest/api/3/issue/" + encodeURIComponent(key) +
-        "?fields=" + encodeURIComponent("issuelinks," + sf);
+        "?fields=" + encodeURIComponent("issuelinks,description," + sf);
       const bacaIssue = async (key) => {
         const r = await fetch(issueUrl(key), { headers: authHeaders });
         if (!r.ok) return { error: "Jira menolak tiket " + key + " (" + r.status + ").", status: r.status };
@@ -890,11 +932,14 @@ async function tangani(request, env) {
         const other = l.outwardIssue || l.inwardIssue;
         return other && other.key === otherKey;
       });
-      const hasil = (alreadyLinked, linkType) => ({
-        ok: true, linked: true, alreadyLinked, verified: true,
+      const alreadyLinked = linksKe(qa, devKey) || linksKe(dev, qaKey);
+      const alreadyMentioned = descriptionMentionsKey(((qa || {}).fields || {}).description, devKey);
+      const hasil = (alreadyLinkedFlag, alreadyMentionedFlag, linkType) => ({
+        ok: true, linked: true, alreadyLinked: alreadyLinkedFlag,
+        mentioned: true, alreadyMentioned: alreadyMentionedFlag, verified: true,
         qaKey, devKey, linkType,
       });
-      if (linksKe(qa, devKey) || linksKe(dev, qaKey)) return json(hasil(true, "existing"));
+      if (alreadyLinked && alreadyMentioned) return json(hasil(true, true, "existing"));
 
       const sprintAktif = (issue) => new Set(
         ((((issue || {}).fields || {})[sf] || [])
@@ -903,35 +948,58 @@ async function tangani(request, env) {
       );
       const qaSprints = sprintAktif(qa), devSprints = sprintAktif(dev);
       const sprintSama = [...qaSprints].some((id) => devSprints.has(id));
-      if (!sprintSama) {
+      if (!alreadyLinked && !sprintSama) {
         return json({ error: "Tiket QA dan dev tidak berada di active sprint yang sama." }, 409);
       }
 
-      // "Relates" dipilih karena simetris: CATET merekam pasangan, bukan
-      // menyimpulkan arah block/depends yang bisa salah secara semantik.
-      const typeR = await fetch(site + "/rest/api/3/issueLinkType", { headers: authHeaders });
-      if (!typeR.ok) return json({ error: "Gagal membaca tipe issue link Jira (" + typeR.status + ")." }, 502);
-      const types = (await typeR.json()).issueLinkTypes || [];
-      const relate = types.find((t) => /^relates?$/i.test(t.name || "")) ||
-        types.find((t) => /^relates?\s+to$/i.test(t.outward || "") && /^relates?\s+to$/i.test(t.inward || ""));
-      if (!relate || !relate.id) return json({ error: "Tipe issue link Relates tidak tersedia di Jira." }, 409);
+      let linkType = alreadyLinked ? "existing" : "Relates";
+      let latestQa = qa;
+      if (!alreadyLinked) {
+        // "Relates" dipilih karena simetris: CATET merekam pasangan, bukan
+        // menyimpulkan arah block/depends yang bisa salah secara semantik.
+        const typeR = await fetch(site + "/rest/api/3/issueLinkType", { headers: authHeaders });
+        if (!typeR.ok) return json({ error: "Gagal membaca tipe issue link Jira (" + typeR.status + ")." }, 502);
+        const types = (await typeR.json()).issueLinkTypes || [];
+        const relate = types.find((t) => /^relates?$/i.test(t.name || "")) ||
+          types.find((t) => /^relates?\s+to$/i.test(t.outward || "") && /^relates?\s+to$/i.test(t.inward || ""));
+        if (!relate || !relate.id) return json({ error: "Tipe issue link Relates tidak tersedia di Jira." }, 409);
 
-      const linkR = await fetch(site + "/rest/api/3/issueLink", {
-        method: "POST",
-        headers: { ...authHeaders, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: { id: String(relate.id) },
-          outwardIssue: { key: qaKey },
-          inwardIssue: { key: devKey },
-        }),
-      });
-      if (!linkR.ok) return json({ error: "Jira menolak issue link (" + linkR.status + "): " + (await linkR.text()).slice(0, 200) }, 502);
+        const linkR = await fetch(site + "/rest/api/3/issueLink", {
+          method: "POST",
+          headers: { ...authHeaders, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: { id: String(relate.id) },
+            outwardIssue: { key: qaKey },
+            inwardIssue: { key: devKey },
+          }),
+        });
+        if (!linkR.ok) return json({ error: "Jira menolak issue link (" + linkR.status + "): " + (await linkR.text()).slice(0, 200) }, 502);
 
-      const verify = await bacaIssue(qaKey);
-      if (verify.error || !linksKe(verify.issue, devKey)) {
-        return json({ error: "Jira menerima upload tetapi link belum terverifikasi; sync ulang sebelum mencoba lagi." }, 502);
+        const verify = await bacaIssue(qaKey);
+        if (verify.error || !linksKe(verify.issue, devKey)) {
+          return json({ error: "Jira menerima upload tetapi link belum terverifikasi; sync ulang sebelum mencoba lagi." }, 502);
+        }
+        latestQa = verify.issue;
+        linkType = relate.name || "Relates";
       }
-      return json(hasil(false, relate.name || "Relates"));
+
+      if (!alreadyMentioned) {
+        const next = withDevChip(((latestQa || {}).fields || {}).description, site, devKey);
+        const putR = await fetch(site + "/rest/api/3/issue/" + encodeURIComponent(qaKey) + "?notifyUsers=false", {
+          method: "PUT",
+          headers: { ...authHeaders, "Content-Type": "application/json" },
+          body: JSON.stringify({ fields: { description: next } }),
+        });
+        if (!putR.ok) {
+          return json({ error: "Jira menolak description (" + putR.status + "): " + (await putR.text()).slice(0, 200) }, 502);
+        }
+        const verifyDesc = await bacaIssue(qaKey);
+        const desc = ((verifyDesc.issue || {}).fields || {}).description;
+        if (verifyDesc.error || !descriptionMentionsKey(desc, devKey)) {
+          return json({ error: "Jira menerima upload tetapi chip description belum terverifikasi; sync ulang sebelum mencoba lagi." }, 502);
+        }
+      }
+      return json(hasil(alreadyLinked, alreadyMentioned, linkType));
     }
 
     // GET /tickets — tiket terbuka yang di-assign ke pemilik token, plus
