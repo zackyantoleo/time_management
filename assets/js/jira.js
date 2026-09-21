@@ -491,11 +491,48 @@ function warningsUntukSprint(s) {
   if (!s || !s.auto || s.jiraId == null) return [];
   return (jira.depWarnings || []).filter((w) => w.sprintId != null && String(w.sprintId) === String(s.jiraId));
 }
+// Pairing yang sudah dipilih manual tapi belum full di Jira (Relates + chip
+// description) harus tetap tampil — kalau cuma mengandalkan warning
+// qa-ambiguous, baris + tombol Upload hilang tepat saat user butuh klik.
+function pairingPendingUntukSprint(s) {
+  if (!s || !s.auto || s.jiraId == null) return [];
+  const sprintId = String(s.jiraId);
+  const out = [];
+  for (const [qaKey, devKey] of Object.entries(jira.depOverrides || {})) {
+    if (!devKey) continue;
+    const issue = (jira.pairingIssues || []).find((i) => i && i.key === qaKey);
+    if (!issue || issue.sprintId == null || String(issue.sprintId) !== sprintId) continue;
+    const native = depsTiket(qaKey);
+    const mentioned = Array.isArray(issue.mentionedKeys) && issue.mentionedKeys.includes(devKey);
+    const sudah = !!(native && native.source === "jira-native" &&
+      Array.isArray(native.keys) && native.keys.includes(devKey) && mentioned);
+    if (sudah) continue;
+    out.push({
+      key: qaKey,
+      summary: issue.summary || "",
+      sprintId: issue.sprintId,
+      type: "qa-pending-upload",
+      message: "Terpilih " + devKey + " — upload ke Jira untuk Relates + chip di description",
+    });
+  }
+  return out;
+}
+function pairingActionableUntukSprint(s) {
+  const pending = pairingPendingUntukSprint(s);
+  const pendingKeys = new Set(pending.map((p) => p.key));
+  const ambiguous = warningsUntukSprint(s)
+    .filter((w) => w.type === "qa-ambiguous" && !pendingKeys.has(w.key));
+  return pending.concat(ambiguous);
+}
+function pairingCountUntukSprint(s) {
+  const audit = warningsUntukSprint(s).filter((w) => w.type !== "qa-ambiguous").length;
+  return pairingActionableUntukSprint(s).length + audit;
+}
 function renderSprintPairing(s) {
   const warnings = warningsUntukSprint(s);
-  if (!warnings.length) return null;
-  const actionable = warnings.filter((w) => w.type === "qa-ambiguous");
+  const actionable = pairingActionableUntukSprint(s);
   const audit = warnings.filter((w) => w.type !== "qa-ambiguous");
+  if (!actionable.length && !audit.length) return null;
   const wrap = el("div", "pairing-sprint-review");
 
   if (actionable.length) {
@@ -1148,7 +1185,7 @@ function sprintRow(s, sec) {
   row.append(badge);
   const jml = jumlahTugasSprint(s.id);
   row.append(el("span", "jira-status", jml + " tasks"));
-  const pairCount = warningsUntukSprint(s).length;
+  const pairCount = pairingCountUntukSprint(s);
   if (pairCount) {
     row.append(el("span", "pairing-sprint-count", pairCount + " pairing"));
   }
