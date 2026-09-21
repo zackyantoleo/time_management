@@ -1,7 +1,7 @@
 # Proxy Jira untuk Catet (Cloudflare Worker)
 
 Perantara kecil supaya Catet bisa menarik tiket Jira secara otomatis dan
-mengirim worklog, dan membuat issue link pasangan QA↔dev hanya setelah tombol **Upload ke Jira** diklik — Jira Cloud memblokir panggilan langsung dari browser
+mengirim worklog, dan membuat issue link + chip description pasangan QA↔dev hanya setelah tombol **Upload ke Jira** diklik — Jira Cloud memblokir panggilan langsung dari browser
 (CORS), jadi butuh satu "jembatan" yang berjalan di luar browser. Worker ini
 gratis di paket Free Cloudflare (100.000 request/hari — Catet hanya butuh
 ratusan).
@@ -12,11 +12,15 @@ CATET tetap read-only selama sync dan proses pencocokan. Write hanya terjadi saa
 pengguna sudah memilih satu kandidat lalu menekan **Upload ke Jira**. Worker akan:
 
 1. memvalidasi kedua issue key;
-2. memastikan keduanya berada di active sprint yang sama;
-3. menghindari duplicate link;
+2. memastikan keduanya berada di active sprint yang sama (hanya jika Relates
+   belum ada);
+3. menghindari duplicate link dan duplicate chip;
 4. membuat native issue link bertipe **Relates** (simetris, bukan menebak arah
    Blocks/Depends);
-5. membaca tiket QA kembali dan baru melaporkan sukses setelah link terverifikasi.
+5. menempel **chip/button** tiket dev (`inlineCard`) di **description tiket QA**,
+   tanpa menimpa isi description yang sudah ada;
+6. membaca tiket QA kembali dan baru melaporkan sukses setelah link **dan**
+   chip description terverifikasi.
 
 **Keamanan singkat:** API token Jira kamu disimpan sebagai *secret* di
 Cloudflare — tidak pernah ada di browser, di repo, atau di URL. Akses ke Worker

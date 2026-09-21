@@ -31,7 +31,15 @@ assert(jira.includes('async function uploadDependencyKeJira(qaKey, button)'),
 assert(jira.includes('jiraProxy() + "/pairing-link"'), 'upload action must call the dedicated Worker endpoint');
 assert(jira.includes('body: JSON.stringify({ qaKey, devKey })'), 'only the selected QA/dev pair may be uploaded');
 assert(jira.includes('"Upload ke Jira"'), 'selected manual pairing must render an upload button');
+assert(jira.includes('Buat native Relates issue link di Jira dan tempel chip tiket dev di description tiket QA'),
+  'upload tooltip must say the QA description gets a Jira issue chip');
 assert(jira.includes('"✓ Ada di Jira"'), 'native pairing must replace the upload action with verified status');
+assert(jira.includes('Pasangan ini sudah tersimpan sebagai native issue link Jira dan chip di description'),
+  'verified status must cover both Relates link and description chip');
+assert(jira.includes('mentionedKeys.includes(manual)'),
+  'verified status requires the description chip, not only Relates');
+assert(jira.includes('if (d.mentioned)'),
+  'optimistic chip state must wait for Worker confirmation');
 assert(jira.includes('source: "jira-native"'), 'successful upload must be promoted to native Jira source');
 const pilihSource = jira.slice(jira.indexOf('function pilihDependency'), jira.indexOf('function hapusPilihanDependency'));
 assert(!pilihSource.includes('uploadDependencyKeJira'), 'selecting a candidate must not upload automatically');

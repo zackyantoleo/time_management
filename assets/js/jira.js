@@ -418,6 +418,10 @@ async function uploadDependencyKeJira(qaKey, button) {
     const d = await r.json().catch(() => ({}));
     if (!r.ok || d.ok === false || !d.verified) throw new Error(d.error || ("HTTP " + r.status));
     jira.deps[qaKey] = { keys: [devKey], done: false, source: "jira-native" };
+    if (d.mentioned) {
+      const pair = (jira.pairingIssues || []).find((i) => i && i.key === qaKey);
+      if (pair) pair.mentionedKeys = [...new Set([...(pair.mentionedKeys || []), devKey])];
+    }
     delete jira.depSuggestions[qaKey];
     jira.depWarnings = (jira.depWarnings || []).filter((w) => w.key !== qaKey && w.key !== devKey);
     saveJira(true);
@@ -434,8 +438,10 @@ function dependencyReview(key) {
   const sug = suggestionTiket(key), manual = jira.depOverrides[key];
   if (!sug && !manual) return null;
   const native = depsTiket(key);
+  const pair = (jira.pairingIssues || []).find((i) => i && i.key === key);
+  const mentioned = !!(pair && Array.isArray(pair.mentionedKeys) && pair.mentionedKeys.includes(manual));
   const sudahNative = !!(manual && native && native.source === "jira-native" &&
-    Array.isArray(native.keys) && native.keys.includes(manual));
+    Array.isArray(native.keys) && native.keys.includes(manual) && mentioned);
   const box = el("div", "dep-review");
   if (sug && Array.isArray(sug.candidates)) {
     box.append(el("span", "dep-review-label", "Pilih tiket dev"));
@@ -451,11 +457,11 @@ function dependencyReview(key) {
     box.append(el("span", "dep-review-label", "Terpilih: " + manual));
     if (sudahNative) {
       const synced = el("span", "effort-badge dep-ready", "✓ Ada di Jira");
-      synced.title = "Pasangan ini sudah tersimpan sebagai native issue link Jira";
+      synced.title = "Pasangan ini sudah tersimpan sebagai native issue link Jira dan chip di description";
       box.append(synced);
     } else {
       const upload = el("button", "btn-solid dep-upload", "Upload ke Jira");
-      upload.title = "Buat native Relates issue link di Jira untuk pasangan ini";
+      upload.title = "Buat native Relates issue link di Jira dan tempel chip tiket dev di description tiket QA";
       upload.onclick = () => uploadDependencyKeJira(key, upload);
       box.append(upload);
     }

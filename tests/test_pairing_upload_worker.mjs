@@ -7,9 +7,17 @@ await copyFile(source, temp);
 const { default: worker } = await import("file://" + temp + "?v=" + Date.now());
 
 const sprint = { id: 77, state: "active", name: "Sprint 77" };
+const existingDoc = {
+  type: "doc",
+  version: 1,
+  content: [{ type: "paragraph", content: [{ type: "text", text: "Existing QA notes" }] }],
+};
 let linked = false;
+let mentioned = false;
 let linkPosts = 0;
+let descriptionPuts = 0;
 let postedPayload = null;
+let descriptionPayload = null;
 const realFetch = globalThis.fetch;
 
 globalThis.fetch = async (url, init = {}) => {
@@ -19,19 +27,41 @@ globalThis.fetch = async (url, init = {}) => {
       { id: "customfield_10020", schema: { custom: "com.pyxis.greenhopper.jira:gh-sprint" } },
     ]), { status: 200 });
   }
+  if (u.includes("/rest/api/3/issue/QA-101") && (init.method || "GET") === "PUT") {
+    descriptionPuts++;
+    descriptionPayload = JSON.parse(init.body);
+    mentioned = true;
+    return new Response(null, { status: 204 });
+  }
   if (u.includes("/rest/api/3/issue/QA-101?")) {
     return new Response(JSON.stringify({
       key: "QA-101",
       fields: {
         customfield_10020: [sprint],
         issuelinks: linked ? [{ outwardIssue: { key: "DEV-201" } }] : [],
+        description: mentioned
+          ? {
+            type: "doc",
+            version: 1,
+            content: [
+              ...existingDoc.content,
+              {
+                type: "paragraph",
+                content: [{
+                  type: "inlineCard",
+                  attrs: { url: "https://jira.test/browse/DEV-201" },
+                }],
+              },
+            ],
+          }
+          : existingDoc,
       },
     }), { status: 200 });
   }
   if (u.includes("/rest/api/3/issue/DEV-201?")) {
     return new Response(JSON.stringify({
       key: "DEV-201",
-      fields: { customfield_10020: [sprint], issuelinks: [] },
+      fields: { customfield_10020: [sprint], issuelinks: [], description: null },
     }), { status: 200 });
   }
   if (u.endsWith("/rest/api/3/issueLinkType")) {
@@ -72,6 +102,8 @@ try {
     ok: true,
     linked: true,
     alreadyLinked: false,
+    mentioned: true,
+    alreadyMentioned: false,
     verified: true,
     qaKey: "QA-101",
     devKey: "DEV-201",
@@ -83,15 +115,35 @@ try {
     outwardIssue: { key: "QA-101" },
     inwardIssue: { key: "DEV-201" },
   }, "Jira payload must use the safe symmetric Relates link type");
+  assert.equal(descriptionPuts, 1, "explicit click must also write the QA description once");
+  const putDesc = descriptionPayload && descriptionPayload.fields && descriptionPayload.fields.description;
+  assert.equal(putDesc && putDesc.type, "doc");
+  const putRaw = JSON.stringify(putDesc);
+  assert.match(putRaw, /Existing QA notes/, "existing description content must be preserved");
+  assert.match(putRaw, /"type":"inlineCard"/, "paired dev ticket must be a Jira issue chip/button");
+  assert.match(putRaw, /https:\/\/jira\.test\/browse\/DEV-201/, "chip must point at the paired dev ticket");
 
   const second = await worker.fetch(req({ qaKey: "QA-101", devKey: "DEV-201" }), env);
   assert.equal(second.status, 200);
   const secondBody = await second.json();
   assert.equal(secondBody.alreadyLinked, true, "repeated upload must be idempotent");
+  assert.equal(secondBody.alreadyMentioned, true, "existing description chip must not be rewritten");
   assert.equal(secondBody.verified, true);
   assert.equal(linkPosts, 1, "idempotent retry must not create a duplicate Jira link");
+  assert.equal(descriptionPuts, 1, "idempotent retry must not rewrite the description");
+
+  mentioned = false;
+  const describeOnly = await worker.fetch(req({ qaKey: "QA-101", devKey: "DEV-201" }), env);
+  assert.equal(describeOnly.status, 200);
+  const describeBody = await describeOnly.json();
+  assert.equal(describeBody.alreadyLinked, true);
+  assert.equal(describeBody.alreadyMentioned, false);
+  assert.equal(describeBody.mentioned, true);
+  assert.equal(linkPosts, 1, "description backfill must not create another Relates link");
+  assert.equal(descriptionPuts, 2, "already-linked pair still posts the missing description chip");
 
   linked = false;
+  mentioned = false;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, init = {}) => {
     if (String(url).includes("/rest/api/3/issue/DEV-201?")) {
@@ -105,8 +157,9 @@ try {
   const crossSprint = await worker.fetch(req({ qaKey: "QA-101", devKey: "DEV-201" }), env);
   assert.equal(crossSprint.status, 409, "tickets from different active sprints must not be linked");
   assert.equal(linkPosts, 1);
+  assert.equal(descriptionPuts, 2, "cross-sprint pairs must not write the description");
 
-  console.log(JSON.stringify({ ok: true, linkPosts }));
+  console.log(JSON.stringify({ ok: true, linkPosts, descriptionPuts }));
 } finally {
   globalThis.fetch = realFetch;
   await unlink(temp).catch(() => {});
