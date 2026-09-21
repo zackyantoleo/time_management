@@ -23,14 +23,22 @@ assert(pairingRender > editGate, 'pairing review must render only after the spri
 assert(!sprintRowSource.slice(0, editGate).includes('renderSprintPairing(s)'),
   'collapsed sprint row must not render pairing content');
 assert(!jira.includes('const pairWarn = renderPairingWarnings();'), 'global pairing section must be removed from Jira inbox');
-assert(jira.includes('const actionable = warnings.filter((w) => w.type === "qa-ambiguous")'),
-  'ambiguous QA tickets must be prioritized separately inside a sprint');
+assert(jira.includes('function pairingActionableUntukSprint(s)'),
+  'selected pairings must stay visible even after the ambiguous warning is cleared');
+assert(jira.includes('depOverrides'), 'pending manual overrides must feed the pairing action list');
+assert(jira.includes('qa-pending-upload') || jira.includes('pending upload') || jira.includes('pairingActionableUntukSprint'),
+  'pending selected pairings must be modeled for the sprint action card');
 assert(jira.includes('document.createElement("details")'), 'large missing-pair audit must remain collapsible');
 assert(jira.includes('async function uploadDependencyKeJira(qaKey, button)'),
   'manual pairing must expose an explicit Jira upload action');
 assert(jira.includes('jiraProxy() + "/pairing-link"'), 'upload action must call the dedicated Worker endpoint');
 assert(jira.includes('body: JSON.stringify({ qaKey, devKey })'), 'only the selected QA/dev pair may be uploaded');
 assert(jira.includes('"Upload ke Jira"'), 'selected manual pairing must render an upload button');
+const renderPairing = jira.slice(jira.indexOf('function renderSprintPairing'), jira.indexOf('function depBadge'));
+assert(renderPairing.includes('pairingActionableUntukSprint(s)'),
+  'sprint pairing card must render pending selected pairs, not only remaining warnings');
+assert(jira.includes('const pairCount = pairingCountUntukSprint(s)'),
+  'sprint header pairing count must include pending selected pairs awaiting upload');
 assert(jira.includes('Buat native Relates issue link di Jira dan tempel chip tiket dev di description tiket QA'),
   'upload tooltip must say the QA description gets a Jira issue chip');
 assert(jira.includes('"✓ Ada di Jira"'), 'native pairing must replace the upload action with verified status');
