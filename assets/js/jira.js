@@ -417,7 +417,15 @@ async function uploadDependencyKeJira(qaKey, button) {
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok || d.ok === false || !d.verified) throw new Error(d.error || ("HTTP " + r.status));
-    jira.deps[qaKey] = { keys: [devKey], done: false, source: "jira-native" };
+    // Shape harus cocok dengan depBadge: ready=false tanpa wait[] meledak di
+    // wait[0] → renderJiraInbox sudah kosongkan #jiraview → halaman blank.
+    jira.deps[qaKey] = {
+      keys: [devKey],
+      ready: false,
+      done: false,
+      source: "jira-native",
+      wait: [{ key: devKey, status: "?" }],
+    };
     if (d.mentioned) {
       const pair = (jira.pairingIssues || []).find((i) => i && i.key === qaKey);
       if (pair) pair.mentionedKeys = [...new Set([...(pair.mentionedKeys || []), devKey])];
@@ -559,13 +567,20 @@ function renderSprintPairing(s) {
 // item sprint. Bisa diklik → buka tiket dev-nya di Jira (kalau key & site ada;
 // data lama tanpa `keys` jatuh ke span biasa sampai sinkron berikutnya).
 function depBadge(dep) {
-  const kelas = dep.ready ? "effort-badge dep-ready" : "effort-badge dep-wait";
-  const label = dep.ready ? "✅ ready to test" : "⏳ dev: " + dep.wait[0].key;
-  const key = dep.ready ? (dep.keys || [])[0] : dep.wait[0].key;
-  const title = dep.ready
-    ? "Tiket dev" + (dep.keys && dep.keys.length ? " " + dep.keys.join(", ") : "") +
+  if (!dep || typeof dep !== "object") return null;
+  const wait = Array.isArray(dep.wait) ? dep.wait.filter((x) => x && x.key) : [];
+  const keys = Array.isArray(dep.keys) ? dep.keys.filter(Boolean) : [];
+  const ready = !!dep.ready;
+  const key = ready ? keys[0] : ((wait[0] && wait[0].key) || keys[0] || null);
+  if (!key && !ready) return null;
+  const kelas = ready ? "effort-badge dep-ready" : "effort-badge dep-wait";
+  const label = ready ? "✅ ready to test" : "⏳ dev: " + (key || "?");
+  const title = ready
+    ? "Tiket dev" + (keys.length ? " " + keys.join(", ") : "") +
       " sudah Done — siap dites, otomatis masuk “Do today”."
-    : "Menunggu " + dep.wait.map((x) => x.key + " (" + x.status + ")").join(", ");
+    : "Menunggu " + (wait.length
+      ? wait.map((x) => x.key + " (" + (x.status || "?") + ")").join(", ")
+      : (key || "dev"));
   if (key && jiraSite()) {
     const a = el("a", kelas, label);
     a.href = jiraUrl(key); a.target = "_blank"; a.rel = "noopener";
@@ -1254,7 +1269,8 @@ function sprintRow(s, sec) {
       // Status tiket dev (ready to test / menunggu dev) — sama seperti di Board.
       const key = (t.text.match(JIRA_RE) || [null])[0];
       const dep = t.status !== "selesai" ? depsTugas(t) : null;
-      if (dep) li.append(depBadge(dep));
+      const badge = dep ? depBadge(dep) : null;
+      if (badge) li.append(badge);
       else if (key) {
         const warn = warningTiket(key);
         if (warn) li.append(warningBadge(warn));
@@ -1479,7 +1495,8 @@ function renderJiraInbox() {
       row.append(el("span", "jira-summary", item.summary));
       if (item.status) row.append(el("span", "jira-status", item.status));
       const dep = depsTiket(item.key);
-      if (dep) row.append(depBadge(dep));
+      const badge = dep ? depBadge(dep) : null;
+      if (badge) row.append(badge);
       else {
         const warn = warningTiket(item.key);
         if (warn) row.append(warningBadge(warn));

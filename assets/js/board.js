@@ -310,7 +310,8 @@ function taskRow(t) {
     }
     // Status tiket dev (QA menunggu / siap dites) atau warning pasangan hilang.
     const dep = typeof depsTugas === "function" ? depsTugas(t) : null;
-    if (dep) meta.append(depBadge(dep));
+    const badge = dep && typeof depBadge === "function" ? depBadge(dep) : null;
+    if (badge) meta.append(badge);
     else if (typeof warningTiket === "function") {
       const key = (t.text.match(JIRA_RE) || [null])[0];
       const warn = key ? warningTiket(key) : null;
