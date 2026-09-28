@@ -28,9 +28,9 @@ assert(sync.includes('delete j.readyNotifications'),
   'device-local edge history must not be overwritten by cloud snapshot conflicts');
 assert(worker.includes('const doneAt = done ? (f.resolutiondate || f.statuscategorychangedate || null) : null;'),
   'Worker must expose authoritative Jira Done time for readiness retention');
-assert(jira.includes('readyAt: f.deps.every((d) => d.done)'),
-  'native dependency readiness must carry the final Done timestamp');
-assert(jira.includes('CatetDependencyMatcher.isQa(qaMeta)'),
+assert(jira.includes('const stamps = keys.map((k) => byKey.get(k)).filter((d) => d && d.done).map((d) => d.doneAt).filter(Boolean)'),
+  'native dependency readiness must carry the final Done timestamp from feed dep meta');
+assert(jira.includes('CatetDependencyMatcher.isQa(issue)'),
   'native Jira links must create readiness only for tickets classified as QA');
 assert(matcher.includes('doneAt: dev.doneAt || null'),
   'inferred dependency readiness must preserve Jira Done timestamp');
