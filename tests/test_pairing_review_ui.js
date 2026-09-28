@@ -44,11 +44,19 @@ assert(jira.includes('Buat native Relates issue link di Jira dan tempel chip tik
 assert(jira.includes('"✓ Ada di Jira"'), 'native pairing must replace the upload action with verified status');
 assert(jira.includes('Pasangan ini sudah tersimpan sebagai native issue link Jira dan chip di description'),
   'verified status must cover both Relates link and description chip');
-assert(jira.includes('mentionedKeys.includes(manual)'),
-  'verified status requires the description chip, not only Relates');
-assert(jira.includes('if (d.mentioned)'),
-  'optimistic chip state must wait for Worker confirmation');
+assert(jira.includes('function pairingSudahDiJira'),
+  'upload-done state must live in one helper shared by pending list and review UI');
+assert(jira.includes('pair.linkedKeys = [...new Set([...(pair.linkedKeys || []), devKey])]'),
+  'successful upload must stamp linkedKeys optimistically');
+assert(jira.includes('pair.mentionedKeys = [...new Set([...(pair.mentionedKeys || []), devKey])]'),
+  'successful upload must stamp mentionedKeys optimistically');
 assert(jira.includes('source: "jira-native"'), 'successful upload must be promoted to native Jira source');
+assert(jira.includes('pairingMilikSaya(qaKey)'),
+  'pending upload rows must drop tickets not assigned to the current user');
+assert(jira.includes('pairingSudahDiJira(qaKey, devKey)'),
+  'pending upload rows clear only when link + description chip are both present');
+assert(jira.includes('for (const issue of jira.pairingIssues || [])'),
+  'native deps after sync must be built from pairingIssues metadata, not bare feed items');
 const pilihSource = jira.slice(jira.indexOf('function pilihDependency'), jira.indexOf('function hapusPilihanDependency'));
 assert(!pilihSource.includes('uploadDependencyKeJira'), 'selecting a candidate must not upload automatically');
 assert(!jira.includes('row.append(el("span", "jira-summary", w.summary || ""), warningBadge(w));'),

@@ -357,6 +357,24 @@ function kunciTiketAssigned() {
     ? CatetDependencyMatcher.assignedKeysFromIssues(jira.pairingIssues)
     : null;
 }
+// Tiket pairing "milik saya": assignedToMe dari Worker. Tanpa flag (cache
+// lama) anggap semua boleh direview — filterAssignedReview(null) sama.
+function pairingMilikSaya(key) {
+  const assignedKeys = kunciTiketAssigned();
+  return !assignedKeys || assignedKeys.has(key);
+}
+// Pairing manual sudah full di Jira bila issue link + chip description
+// keduanya ada. Jangan andalkan jira.deps.source === "jira-native": feed
+// assignee tidak selalu bawa issueType/labels, isQa gagal, dan matcher
+// mengisi source jira-link / jira-description — tombol Upload stuck.
+function pairingSudahDiJira(qaKey, devKey) {
+  if (!qaKey || !devKey) return false;
+  const pair = (jira.pairingIssues || []).find((i) => i && i.key === qaKey);
+  if (!pair) return false;
+  const linked = Array.isArray(pair.linkedKeys) && pair.linkedKeys.includes(devKey);
+  const mentioned = Array.isArray(pair.mentionedKeys) && pair.mentionedKeys.includes(devKey);
+  return !!(linked && mentioned);
+}
 function terapkanHasilPasangan(result, nativeDeps) {
   const next = { ...(nativeDeps || {}) };
   const nativeKeys = new Set(Object.keys(next));
@@ -426,9 +444,13 @@ async function uploadDependencyKeJira(qaKey, button) {
       source: "jira-native",
       wait: [{ key: devKey, status: "?" }],
     };
-    if (d.mentioned) {
-      const pair = (jira.pairingIssues || []).find((i) => i && i.key === qaKey);
-      if (pair) pair.mentionedKeys = [...new Set([...(pair.mentionedKeys || []), devKey])];
+    // Worker verified = Relates + chip. Stempel keduanya di cache lokal supaya
+    // pairingSudahDiJira true sebelum sync berikutnya (kalau cuma mentioned,
+    // tombol Upload muncul lagi saat re-render).
+    const pair = (jira.pairingIssues || []).find((i) => i && i.key === qaKey);
+    if (pair) {
+      pair.linkedKeys = [...new Set([...(pair.linkedKeys || []), devKey])];
+      pair.mentionedKeys = [...new Set([...(pair.mentionedKeys || []), devKey])];
     }
     delete jira.depSuggestions[qaKey];
     jira.depWarnings = (jira.depWarnings || []).filter((w) => w.key !== qaKey && w.key !== devKey);
@@ -445,11 +467,7 @@ async function uploadDependencyKeJira(qaKey, button) {
 function dependencyReview(key) {
   const sug = suggestionTiket(key), manual = jira.depOverrides[key];
   if (!sug && !manual) return null;
-  const native = depsTiket(key);
-  const pair = (jira.pairingIssues || []).find((i) => i && i.key === key);
-  const mentioned = !!(pair && Array.isArray(pair.mentionedKeys) && pair.mentionedKeys.includes(manual));
-  const sudahNative = !!(manual && native && native.source === "jira-native" &&
-    Array.isArray(native.keys) && native.keys.includes(manual) && mentioned);
+  const sudahNative = !!(manual && pairingSudahDiJira(key, manual));
   const box = el("div", "dep-review");
   if (sug && Array.isArray(sug.candidates)) {
     box.append(el("span", "dep-review-label", "Pilih tiket dev"));
@@ -502,19 +520,17 @@ function warningsUntukSprint(s) {
 // Pairing yang sudah dipilih manual tapi belum full di Jira (Relates + chip
 // description) harus tetap tampil — kalau cuma mengandalkan warning
 // qa-ambiguous, baris + tombol Upload hilang tepat saat user butuh klik.
+// Hanya tiket assigned ke current user: depOverrides bisa berisi key sprint
+// orang lain (pilih manual / sync cloud) dan jangan spam kartu pairing.
 function pairingPendingUntukSprint(s) {
   if (!s || !s.auto || s.jiraId == null) return [];
   const sprintId = String(s.jiraId);
   const out = [];
   for (const [qaKey, devKey] of Object.entries(jira.depOverrides || {})) {
-    if (!devKey) continue;
+    if (!devKey || !pairingMilikSaya(qaKey)) continue;
     const issue = (jira.pairingIssues || []).find((i) => i && i.key === qaKey);
     if (!issue || issue.sprintId == null || String(issue.sprintId) !== sprintId) continue;
-    const native = depsTiket(qaKey);
-    const mentioned = Array.isArray(issue.mentionedKeys) && issue.mentionedKeys.includes(devKey);
-    const sudah = !!(native && native.source === "jira-native" &&
-      Array.isArray(native.keys) && native.keys.includes(devKey) && mentioned);
-    if (sudah) continue;
+    if (pairingSudahDiJira(qaKey, devKey)) continue;
     out.push({
       key: qaKey,
       summary: issue.summary || "",
@@ -635,24 +651,9 @@ async function syncJira(manual) {
     }
     // Relasi eksplisit Jira tetap source of truth. Matcher deterministic hanya
     // mengisi tiket yang belum punya issue link/key di description.
-    const nativeDeps = {};
-    for (const f of feed) {
-      const qaMeta = {
-        summary: f.summary || "", issueType: f.issueType || "",
-        labels: Array.isArray(f.labels) ? f.labels : [],
-      };
-      if (Array.isArray(f.deps) && f.deps.length && CatetDependencyMatcher.isQa(qaMeta)) {
-        nativeDeps[f.key] = {
-          ready: f.deps.every((d) => d.done),
-          readyAt: f.deps.every((d) => d.done)
-            ? f.deps.map((d) => d.doneAt).filter(Boolean).sort().at(-1) || null
-            : null,
-          keys: f.deps.map((d) => d.key),
-          wait: f.deps.filter((d) => !d.done).map((d) => ({ key: d.key, status: d.status })),
-          source: "jira-native",
-        };
-      }
-    }
+    // Candidate pool pairingIssues punya linkedKeys + mentionedKeys + issueType;
+    // feed assignee items sengaja ringkas (tanpa issueType/labels) jadi isQa
+    // di items saja sering false — native harus dibangun dari pairingIssues.
     jira.pairingIssues = Array.isArray(data.pairingIssues) ? data.pairingIssues : [];
     // Worker baru mengirim assignedToMe. Worker lama / cache tanpa flag
     // distempel dari feed assignee=currentUser() supaya list pairing tidak
@@ -664,6 +665,43 @@ async function syncJira(manual) {
           ? issue
           : { ...issue, assignedToMe: assignedFeedKeys.has(issue && issue.key) }
       );
+    }
+    const feedByKey = new Map(feed.map((f) => [f.key, f]));
+    const nativeDeps = {};
+    for (const issue of jira.pairingIssues || []) {
+      if (!issue || !issue.key || !CatetDependencyMatcher.isQa(issue)) continue;
+      const linked = Array.isArray(issue.linkedKeys) ? issue.linkedKeys.filter(Boolean) : [];
+      const mentioned = Array.isArray(issue.mentionedKeys) ? issue.mentionedKeys.filter(Boolean) : [];
+      // Native = irisan link ∩ chip description (sama syarat upload verified).
+      // Fallback: feed.deps bila irisan kosong tapi feed masih bawa deps.
+      let keys = linked.filter((k) => mentioned.includes(k));
+      const feedItem = feedByKey.get(issue.key);
+      if (!keys.length && feedItem && Array.isArray(feedItem.deps) && feedItem.deps.length) {
+        keys = feedItem.deps.map((d) => d && d.key).filter(Boolean);
+      }
+      if (!keys.length) continue;
+      const depMeta = (feedItem && Array.isArray(feedItem.deps) ? feedItem.deps : [])
+        .filter((d) => d && keys.includes(d.key));
+      const byKey = new Map(depMeta.map((d) => [d.key, d]));
+      nativeDeps[issue.key] = {
+        ready: keys.every((k) => {
+          const d = byKey.get(k);
+          return d ? !!d.done : false;
+        }),
+        readyAt: (() => {
+          const stamps = keys.map((k) => byKey.get(k)).filter((d) => d && d.done).map((d) => d.doneAt).filter(Boolean);
+          return stamps.length ? stamps.sort().at(-1) : null;
+        })(),
+        keys,
+        wait: keys.filter((k) => {
+          const d = byKey.get(k);
+          return !(d && d.done);
+        }).map((k) => {
+          const d = byKey.get(k);
+          return { key: k, status: (d && d.status) || "?" };
+        }),
+        source: "jira-native",
+      };
     }
     hitungPasangan(nativeDeps);
     rekonsiliasiReadyNotifications(feed);
