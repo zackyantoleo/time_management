@@ -424,7 +424,7 @@ function renderWorklog() {
       const dot = el("span", "log-dot p-" + e.priority);
       dot.title = "prioritas " + PR_LABEL[e.priority];
       li.append(dot);
-      const ltext = el("span", "log-text");
+      const ltext = el("div", "log-text");
       ltext.append(linkify(e.text));
       li.append(ltext);
       // Tujuan worklog: key tiket eksplisit di teks, atau topik BAU (pilihan
@@ -440,6 +440,20 @@ function renderWorklog() {
       const target = ticketKey || (bau && bau.key) || null;
       const bolehKirim = !!jiraProxy() && e.priority !== "sprint" && !e.jiraLogged;
       li.append(minsBadge(e, bolehKirim && !!target));
+      let note = null;
+      if (bolehKirim && target) {
+        const editor = el("details", "log-note");
+        editor.append(el("summary", null, "Note"));
+        note = el("textarea", "log-note-input");
+        note.setAttribute("aria-label", "Worklog note");
+        note.maxLength = 2000;
+        note.rows = 3;
+        note.value = typeof e.jiraNote === "string" ? e.jiraNote : e.text;
+        note.oninput = () => { e.jiraNote = note.value; saveWorklog(); };
+        editor.append(note);
+        editor.append(el("p", "count", "Catatan ini dikirim ke Jira. Judul task tetap sama. Maksimal 2.000 karakter."));
+        ltext.append(editor);
+      }
       if (jiraProxy() && target && e.jiraLogged) {
         li.append(el("span", "log-mins mono", "✓ Jira"));
       } else if (jiraProxy() && target) {
@@ -450,6 +464,7 @@ function renderWorklog() {
           " — durasi: " + (e.mins ? "±" + Math.round(e.mins) + " mnt" : "1 mnt minimum, klik badge menit untuk mengubah");
         send.onclick = async () => {
           send.disabled = true; send.textContent = "sending…";
+          note.disabled = true;
           try {
             const r = await fetch(jiraProxy() + "/worklog", {
               method: "POST",
@@ -457,14 +472,15 @@ function renderWorklog() {
               body: JSON.stringify({
                 key: target, started: e.ts,
                 timeSpentSeconds: Math.max(60, (e.mins || 0) * 60),
-                comment: e.text,
+                comment: note.value,
               }),
             });
             const data = await r.json().catch(() => ({}));
-            if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+            if (!r.ok || data.ok !== true) throw new Error(data.error || ("HTTP " + r.status));
             e.jiraLogged = true; saveWorklog(); render();
           } catch (err) {
             alert("Gagal mengirim worklog ke " + target + ":\n" + (err && err.message ? err.message : "koneksi"));
+            note.disabled = false;
             send.disabled = false; send.textContent = label;
           }
         };

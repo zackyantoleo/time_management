@@ -605,6 +605,9 @@
   .log-entry .icon-btn { width: 24px; height: 24px; font-size: 12px; align-self: center; }
   /* input inline pengganti badge menit saat durasi sedang diedit */
   .log-mins-input { width: 5.5em; font-size: 12px; padding: 1px 6px; }
+  .log-note { margin-top: 6px; }
+  .log-note summary { cursor: pointer; color: var(--accent); font-size: 12px; min-height: 24px; }
+  .log-note-input { box-sizing: border-box; width: 100%; margin-top: 4px; padding: 8px; resize: vertical; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
 
   /* Today's meetings (Google Calendar) */
   .cal-row { display: flex; align-items: baseline; gap: 10px; padding: 6px 0; border-top: 1px dashed var(--line); }
