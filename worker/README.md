@@ -22,17 +22,17 @@ pengguna sudah memilih satu kandidat lalu menekan **Upload ke Jira**. Worker aka
 6. membaca tiket QA kembali dan baru melaporkan sukses setelah link **dan**
    chip description terverifikasi.
 
-**Keamanan singkat:** API token Jira kamu disimpan sebagai *secret* di
-Cloudflare — tidak pernah ada di browser, di repo, atau di URL. Akses ke Worker
-dibatasi berdasarkan **Origin**: hanya halaman dari origin yang diizinkan
-(GitHub Pages aplikasi ini, `localhost` untuk dev, dan `file://`) yang boleh
-memakainya. Origin dikirim & dikunci oleh browser sehingga halaman di origin
-lain tak bisa memalsukannya — jadi tidak ada kunci rahasia yang perlu ditempel
-di aplikasi, dan perangkat baru langsung tersinkron begitu dibuka. (Origin
-tambahan bisa diset lewat variabel `ALLOWED_ORIGINS`, dipisah koma.) Walau
-begitu, API token = akses penuh akun Jira-mu — pastikan ini tidak melanggar
-kebijakan IT kantor, dan cabut token kapan saja dari halaman yang sama tempat
-membuatnya.
+**Keamanan singkat:** API token Jira disimpan sebagai secret Cloudflare atau
+kredensial akun di D1, bukan di frontend/repo. Aplikasi memakai access code
+per pengguna. Allowlist **Origin hanya lapisan CORS browser**, bukan login:
+klien non-browser dapat mengirim header Origin sendiri. Legacy `default`
+tanpa kode masih ada bila `REQUIRE_AUTH` belum aktif. Verifikasi konfigurasi
+live sebelum menyimpulkan endpoint publik aman; migrasikan perangkat dan
+siapkan rollback sebelum mengaktifkan `REQUIRE_AUTH = "1"`.
+
+Origin tambahan diatur melalui `ALLOWED_ORIGINS`. API token tetap membawa
+izin akun Jira pemiliknya; pastikan kebijakan kantor mengizinkan integrasi
+ini dan gunakan izin minimum yang diperlukan.
 
 ## Langkah deploy (±10 menit, sekali saja)
 
@@ -76,13 +76,11 @@ Catat URL yang tercetak, bentuknya:
 > selain GitHub Pages default, tambahkan origin-nya lewat variabel
 > `ALLOWED_ORIGINS` di Worker.
 
-### 4. Selesai — tidak perlu menyambungkan apa pun
-Karena alamat proxy sudah tertanam di aplikasi dan akses dibatasi per-Origin
-(bukan kunci), tiap perangkat yang membuka aplikasi langsung tersinkron —
-**tidak ada** alamat proxy atau kunci yang perlu ditempel. Tiket assigned-mu
-muncul dan diperbarui otomatis tiap 5 menit selama Catet terbuka, dan entri
-Log kerja yang memuat kode tiket punya tombol **→ Jira** untuk mengirim
-worklog (durasi diambil dari waktu fokus).
+### 4. Hubungkan akun
+Alamat proxy default sudah tertanam. Buat kode akses melalui admin/self-service
+seperti bagian multi-user, lalu sign in di Settings pada tiap perangkat.
+Tiket assigned diperbarui tiap 5 menit selama Catet terbuka; tombol **→ Jira**
+mengirim worklog hanya setelah aksi pengguna.
 
 ## Sinkronisasi antar perangkat (opsional, gratis)
 
@@ -214,8 +212,27 @@ Endpoint `POST /signup` di-origin-gate (hanya dari app) + butuh passphrase itu.
 | POST | `/transition` | `{key, target:"inprogress"\|"done"}` → geser status tiket (tak pernah mundur) — In Progress saat difokuskan, Done saat diselesaikan |
 | GET/PUT | `/state` | Simpan/ambil state Catet untuk sinkron antar perangkat (butuh KV) |
 
-Semuanya hanya bisa diakses dari Origin yang diizinkan (lihat "Keamanan
-singkat" di atas) — tanpa kunci rahasia.
+Endpoint biasa memeriksa Origin, tetapi autentikasi data membutuhkan access
+code dan konfigurasi `REQUIRE_AUTH`. Origin bukan pengganti autentikasi.
+
+## Pengiriman worklog aman
+
+Client baru mengirim `entryId` stabil bersama key, started, durasi detik integer,
+dan note. Worker mencatat claim atomik di tabel additive `worklog_requests`
+(D1, dibuat lewat auto-schema existing), menempel property Jira `catet.entry`
+berupa hash, lalu membaca worklog kembali sebelum memberi `ok` + `worklogId`.
+
+Request ID sama dengan payload sama tidak POST lagi. Isi berbeda ditolak 409.
+Jika respons POST hilang, retry merekonsiliasi property Jira, maksimal 10
+halaman. Bila hasil belum pasti, Worker menolak pengiriman baru, bukan menebak
+request pertama gagal. Operator perlu memeriksa Jira untuk request ambigu
+permanen; tidak ada expiry lock otomatis yang dapat menduplikasi remote write.
+
+Client lama tanpa `entryId` tetap dapat mengirim dengan read-back, tetapi tidak
+memiliki jaminan dedupe lintas retry. Client baru butuh D1 untuk safe send.
+Deploy Worker dahulu, frontend kemudian; rollback frontend aman, rollback
+Worker lama menghilangkan perlindungan retry. Migrasi v2 state dan aktivasi auth
+bukan bagian rollout ini.
 
 ## Mencabut akses
 - Hapus API token di https://id.atlassian.com/manage-profile/security/api-tokens → proxy langsung mati.

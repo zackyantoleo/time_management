@@ -2,6 +2,13 @@
 // dan kirim worklog ke Jira lewat proxy (tombol "→ Jira").
 "use strict";
 
+// Pending lives outside rebuilt DOM; every render sees the same request lock.
+const worklogSending = new Set();
+function worklogSendIdentity(e) {
+  return JSON.stringify([e.id, e.text, e.priority, e.ts, Math.max(60, (e.mins || 0) * 60),
+    e.bauKey || null, typeof e.jiraNote === "string" ? e.jiraNote : e.text]);
+}
+
 const PR_LABEL = { urgent: "urgent", tinggi: "high", sedang: "medium", rendah: "low", rutin: "routine", sprint: "sprint", kalender: "calendar" };
 
 // Badge menit fokus. Saat editable (belum terkirim ke Jira & proxy aktif),
@@ -16,6 +23,7 @@ function minsBadge(e, editable) {
   const b = el("button", "log-mins mono", m ? "±" + m + " ✎" : "＋ min");
   b.title = "Ubah durasi — dipakai saat worklog dikirim ke Jira";
   b.onclick = () => {
+    if (worklogSending.has(e.id)) return;
     const input = document.createElement("input");
     input.type = "number"; input.min = "0"; input.step = "5";
     input.value = String(Math.round(e.mins || 0));
@@ -24,6 +32,7 @@ function minsBadge(e, editable) {
     b.replaceWith(input);
     input.focus(); input.select();
     const commit = () => {
+      if (worklogSending.has(e.id)) return;
       e.mins = Math.max(0, Math.round(Number(input.value) || 0));
       saveWorklog(); render();
     };
@@ -101,6 +110,11 @@ function entriJiraUntuk(dateStr, lokal) {
   const sisa = [...d.entries];
   for (const e of lokal) {
     if (!e.jiraLogged) continue;
+    if (e.jiraWorklogId) {
+      const exact = sisa.findIndex(j => String(j.id) === e.jiraWorklogId);
+      if (exact >= 0) sisa.splice(exact, 1);
+      continue;
+    }
     const key = (e.text.match(JIRA_RE) || [null])[0] || e.bauKey ||
       (typeof cocokBau === "function" ? (cocokBau(e.text) || {}).key : null);
     if (!key) continue;
@@ -420,6 +434,7 @@ function renderWorklog() {
       if (g.j) { ul.append(jiraRowLog(g.j)); continue; }
       const e = g.e;
       const li = el("li", "log-entry");
+      li.dataset.logId = e.id;
       li.append(el("span", "log-time mono", fmtClock(new Date(e.ts))));
       const dot = el("span", "log-dot p-" + e.priority);
       dot.title = "prioritas " + PR_LABEL[e.priority];
@@ -438,7 +453,8 @@ function renderWorklog() {
         : ((!ticketKey && e.priority !== "sprint")
           ? (e.bauKey ? bauByKey(e.bauKey) : cocokBau(e.text)) : null);
       const target = ticketKey || (bau && bau.key) || null;
-      const bolehKirim = !!jiraProxy() && e.priority !== "sprint" && !e.jiraLogged;
+      const pending = worklogSending.has(e.id);
+      const bolehKirim = !!jiraProxy() && e.priority !== "sprint" && !e.jiraLogged && !pending;
       li.append(minsBadge(e, bolehKirim && !!target));
       let note = null;
       if (bolehKirim && target) {
@@ -449,39 +465,62 @@ function renderWorklog() {
         note.maxLength = 2000;
         note.rows = 3;
         note.value = typeof e.jiraNote === "string" ? e.jiraNote : e.text;
-        note.oninput = () => { e.jiraNote = note.value; saveWorklog(); };
+        note.oninput = () => { if (worklogSending.has(e.id)) return; e.jiraNote = note.value; saveWorklog(); };
         editor.append(note);
         editor.append(el("p", "count", "Catatan ini dikirim ke Jira. Judul task tetap sama. Maksimal 2.000 karakter."));
         ltext.append(editor);
       }
       if (jiraProxy() && target && e.jiraLogged) {
         li.append(el("span", "log-mins mono", "✓ Jira"));
-      } else if (jiraProxy() && target) {
+      } else if (jiraProxy() && target && e.priority !== "sprint") {
         const label = ticketKey ? "→ Jira" : "→ " + target;
-        const send = el("button", "btn-ghost", label);
+        const send = el("button", "btn-ghost", pending ? "sending…" : label);
+        send.disabled = pending;
         send.title = "Kirim sebagai worklog ke " + target +
           (bau ? " (" + bau.summary + ")" : "") +
           " — durasi: " + (e.mins ? "±" + Math.round(e.mins) + " mnt" : "1 mnt minimum, klik badge menit untuk mengubah");
         send.onclick = async () => {
+          if (worklogSending.has(e.id) || e.jiraLogged) return;
+          const account = jira.key;
+          const identity = worklogSendIdentity(e);
+          worklogSending.add(e.id);
           send.disabled = true; send.textContent = "sending…";
-          note.disabled = true;
+          if (note) note.disabled = true;
+          li.querySelectorAll("button, input, textarea, select").forEach(control => { control.disabled = true; });
+          let failed = false;
           try {
             const r = await fetch(jiraProxy() + "/worklog", {
               method: "POST",
               headers: { "Content-Type": "application/json", ...headerAkses() },
               body: JSON.stringify({
-                key: target, started: e.ts,
+                entryId: e.id, key: target, started: e.ts,
                 timeSpentSeconds: Math.max(60, (e.mins || 0) * 60),
-                comment: note.value,
+                comment: note ? note.value : (typeof e.jiraNote === "string" ? e.jiraNote : e.text),
               }),
             });
             const data = await r.json().catch(() => ({}));
             if (!r.ok || data.ok !== true) throw new Error(data.error || ("HTTP " + r.status));
-            e.jiraLogged = true; saveWorklog(); render();
+            if (jira.key !== account) return;
+            const current = worklog.find(item => item.id === e.id);
+            if (!current || worklogSendIdentity(current) !== identity) {
+              throw new Error("Worklog Jira terkirim tetapi entri lokal berubah. Periksa Jira sebelum mengirim lagi.");
+            }
+            current.jiraLogged = true;
+            if (typeof data.worklogId === "string") current.jiraWorklogId = data.worklogId;
+            saveWorklog();
           } catch (err) {
+            if (jira.key !== account) return;
+            failed = true;
             alert("Gagal mengirim worklog ke " + target + ":\n" + (err && err.message ? err.message : "koneksi"));
-            note.disabled = false;
-            send.disabled = false; send.textContent = label;
+            if (note) note.disabled = false;
+          } finally {
+            worklogSending.delete(e.id);
+            render();
+            if (failed) {
+              const row = [...document.querySelectorAll("[data-log-id]")].find(n => n.dataset.logId === e.id);
+              const editor = row && row.querySelector(".log-note");
+              if (editor) editor.open = true;
+            }
           }
         };
         li.append(send);
@@ -497,8 +536,10 @@ function renderWorklog() {
           : "Pilih topik BAU untuk worklog ini";
         pick.setAttribute("aria-label", pick.title);
         pick.onclick = (ev) => {
+          if (worklogSending.has(e.id)) return;
           ev.stopPropagation();
           bukaBauMenu(pick, (bau && bau.key) || null, (key) => {
+            if (worklogSending.has(e.id)) return;
             const lo = e.text.trim().toLowerCase();
             if (key) { e.bauKey = key; jira.bau.alias[lo] = key; }
             else { delete e.bauKey; delete jira.bau.alias[lo]; }
@@ -510,19 +551,23 @@ function renderWorklog() {
       // Pindah ke tanggal lain — mis. tugas sebenarnya selesai kemarin tapi
       // baru ditandai ✓ hari ini.
       const move = el("button", "icon-btn", "📆");
+      move.disabled = pending;
       move.title = "Pindahkan ke tanggal lain";
       move.setAttribute("aria-label", "Pindahkan tanggal");
       move.onclick = (ev) => {
+        if (worklogSending.has(e.id)) return;
         ev.stopPropagation();
         bukaPindahTanggal(move, e.date, (tgl) => {
-          if (tgl === e.date) return;
+          if (worklogSending.has(e.id) || tgl === e.date) return;
           pindahTanggalLog(e, tgl); saveWorklog(); render();
         });
       };
       li.append(move);
       const del = el("button", "icon-btn danger", "✕");
+      del.disabled = pending;
       del.title = "Hapus dari log"; del.setAttribute("aria-label", "Hapus dari log");
       del.onclick = () => {
+        if (worklogSending.has(e.id)) return;
         if (confirm("Hapus entri log ini?\n\n“" + e.text + "”")) {
           // Tandai tugas asalnya: backfillWorklog tidak boleh menghidupkan
           // lagi entri tugas selesai yang sengaja dihapus penggunanya

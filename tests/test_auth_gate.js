@@ -16,6 +16,8 @@ const values = new Map([
   ["catet.sprints.v1", JSON.stringify({ list: [{ id: "private-sprint" }], aktif: null })],
   ["catet.dirty.v1", "1"],
   ["catet.synced.v1", "1"],
+  ["catet.weekly.v1", JSON.stringify({weeks:{'2026-W40':{private:true}}})],
+  ["catet.weekly.corrections.demo.v1", JSON.stringify({note:'private draft'})],
   ["catet.jira.v1", JSON.stringify({
     key: "", proxy: "https://worker.example", site: "https://private.atlassian.net",
     items: [{ key: "SECRET-1", summary: "private ticket" }],
@@ -44,7 +46,7 @@ assert.strictEqual(signedOut.sprints.list.length, 0, "signed-out sprints must be
 assert.strictEqual(signedOut.jira.items.length, 0, "signed-out Jira cache must be empty");
 assert.strictEqual(signedOut.proxy, "", "data endpoint must be disabled without an access code");
 assert.strictEqual(signedOut.worker, "https://worker.example", "raw Worker URL remains available for signup");
-for (const key of ["catet.tasks.v1", "catet.worklog.v1", "catet.routines.v1", "catet.routineday.v1", "catet.sprints.v1", "catet.dirty.v1", "catet.synced.v1"]) {
+for (const key of ["catet.tasks.v1", "catet.worklog.v1", "catet.routines.v1", "catet.routineday.v1", "catet.sprints.v1", "catet.dirty.v1", "catet.synced.v1", "catet.weekly.v1", "catet.weekly.corrections.demo.v1"]) {
   assert.strictEqual(localStorage.getItem(key), null, key + " must be cleared on signed-out startup");
 }
 

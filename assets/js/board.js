@@ -250,6 +250,7 @@ function taskEditor(t) {
 function taskRow(t) {
   const li = el("li", "task p-" + t.priority + (t.status === "selesai" ? " done" : "") +
     (editingTaskId === t.id ? " editing" : ""));
+  li.dataset.taskId = t.id;
 
   const check = el("button", "check", "✓");
   check.title = t.status === "selesai" ? "Tandai belum selesai" : "Tandai selesai";

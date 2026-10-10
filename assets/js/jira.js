@@ -60,7 +60,7 @@ function kosongkanDataLokalTanpaAkses() {
     "catet.tasks.v1", "catet.worklog.v1", "catet.routines.v1",
     "catet.routineday.v1", "catet.sprints.v1", "catet.dirty.v1",
     "catet.dirtyAt.v1", "catet.syncAt.v1", "catet.synced.v1",
-    READY_NOTIFICATIONS_KEY,
+    READY_NOTIFICATIONS_KEY, "catet.weekly.v1", "catet.weekly.corrections.demo.v1",
   ]) localStorage.removeItem(key);
 
   tasks = [];
@@ -73,6 +73,8 @@ function kosongkanDataLokalTanpaAkses() {
 
   // Variabel berikut baru tersedia setelah semua script selesai dimuat;
   // cabang ini dipakai saat sign out tanpa perlu menggandakan fungsi reset.
+  if (typeof weekly !== "undefined") weekly = normalisasiWeeklyStore(null);
+  if (typeof prMergeSnapshot !== "undefined") prMergeSnapshot = { generatedAt: null, items: [] };
   if (typeof dailyPriority !== "undefined") dailyPriority = null;
   if (typeof calEvents !== "undefined") calEvents = null;
   if (typeof gridEvents !== "undefined") gridEvents = [];

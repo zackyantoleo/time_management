@@ -48,8 +48,9 @@ function saveWorklogTanpaSinkron() { localStorage.setItem(WORKLOG_KEY, JSON.stri
    Bahan: dampak (dari panel "Bantu nilai", fallback ke prioritas), kedekatan
    tenggat, dan perkiraan usaha (tugas lama dapat poin lebih supaya dicicil
    lebih awal). Skala 0–10. */
+let renderPriorityEvaluator = null;
 function priorityEvaluator(now) {
-  return CatetPriorityEngine.createEvaluator({ tasks, sprints, jira, now: now || new Date() });
+  return !now && renderPriorityEvaluator || CatetPriorityEngine.createEvaluator({ tasks, sprints, jira, now: now || new Date() });
 }
 function skorTugas(t) {
   return priorityEvaluator().score(t);

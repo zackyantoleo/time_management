@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
-import { copyFile, unlink } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 
-const source = new URL("../worker/worker.js", import.meta.url);
-const temp = "/tmp/catet-calendar-desc-worker-test.mjs";
-await copyFile(source, temp);
-const { default: worker } = await import("file://" + temp + "?v=" + Date.now());
+const source = await readFile(new URL("../worker/worker.js", import.meta.url), "utf8");
+const { default: worker } = await import("data:text/javascript;base64," + Buffer.from(source).toString("base64"));
 
 const ics = [
   "BEGIN:VCALENDAR",
@@ -41,5 +39,5 @@ try {
   console.log("PASS calendar description urls");
 } finally {
   globalThis.fetch = originalFetch;
-  await unlink(temp).catch(() => {});
+  // Worker imported in memory; no temporary module to remove.
 }

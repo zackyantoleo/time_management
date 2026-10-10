@@ -33,12 +33,12 @@ function waitForServer(url, timeoutMs = 5000) {
     updatedAt: now.toISOString(),
     stores: {
       tasks: [task], worklog: [], routines: [], routineday: {},
-      jira: { site: 'https://example.atlassian.net', items: [], dismissed: [], deps: {}, bau: {} },
+      jira: { key: 'synthetic-code', proxy: 'https://synthetic.invalid', site: 'https://example.atlassian.net', items: [], dismissed: [], deps: {}, bau: {} },
       sprints: { list: [], aktif: null },
     },
   };
 
-  const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || '/usr/bin/chromium' });
+  const browser = await chromium.launch({ headless: true, args: ['--allow-file-access-from-files'], executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || '/usr/bin/chromium' });
   const context = await browser.newContext({ serviceWorkers: 'block', colorScheme: 'light' });
   const page = await context.newPage();
   const browserErrors = [];
@@ -57,6 +57,11 @@ function waitForServer(url, timeoutMs = 5000) {
     localStorage.setItem('catet.jira.v1', JSON.stringify(seed.stores.jira));
     localStorage.setItem('catet.sprints.v1', JSON.stringify(seed.stores.sprints));
   }, state);
+  await page.route('**/*', route => {
+    const url = new URL(route.request().url());
+    return url.protocol === 'file:' || url.origin === 'http://127.0.0.1:8765'
+      ? route.continue() : route.fulfill({ json: { items: [], events: [] } });
+  });
   await page.route('**/state', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(state) });

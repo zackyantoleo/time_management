@@ -1,7 +1,7 @@
 // Service worker Catet: network-first dengan cache fallback, supaya aplikasi
 // tetap bisa dibuka di HP saat tidak ada koneksi. Versi cache dinaikkan saat
 // daftar aset berubah.
-const CACHE = "catet-v72";
+const CACHE = "catet-v73";
 const ASSETS = [
   "./", "index.html", "weekly-wrapped.html", "manifest.webmanifest", "icon-192.png", "icon-512.png",
   "assets/css/styles.css", "assets/css/calm-workbench.css", "assets/css/weekly-wrapped.css", "assets/js/theme.js",
@@ -20,7 +20,7 @@ self.addEventListener("install", (e) => {
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith("catet-v") && k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -30,15 +30,18 @@ self.addEventListener("fetch", (e) => {
   // Jangan cache permintaan lintas-origin (mis. proxy Jira /tickets, /state) —
   // data itu harus selalu segar dari jaringan.
   if (new URL(e.request.url).origin !== self.location.origin) return;
-  e.respondWith(
-    fetch(e.request)
-      .then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(e.request, copy));
-        return res;
-      })
-      .catch(() => caches.match(e.request, { ignoreSearch: true }))
-  );
+  e.respondWith((async () => {
+    try {
+      const res = await fetch(e.request);
+      if (!res.ok) return (await caches.match(e.request, { ignoreSearch: true })) || res;
+      const copy = res.clone();
+      e.waitUntil(caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {}));
+      return res;
+    } catch {
+      return (await caches.match(e.request, { ignoreSearch: true })) ||
+        new Response("Offline: aset belum tersedia di cache.", { status: 503 });
+    }
+  })());
 });
 
 // Klik notifikasi OS → fokuskan tab app yang sudah ada, atau buka yang baru.

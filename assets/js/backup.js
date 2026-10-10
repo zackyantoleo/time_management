@@ -20,8 +20,8 @@ function exportData() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-// Restore penuh: menimpa data browser ini dengan isi file (termasuk weekly
-// check-in; kredensial perangkat tetap mengikuti field yang ada di backup).
+// Restore data, bukan identitas akun. Backup tidak membawa kredensial;
+// access code/proxy/calendar perangkat ini tidak boleh ikut diganti.
 function importDataFromText(text) {
   let data;
   try { data = JSON.parse(text); }
@@ -30,7 +30,13 @@ function importDataFromText(text) {
   const dikenali = s && typeof s === "object" &&
     (Array.isArray(s.tasks) || Array.isArray(s.sprints) || (s.weekly && typeof s.weekly === "object") ||
       (s.jira && Array.isArray(s.jira.items)));
-  if (!dikenali) { alert("File ini bukan cadangan Catet yang dikenali."); return; }
+  if (!dikenali || !validCatetStores(s)) { alert("File ini bukan cadangan Catet yang valid. Data lokal tidak diubah."); return; }
+  let device = {};
+  try { device = JSON.parse(localStorage.getItem("catet.jira.v1")) || {}; } catch {}
+  if (typeof device.key !== "string" || !device.key.trim()) {
+    alert("Sign in dengan access code dahulu, lalu impor cadangan. File tidak membawa kredensial.");
+    return;
+  }
   const n = Array.isArray(s.tasks) ? s.tasks.length : 0;
   if (!confirm("Impor akan MENGGANTI semua data di browser ini dengan isi file (" +
     n + " tugas). Data lama di sini akan hilang. Lanjutkan?")) return;
@@ -41,10 +47,14 @@ function importDataFromText(text) {
   put("catet.routineday.v1", s.routineday);
   put("catet.sprints.v1", s.sprints);
   put("catet.weekly.v1", s.weekly);
-  put("catet.jira.v1", s.jira);
-  // Tandai perlu di-push kalau sinkron aktif, lalu muat ulang biar semua state
-  // terbaca bersih dari localStorage.
+  if (s.jira != null) {
+    put("catet.jira.v1", { ...s.jira, key: device.key || "", proxy: device.proxy || "", calIcs: device.calIcs || "" });
+  }
+  // Restore adalah edit lokal baru; timestamp lama tidak boleh membuatnya
+  // langsung kalah oleh snapshot server pada reload.
+  localStorage.setItem("catet.dirtyAt.v1", new Date().toISOString());
   localStorage.setItem("catet.dirty.v1", "1");
+  localStorage.setItem("catet.synced.v1", "1"); // explicit restore is not empty-device onboarding
   location.reload();
 }
 

@@ -10,13 +10,13 @@ const css = fs.readFileSync(path.join(root, 'assets/css/calm-workbench.css'), 'u
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 
 assert(html.includes('id="pr-merge-alert-list"'), 'ready panel must expose related PR merge list');
-assert(html.includes('PR related sudah merged'), 'ready panel must explain the merge list');
+assert(/<h3>PR merged belum dibaca<\/h3>/.test(html), 'ready panel must identify unread merged PRs');
 assert(jira.includes('function renderPrMergeSnapshot()'), 'Jira UI must render shared PR merge snapshot');
 assert(jira.includes('prMergeSnapshot.items'), 'render must consume snapshot items');
 assert(jira.includes('item.prUrl'), 'merge rows must link to the exact pull request');
 assert(sync.includes('fetch(jiraProxy() + "/pr-merge-snapshot"'), 'CATET must fetch the server-side merge snapshot');
 assert(sync.includes('renderReadyNotifications()'), 'snapshot refresh must update the header count and rerender the list');
 assert(css.includes('.pr-merge-alert-list'), 'merge list must have explicit styling');
-assert(sw.includes('catet-v61'), 'service worker cache must be bumped for the new UI');
+assert(Number((sw.match(/const CACHE = "catet-v(\d+)"/) || [])[1]) >= 61, 'cache must not regress below merge-inbox release');
 
 console.log('pr merge snapshot UI contract: ok');

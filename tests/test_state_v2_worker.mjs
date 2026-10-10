@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
-import { copyFile, unlink } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 
-const source = new URL("../worker/worker.js", import.meta.url);
-const temp = "/tmp/catet-state-v2-worker-test.mjs";
-await copyFile(source, temp);
-const { default: worker } = await import("file://" + temp + "?v=" + Date.now());
+const source = await readFile(new URL("../worker/worker.js", import.meta.url), "utf8");
+const { default: worker } = await import("data:text/javascript;base64," + Buffer.from(source).toString("base64"));
 
 const origin = "https://zackyantoleo.github.io";
 const user = { id: "user-1", name: "Zack", jira_site: null, jira_email: null, jira_token: null, cal_ics_url: null };
@@ -143,4 +141,4 @@ assert(legacyReads > 0, "legacy /state endpoint must remain available during mig
 
 console.log(JSON.stringify({ created: created.status, updated: updated.status, conflict: conflict.status,
   documentReads: stateDocumentReads, legacyReads, worklogs: worklogs.size, migrations: migrations.length }));
-await unlink(temp).catch(() => {});
+// Worker imported in memory; no temporary module to remove.
