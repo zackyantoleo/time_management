@@ -39,6 +39,9 @@ function setView(v) {
   $("#tab-jira").setAttribute("aria-selected", String(v === "jira"));
   $("#tab-kalender").setAttribute("aria-selected", String(v === "kalender"));
   $("#tab-log").setAttribute("aria-selected", String(v === "log"));
+  document.querySelectorAll("[role=tab]").forEach(n => {
+    n.tabIndex = n.getAttribute("aria-selected") === "true" || (v === "settings" && n.id === "tab-papan") ? 0 : -1;
+  });
   $("#settings-btn").setAttribute("aria-pressed", String(v === "settings"));
   document.querySelectorAll(".board-view").forEach((n) => n.classList.toggle("hidden", v !== "papan"));
   $("#jiraview").classList.toggle("hidden", v !== "jira");
@@ -55,6 +58,22 @@ function updateBoardLayout() {
 }
 
 function render() {
+  const active = document.activeElement;
+  const owner = active && active.closest("[data-task-id], [data-log-id]");
+  const focus = owner && { task: owner.dataset.taskId, log: owner.dataset.logId,
+    index: [...owner.querySelectorAll("button, a, summary")].indexOf(active) };
+  // One immutable evaluator snapshot per synchronous render, never across edits.
+  renderPriorityEvaluator = CatetPriorityEngine.createEvaluator({ tasks, sprints, jira, now: new Date() });
+  try { renderView(); } finally { renderPriorityEvaluator = null; }
+  if (focus && !active.isConnected) {
+    const row = [...document.querySelectorAll("[data-task-id], [data-log-id]")]
+      .find(n => focus.task ? n.dataset.taskId === focus.task : n.dataset.logId === focus.log);
+    const control = row && row.querySelectorAll("button, a, summary")[focus.index];
+    if (control) control.focus({ preventScroll: true });
+  }
+}
+
+function renderView() {
   const signedIn = !!jiraProxy();
   document.body.classList.toggle("signed-out", !signedIn);
   if (!signedIn) {
@@ -95,6 +114,18 @@ function initApp() {
   $("#tab-jira").onclick = () => setView("jira");
   $("#tab-kalender").onclick = () => setView("kalender");
   $("#tab-log").onclick = () => setView("log");
+  const tabs = ["papan", "jira", "kalender", "log"];
+  document.querySelectorAll("[role=tab]").forEach((tab, index, nodes) => {
+    tab.onkeydown = e => {
+      let next;
+      if (e.key === "ArrowRight") next = (index + 1) % nodes.length;
+      else if (e.key === "ArrowLeft") next = (index + nodes.length - 1) % nodes.length;
+      else if (e.key === "Home") next = 0;
+      else if (e.key === "End") next = nodes.length - 1;
+      else return;
+      e.preventDefault(); setView(tabs[next]); nodes[next].focus();
+    };
+  });
   $("#settings-btn").onclick = () => setView("settings");
   $("#ready-alert-btn").onclick = () => {
     const panel = $("#ready-alert-panel");

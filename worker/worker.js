@@ -38,6 +38,46 @@ function originOk(origin, env) {
   return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin); // dev lokal
 }
 
+// Validate known storage shapes without stripping unknown legacy fields.
+function validCatetStores(stores) {
+  const object = v => !!v && typeof v === "object" && !Array.isArray(v);
+  const string = v => typeof v === "string" && v.length > 0;
+  const date = v => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) &&
+    Number.isFinite(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v;
+  const timestamp = v => typeof v === "string" && Number.isFinite(Date.parse(v));
+  const rows = (v, valid) => Array.isArray(v) && v.every(x => object(x) && valid(x));
+  const entries = (v, valid) => rows(v, x => string(x.id) && typeof x.text === "string" && valid(x)) &&
+    new Set(v.map(x => x.id)).size === v.length;
+  if (!object(stores)) return false;
+  if (stores.tasks != null && !entries(stores.tasks, x =>
+      (x.status == null || ["aktif", "fokus", "selesai"].includes(x.status)) &&
+      ["due", "createdAt", "doneAt", "focusedAt", "ditumpuk"].every(k => x[k] == null || timestamp(x[k])))) return false;
+  if (stores.worklog != null && !entries(stores.worklog, x => date(x.date) && timestamp(x.ts) &&
+      (x.mins == null || (typeof x.mins === "number" && Number.isFinite(x.mins) && x.mins >= 0)))) return false;
+  if (stores.routines != null && !entries(stores.routines, x => Array.isArray(x.days) &&
+      x.days.every(d => Number.isInteger(d) && d >= 0 && d <= 6))) return false;
+  if (stores.sprints != null && (!object(stores.sprints) || !rows(stores.sprints.list,
+      x => string(x.id) && typeof x.nama === "string" && date(x.selesai)))) return false;
+  if (stores.routineday != null && (!object(stores.routineday) ||
+      (stores.routineday.date != null && !date(stores.routineday.date)) ||
+      ["doneIds", "notifiedIds"].some(k => stores.routineday.date != null
+        ? !Array.isArray(stores.routineday[k]) || !stores.routineday[k].every(string)
+        : stores.routineday[k] != null && !Array.isArray(stores.routineday[k])))) return false;
+  if (stores.weekly != null && (!object(stores.weekly) ||
+      (stores.weekly.weeks != null && (!object(stores.weekly.weeks) ||
+        !Object.values(stores.weekly.weeks).every(w => object(w) &&
+          (w.start == null || object(w.start) && (w.start.outcomes == null || rows(w.start.outcomes, object))) &&
+          (w.end == null || object(w.end))))))) return false;
+  const j = stores.jira;
+  if (j != null && (!object(j) || (j.items != null && !rows(j.items, x => string(x.key) && typeof x.summary === "string")) ||
+      ["key", "proxy", "site", "calIcs"].some(k => j[k] != null && typeof j[k] !== "string") ||
+      ["deps", "depOverrides", "depSuggestions"].some(k => j[k] != null && !object(j[k])) ||
+      ["dismissed", "pairingIssues", "depWarnings"].some(k => j[k] != null && !Array.isArray(j[k])) ||
+      (j.bau != null && (!object(j.bau) || (j.bau.items != null && !rows(j.bau.items, x => string(x.key) && typeof x.summary === "string")) ||
+        (j.bau.alias != null && !object(j.bau.alias)))))) return false;
+  return true;
+}
+
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
     status,
@@ -64,6 +104,7 @@ const SKEMA = [
   "CREATE TABLE IF NOT EXISTS weekly_wrapped_reports (user_id TEXT PRIMARY KEY, report_id TEXT NOT NULL, blob TEXT NOT NULL CHECK (json_valid(blob)), updated_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS weekly_wrapped_corrections (user_id TEXT NOT NULL, report_id TEXT NOT NULL, correction_id TEXT NOT NULL, blob TEXT NOT NULL CHECK (json_valid(blob)), idempotency_key TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (user_id, report_id))",
   "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL, jira_site TEXT, jira_email TEXT, jira_token TEXT, cal_ics_url TEXT, created_at TEXT NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS worklog_requests (user_id TEXT NOT NULL, entry_id TEXT NOT NULL, payload_hash TEXT NOT NULL, worklog_id TEXT, PRIMARY KEY (user_id, entry_id))",
   "CREATE TABLE IF NOT EXISTS state_documents (user_id TEXT NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('tasks', 'routines', 'sprints', 'jira_overrides')), schema_version INTEGER NOT NULL CHECK (schema_version >= 2), revision INTEGER NOT NULL CHECK (revision >= 1), blob TEXT NOT NULL CHECK (json_valid(blob)), updated_at TEXT NOT NULL, PRIMARY KEY (user_id, kind))",
   "CREATE TABLE IF NOT EXISTS worklog_entries (user_id TEXT NOT NULL, id TEXT NOT NULL, task_id TEXT, occurred_at TEXT NOT NULL, local_date TEXT NOT NULL, text TEXT NOT NULL, priority TEXT, minutes INTEGER NOT NULL DEFAULT 0 CHECK (minutes >= 0), metadata TEXT CHECK (metadata IS NULL OR json_valid(metadata)), deleted_at TEXT, PRIMARY KEY (user_id, id))",
   "CREATE INDEX IF NOT EXISTS idx_worklog_user_date ON worklog_entries (user_id, local_date DESC, occurred_at DESC)",
@@ -1265,7 +1306,7 @@ async function tangani(request, env) {
           d.total += w.timeSpentSeconds || 0;
           d.items[key] = (d.items[key] || 0) + (w.timeSpentSeconds || 0);
           d.entries.push({
-            key, started: w.started, seconds: w.timeSpentSeconds || 0,
+            id: w.id, key, started: w.started, seconds: w.timeSpentSeconds || 0,
             comment: adfText(w.comment).replace(/\s+/g, " ").slice(0, 200),
           });
         }
@@ -1286,26 +1327,76 @@ async function tangani(request, env) {
     if (request.method === "POST" && url.pathname === "/worklog") {
       let body;
       try { body = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
-      const { key, started, timeSpentSeconds, comment } = body || {};
-      if (!key || !timeSpentSeconds) return json({ error: "Field key dan timeSpentSeconds wajib diisi." }, 400);
-      if (!/^[A-Z][A-Z0-9]{1,9}-\d+$/.test(key)) return json({ error: "Format key tidak valid." }, 400);
-
-      const payload = { timeSpentSeconds: Math.max(60, Math.round(Number(timeSpentSeconds))) };
-      const startedJira = started ? toJiraDate(started) : null;
-      if (startedJira) payload.started = startedJira;
-      if (comment) {
-        payload.comment = {
-          type: "doc", version: 1,
-          content: [{ type: "paragraph", content: [{ type: "text", text: String(comment).slice(0, 2000) }] }],
-        };
+      const { entryId, key, started, timeSpentSeconds, comment = "" } = body || {};
+      const startedJira = typeof started === "string" && toJiraDate(started);
+      if (typeof key !== "string" || !/^[A-Z][A-Z0-9]{1,9}-\d+$/.test(key) ||
+          !startedJira || !Number.isSafeInteger(timeSpentSeconds) || timeSpentSeconds <= 0 ||
+          typeof comment !== "string" || comment.length > 2000 ||
+          (entryId != null && (typeof entryId !== "string" || !/^[A-Za-z0-9._:-]{1,200}$/.test(entryId)))) {
+        return json({ error: "Worklog key, tanggal, durasi, note, atau entryId tidak valid." }, 400);
       }
-      const r = await fetch(site + "/rest/api/3/issue/" + encodeURIComponent(key) + "/worklog", {
-        method: "POST",
-        headers: { ...authHeaders, "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!r.ok) return json({ error: "Jira menolak (" + r.status + "): " + (await r.text()).slice(0, 300) }, 502);
-      return json({ ok: true });
+      const payload = { started: startedJira, timeSpentSeconds: Math.max(60, timeSpentSeconds) };
+      if (comment) payload.comment = {
+        type: "doc", version: 1,
+        content: [{ type: "paragraph", content: [{ type: "text", text: comment }] }],
+      };
+      const base = site + "/rest/api/3/issue/" + encodeURIComponent(key) + "/worklog";
+      const digest = await sha256hex(JSON.stringify({ key, ...payload }));
+      const marker = entryId ? await sha256hex(uid + ":" + entryId) : null;
+      if (marker) payload.properties = [{ key: "catet.entry", value: marker }];
+      const text = (n) => !n ? "" : typeof n.text === "string" ? n.text : (n.content || []).map(text).join("");
+      const matches = (w) => w && String(w.id || "") && toJiraDate(w.started) === startedJira &&
+        w.timeSpentSeconds === payload.timeSpentSeconds && text(w.comment) === comment &&
+        (!marker || (w.properties || []).some(p => p.key === "catet.entry" && p.value === marker));
+      const verify = async (id) => {
+        if (!/^\d+$/.test(String(id || ""))) throw new Error("Jira tidak mengembalikan worklog ID valid.");
+        const read = await fetch(base + "/" + id + "?expand=properties", { headers: authHeaders });
+        if (!read.ok || !matches(await read.json())) throw new Error("Read-back worklog Jira belum cocok; jangan kirim ulang sebelum rekonsiliasi.");
+        if (entryId) await d1q(env,
+          "UPDATE worklog_requests SET worklog_id = ?1 WHERE user_id = ?2 AND entry_id = ?3",
+          [String(id), uid, entryId], "run");
+        return json({ ok: true, worklogId: String(id) });
+      };
+      if (entryId) {
+        if (!env.CATET_DB) return json({ error: "Pengiriman aman worklog membutuhkan D1." }, 503);
+        const claim = await d1q(env,
+          "INSERT INTO worklog_requests (user_id, entry_id, payload_hash) VALUES (?1, ?2, ?3) ON CONFLICT(user_id, entry_id) DO NOTHING",
+          [uid, entryId, digest], "run");
+        if (!jumlahPerubahan(claim)) {
+          const existing = await d1q(env,
+            "SELECT payload_hash, worklog_id FROM worklog_requests WHERE user_id = ?1 AND entry_id = ?2",
+            [uid, entryId], "first");
+          if (!existing || existing.payload_hash !== digest) return json({ error: "Worklog pernah dikirim dengan isi berbeda. Periksa Jira sebelum mengubahnya." }, 409);
+          if (existing.worklog_id) return verify(existing.worklog_id);
+          // ponytail: scan dibatasi 10 halaman; bila belum pasti, tolak retry
+          // daripada menduplikasi worklog. Tambah operasi rekonsiliasi admin bila perlu.
+          for (let startAt = 0, page = 0; page < 10; page++) {
+            const read = await fetch(base + "?expand=properties&maxResults=100&startAt=" + startAt, { headers: authHeaders });
+            if (!read.ok) break;
+            const list = await read.json();
+            if (!Array.isArray(list.worklogs)) break;
+            const found = list.worklogs.find(matches);
+            if (found) return verify(found.id);
+            startAt += list.worklogs.length;
+            if (!list.worklogs.length || !Number.isInteger(list.total) || startAt >= list.total) break;
+          }
+          return json({ error: "Pengiriman sebelumnya belum terverifikasi. Periksa Jira; request baru tidak dikirim." }, 409);
+        }
+      }
+      try {
+        const r = await fetch(base + "?notifyUsers=true&adjustEstimate=auto&expand=properties", {
+          method: "POST", headers: { ...authHeaders, "Content-Type": "application/json" }, body: JSON.stringify(payload),
+        });
+        if (!r.ok) {
+          // Hanya penolakan definitif 4xx (bukan timeout) yang aman dicoba lagi.
+          if (entryId && r.status >= 400 && r.status < 500 && r.status !== 408) await d1q(env,
+            "DELETE FROM worklog_requests WHERE user_id = ?1 AND entry_id = ?2", [uid, entryId], "run");
+          return json({ error: "Jira menolak (" + r.status + "). Periksa status sebelum mencoba lagi." }, 502);
+        }
+        return await verify((await r.json()).id);
+      } catch {
+        return json({ error: "Hasil pengiriman Jira belum terverifikasi. Retry hanya merekonsiliasi request yang sama." }, 502);
+      }
     }
 
     // POST /transition — { key, target:"inprogress"|"done" } → geser status
@@ -1371,11 +1462,11 @@ async function tangani(request, env) {
       if (request.method === "PUT") {
         let body;
         try { body = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
-        if (!body || typeof body.updatedAt !== "string" || typeof body.stores !== "object") {
+        if (!body || typeof body.updatedAt !== "string" || !Number.isFinite(Date.parse(body.updatedAt)) || !validCatetStores(body.stores)) {
           return json({ error: "Field updatedAt dan stores wajib ada." }, 400);
         }
         const raw = JSON.stringify({ updatedAt: body.updatedAt, stores: body.stores });
-        if (raw.length > 512 * 1024) return json({ error: "Data terlalu besar (maks 512 KB)." }, 413);
+        if (new TextEncoder().encode(raw).byteLength > 512 * 1024) return json({ error: "Data terlalu besar (maks 512 KB)." }, 413);
         if (env.CATET_DB) {
           await d1q(env,
             "INSERT INTO states (user_id, blob, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(user_id) DO UPDATE SET blob = ?2, updated_at = ?3",

@@ -6,8 +6,11 @@ meeting dadakan), catat interupsinya dalam hitungan detik — lengkap dengan
 **prioritas** dan **kapan harus dikerjakan** — tanpa kehilangan jejak tiket
 yang sedang kamu kerjakan.
 
-Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
-`localStorage` browser dan tidak dikirim ke mana pun.
+Frontend statis tanpa build step atau dependency runtime. Pemakaian membutuhkan
+**access code CATET**; data aktif tersimpan di `localStorage` untuk tetap bisa
+dipakai offline setelah sign in. Bila koneksi tersedia, state disinkronkan ke
+Cloudflare Worker/D1; integrasi Jira/Calendar menggunakan Worker yang sama.
+Access code dan secret Calendar perangkat tidak masuk backup atau blob state.
 
 ## Fitur
 
@@ -119,14 +122,17 @@ Satu file HTML, tanpa server, tanpa install, tanpa internet. Data tersimpan di
 - **Ekspor / Impor data** — tombol **⭳ Ekspor** mengunduh seluruh data
   (tugas, log, rutinitas, sprint, tiket) sebagai satu file `.json`; **⭱ Impor**
   memulihkannya di browser/perangkat lain. Cara andal memindahkan data antar
-  browser tanpa bergantung ke sinkron cloud, sekaligus backup manual. (Impor
-  mengganti data di browser tujuan.)
+  browser tanpa bergantung ke sinkron cloud, sekaligus backup manual. (Sign in dahulu sebelum impor. Impor mengganti data di browser tujuan,
+  mempertahankan identitas akun perangkat, dan menolak struktur invalid sebelum
+  menulis. Field store legacy yang tidak ada tetap dipertahankan.)
 - Tema terang & gelap mengikuti pengaturan sistem.
 
 ## Cara pakai
 
 ### Paling cepat
-Buka `index.html` di browser apa pun:
+Buka `index.html` di browser, lalu **Settings → Account → Sign in** dengan
+access code yang diberikan admin. Perangkat baru mengikuti state server;
+restore backup dilakukan setelah sign in:
 
 ```bash
 xdg-open index.html
@@ -168,8 +174,39 @@ Setelah itu "Catet" bisa dicari di launcher dan di-pin ke taskbar/dock.
 
 ### Sebagai website
 File-nya statis, jadi bisa juga di-host di mana saja (GitHub Pages, Netlify,
-server internal kantor). Ingat: data tetap tersimpan per-browser, bukan
-di server.
+server internal kantor). State aktif tetap tersimpan per-browser; salinan
+server tersedia melalui Worker jika cloud sync aktif.
+
+## Verifikasi pengembangan
+
+```sh
+node scripts/check.js
+```
+
+Gate ini menjalankan seluruh Node contract/logic/Worker tests dan syntax check,
+dengan HOME/TMPDIR terisolasi dan tanpa inherited credentials. PR menjalankan
+gate yang sama; deploy Pages hanya setelah gate lulus. Artifact Pages berisi
+frontend saja, bukan Worker, tests, scripts, graph, atau metadata Wrangler.
+
+Browser verification memakai Playwright yang sudah tersedia pada host:
+
+```sh
+node tests/smoke_reliability.js
+node tests/smoke_worklog_note.js
+node tests/smoke_weekly_wrapped_correction.js
+```
+
+Jika dependency/browser bukan di PATH default, set `NODE_PATH` dan
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE`. Semua tes tulis memakai fixture/mocked Worker,
+bukan akun Jira produksi. Worklog memakai `entryId`, lock lintas render, dan
+read-back ID Jira. Deploy Worker baru **sebelum** frontend untuk mengaktifkan
+perlindungan retry berbasis D1; client lama tetap didukung tanpa jaminan dedupe.
+
+Snapshot sync tetap bukan merge per-task: server yang lebih baru dari awal
+edit lokal menang. Pull/push tidak overlap dalam satu tab; edit saat GET
+berlangsung diperiksa ulang. Edit simultan lintas perangkat masih mengikuti
+trade-off snapshot lama. Tidak ada aktivasi `REQUIRE_AUTH` atau migrasi v2
+secara otomatis oleh perubahan ini.
 
 ## Alur kerja yang disarankan
 

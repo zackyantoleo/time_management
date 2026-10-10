@@ -10,6 +10,46 @@ function el(tag, cls, text) {
   return n;
 }
 
+// Validate known storage shapes without stripping unknown legacy fields.
+function validCatetStores(stores) {
+  const object = v => !!v && typeof v === "object" && !Array.isArray(v);
+  const string = v => typeof v === "string" && v.length > 0;
+  const date = v => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) &&
+    Number.isFinite(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v;
+  const timestamp = v => typeof v === "string" && Number.isFinite(Date.parse(v));
+  const rows = (v, valid) => Array.isArray(v) && v.every(x => object(x) && valid(x));
+  const entries = (v, valid) => rows(v, x => string(x.id) && typeof x.text === "string" && valid(x)) &&
+    new Set(v.map(x => x.id)).size === v.length;
+  if (!object(stores)) return false;
+  if (stores.tasks != null && !entries(stores.tasks, x =>
+      (x.status == null || ["aktif", "fokus", "selesai"].includes(x.status)) &&
+      ["due", "createdAt", "doneAt", "focusedAt", "ditumpuk"].every(k => x[k] == null || timestamp(x[k])))) return false;
+  if (stores.worklog != null && !entries(stores.worklog, x => date(x.date) && timestamp(x.ts) &&
+      (x.mins == null || (typeof x.mins === "number" && Number.isFinite(x.mins) && x.mins >= 0)))) return false;
+  if (stores.routines != null && !entries(stores.routines, x => Array.isArray(x.days) &&
+      x.days.every(d => Number.isInteger(d) && d >= 0 && d <= 6))) return false;
+  if (stores.sprints != null && (!object(stores.sprints) || !rows(stores.sprints.list,
+      x => string(x.id) && typeof x.nama === "string" && date(x.selesai)))) return false;
+  if (stores.routineday != null && (!object(stores.routineday) ||
+      (stores.routineday.date != null && !date(stores.routineday.date)) ||
+      ["doneIds", "notifiedIds"].some(k => stores.routineday.date != null
+        ? !Array.isArray(stores.routineday[k]) || !stores.routineday[k].every(string)
+        : stores.routineday[k] != null && !Array.isArray(stores.routineday[k])))) return false;
+  if (stores.weekly != null && (!object(stores.weekly) ||
+      (stores.weekly.weeks != null && (!object(stores.weekly.weeks) ||
+        !Object.values(stores.weekly.weeks).every(w => object(w) &&
+          (w.start == null || object(w.start) && (w.start.outcomes == null || rows(w.start.outcomes, object))) &&
+          (w.end == null || object(w.end))))))) return false;
+  const j = stores.jira;
+  if (j != null && (!object(j) || (j.items != null && !rows(j.items, x => string(x.key) && typeof x.summary === "string")) ||
+      ["key", "proxy", "site", "calIcs"].some(k => j[k] != null && typeof j[k] !== "string") ||
+      ["deps", "depOverrides", "depSuggestions"].some(k => j[k] != null && !object(j[k])) ||
+      ["dismissed", "pairingIssues", "depWarnings"].some(k => j[k] != null && !Array.isArray(j[k])) ||
+      (j.bau != null && (!object(j.bau) || (j.bau.items != null && !rows(j.bau.items, x => string(x.key) && typeof x.summary === "string")) ||
+        (j.bau.alias != null && !object(j.bau.alias)))))) return false;
+  return true;
+}
+
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
 // Pengguna sedang mengetik? Render membangun ulang DOM — kalau dilakukan saat

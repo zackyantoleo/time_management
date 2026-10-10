@@ -83,6 +83,8 @@ let syncPendingPush = false;
 let syncPendingSegera = false;
 let syncPushing = false;
 let syncPushLagi = false; // ada edit baru selama push in-flight
+let syncPulling = false;
+let syncEditGeneration = 0;
 
 function isDirty() { return localStorage.getItem(DIRTY_KEY) === "1"; }
 
@@ -115,9 +117,10 @@ function tandaiDirty() {
 // Flag dirty persisten: kalau tab ditutup sebelum push, perangkat ini tetap
 // tahu punya perubahan yang belum terkirim saat dibuka lagi.
 function syncDirty(segera) {
+  syncEditGeneration++;
   tandaiDirty();
   if (!syncAktif()) return;
-  if (!syncReady) {
+  if (!syncReady || syncPulling) {
     syncPendingPush = true;
     if (segera) syncPendingSegera = true;
     return;
@@ -159,6 +162,7 @@ function kumpulkanStores() {
 async function pushState() {
   if (!syncAktif()) return;
   if (syncPushing) { syncPushLagi = true; return; }
+  if (!syncReady || syncPulling) { syncPendingPush = true; return; }
   clearTimeout(syncPushTimer);
   syncPushing = true;
   setSyncStatus("saving…");
@@ -190,6 +194,7 @@ async function pushState() {
 // Terapkan state dari server ke localStorage + variabel in-memory, lalu
 // render ulang. proxy & kunci Jira milik perangkat ini tidak ikut ditimpa.
 function terapkanRemote(stores) {
+  if (!validCatetStores(stores)) throw new Error("State server tidak valid; data lokal dipertahankan.");
   const tulis = (k, v) => { if (v != null) localStorage.setItem(k, JSON.stringify(v)); };
   tulis("catet.tasks.v1", stores.tasks);
   tulis("catet.worklog.v1", stores.worklog);
@@ -235,69 +240,65 @@ function serverLebihBaru(serverAt, acuanIso) {
 }
 
 async function pullState(paksa) {
-  if (!syncAktif()) return;
-  const pernahSinkron = localStorage.getItem(SYNCED_KEY) === "1";
+  if (!syncAktif() || syncPulling || syncPushing) return;
   const now = Date.now();
   if (!paksa && now - syncLastPull < PULL_THROTTLE_MS) return;
-
-  // Dirty + sudah pernah sync: JANGAN langsung push (bisa menimpa fokus dari
-  // perangkat lain). Ambil server dulu, bandingkan updatedAt vs dirtyAt.
-  if (isDirty() && pernahSinkron) {
-    syncLastPull = now;
-    try {
-      const r = await fetch(jiraProxy() + "/state", { headers: headerAkses() });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
-      const dirtyAt = localStorage.getItem(DIRTY_AT_KEY);
-      const acuan = dirtyAt || localStorage.getItem(LAST_SERVER_AT_KEY);
-      if (data.stores && serverLebihBaru(data.updatedAt, acuan)) {
-        // Perangkat lain menulis SETELAH edit lokal kita dimulai → ikut server
-        // (edit lokal yang belum terkirim dan lebih tua dilepas).
-        terapkanRemote(data.stores);
-        bersihkanDirty();
-        catatServerAt(data.updatedAt);
-        localStorage.setItem(SYNCED_KEY, "1");
-        setSyncStatus("synced " + fmtClock(new Date()));
-        return;
-      }
-      // Edit lokal lebih baru / setara / acuan tak ada → dorong.
-      await pushState();
-    } catch (e) {
-      // GET gagal: tetap coba dorong niat lokal (offline-first).
-      setSyncStatus("pull failed: " + (e && e.message ? e.message : "koneksi"));
-      await pushState();
-    }
-    return;
-  }
-
   syncLastPull = now;
+  syncPulling = true;
+  clearTimeout(syncPushTimer);
+  const account = jira.key;
+  const generation = syncEditGeneration;
+  let dorong = false;
+  let invalid = false;
   try {
     const r = await fetch(jiraProxy() + "/state", { headers: headerAkses() });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+    if (jira.key !== account) return; // respons akun lama tidak boleh diterapkan
+    if (!data || !Object.prototype.hasOwnProperty.call(data, "stores") ||
+        (data.stores != null && (!validCatetStores(data.stores) || !Number.isFinite(Date.parse(data.updatedAt))))) {
+      invalid = true;
+      syncReady = false; // all push paths stay gated until a valid GET succeeds
+      throw new Error("State server tidak valid; data lokal dipertahankan.");
+    }
+    syncReady = true;
+    const pernahSinkron = localStorage.getItem(SYNCED_KEY) === "1";
+    const dirty = isDirty(); // cek SETELAH GET, bukan hanya sebelum request
+    const editedDuringPull = syncEditGeneration !== generation;
+    if (dirty && (pernahSinkron || editedDuringPull)) {
+      const acuan = localStorage.getItem(DIRTY_AT_KEY) || localStorage.getItem(LAST_SERVER_AT_KEY);
+      // Tetap snapshot-level: server lebih baru menang sesuai kebijakan lama.
+      // GET yang lebih tua dari edit baru tidak boleh membuang edit tersebut.
+      dorong = !data.stores || !serverLebihBaru(data.updatedAt, acuan);
+      if (dorong) return;
+    }
     if (data.stores) {
-      // Sudah punya versi ini — jangan render ulang (panel edit, dsb.).
       const last = localStorage.getItem(LAST_SERVER_AT_KEY);
-      if (data.updatedAt && last && data.updatedAt === last) {
-        setSyncStatus("synced " + fmtClock(new Date()));
-        return;
-      }
-      // Server punya data → adopsi (termasuk pada perangkat baru). Perubahan
-      // lokal yang belum terkirim di perangkat baru sengaja dilepas: onboarding
-      // = ikut data bersama, bukan menimpanya. (Backup dulu via Ekspor kalau
-      // data lokalnya penting.)
+      if (!dirty && data.updatedAt && data.updatedAt === last) return;
       terapkanRemote(data.stores);
       bersihkanDirty();
       catatServerAt(data.updatedAt);
       localStorage.setItem(SYNCED_KEY, "1");
+      syncPendingPush = false;
+      syncPendingSegera = false;
       setSyncStatus("synced " + fmtClock(new Date()));
-    } else if (tasks.length || worklog.length || routines.length) {
-      await pushState(); // server masih kosong — unggah data perangkat ini
+    } else if (tasks.length || worklog.length || routines.length || dirty) {
+      dorong = true;
     } else {
-      localStorage.setItem(SYNCED_KEY, "1"); // server & lokal sama-sama kosong
+      localStorage.setItem(SYNCED_KEY, "1");
     }
   } catch (e) {
     setSyncStatus("pull failed: " + (e && e.message ? e.message : "koneksi"));
+    // Kegagalan GET tidak menghapus niat lokal. Push baru boleh setelah lock
+    // pull dilepas; respons yang invalid ditangani terpisah dari network error.
+    dorong = syncReady && !invalid && isDirty() && jira.key === account;
+  } finally {
+    syncPulling = false;
+    if (dorong && jira.key === account) {
+      syncPendingPush = false;
+      syncPendingSegera = false;
+      await pushState();
+    }
   }
 }
 
@@ -318,11 +319,11 @@ async function initSync() {
     if (document.visibilityState === "visible") pullState(false);
   }, PULL_INTERVAL_MS);
   setInterval(refreshDailyPriority, 5 * 60 * 1000);
-  try { await pullState(true); } finally { syncReady = true; }
+  await pullState(true);
   await pullDailyPriority();
   await pullPrMergeSnapshot();
   if (jiraProxy()) syncJira(false);
-  if (syncPendingPush) {
+  if (syncReady && syncPendingPush) {
     const segera = syncPendingSegera;
     syncPendingPush = false;
     syncPendingSegera = false;
