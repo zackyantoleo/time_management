@@ -67,6 +67,8 @@ try {
   assert.equal(again.status, 200);
   assert.equal((await again.json()).worklogId, '1');
   assert.equal(posts, 1, 'duplicate must not POST again');
+  assert.equal(typeof remote[0].properties[0].value, 'object', 'preserve deployed Jira object property contract');
+  assert.equal(typeof remote[0].properties[0].value.id, 'string');
   assert.equal((await worker.fetch(req({ ...body, comment: 'Changed' }), env)).status, 409);
   loseResponse = true;
   assert.equal((await worker.fetch(req({ ...body, entryId: 'entry-2' }), env)).status, 502);

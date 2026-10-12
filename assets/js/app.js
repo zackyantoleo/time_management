@@ -59,12 +59,17 @@ function updateBoardLayout() {
 
 function render() {
   const active = document.activeElement;
+  const jiraControl = active && /^jira-(filter-|worklog-)/.test(active.id) ? active.id : null;
   const owner = active && active.closest("[data-task-id], [data-log-id]");
   const focus = owner && { task: owner.dataset.taskId, log: owner.dataset.logId,
     index: [...owner.querySelectorAll("button, a, summary")].indexOf(active) };
   // One immutable evaluator snapshot per synchronous render, never across edits.
   renderPriorityEvaluator = CatetPriorityEngine.createEvaluator({ tasks, sprints, jira, now: new Date() });
   try { renderView(); } finally { renderPriorityEvaluator = null; }
+  if (jiraControl && !active.isConnected) {
+    const control = document.getElementById(jiraControl);
+    if (control) control.focus({ preventScroll: true });
+  }
   if (focus && !active.isConnected) {
     const row = [...document.querySelectorAll("[data-task-id], [data-log-id]")]
       .find(n => focus.task ? n.dataset.taskId === focus.task : n.dataset.logId === focus.log);

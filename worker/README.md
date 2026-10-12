@@ -205,7 +205,8 @@ Endpoint `POST /signup` di-origin-gate (hanya dari app) + butuh passphrase itu.
 
 | Method | Path | Fungsi |
 |---|---|---|
-| GET | `/tickets` | Tiket terbuka yang di-assign ke pemilik token (max 100) |
+| GET | `/tickets` | Tiket terbuka yang di-assign ke pemilik token; pagination lengkap |
+| GET | `/missing-worklog` | Semua tiket assigned tanpa worklog milik pemilik token, termasuk Done; exclude jenis tiket QAlity, read-only |
 | GET | `/bau?project=TDBU` | Daftar tiket "topik" project BAU — wadah worklog non-sprint (meeting, deployment, dst.) |
 | GET | `/worklog-report?from=…&to=…` | Total worklog pemilik token per tanggal (maks 31 hari) — panel "sudah ter-log berapa" |
 | POST | `/worklog` | Kirim worklog: `{key, started, timeSpentSeconds, comment}` |
