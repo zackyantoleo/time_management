@@ -1,6 +1,6 @@
 /* Calm Workbench visual layer — hierarchy-first, no external assets. */
-:root {
-  --bg: #f4f5f2; --surface: #fff; --surface-2: #f8f8f6;
+:root, :root[data-theme="light"] {
+  --bg: #f5f6f3; --surface: #fff; --surface-2: #f8f8f6;
   --ink: #1e2522; --ink-muted: #68726d; --ink-faint: #929b96; --line: #dfe3df;
   --accent: #147d6f; --accent-soft: #e6f2ef; --accent-ink: #fff; --focus-ring: #147d6f;
   --focus-surface: linear-gradient(135deg,#173b36,#0e6358);
@@ -341,3 +341,233 @@ footer.foot { margin-top:8px; }
   .task-actions .icon-btn { flex:none; }
   .kal-bulan-label { flex-basis:100%; }
 }
+
+/* ---- UI polish (Okt 2026): satu header, tipografi tenang, baris tugas ringkas. ---- */
+:root { --divider: color-mix(in srgb, var(--line) 70%, transparent); --radius: 12px; }
+body { font-feature-settings: "cv11", "ss01"; -webkit-font-smoothing: antialiased; }
+/* Angka tetap rata kolom, tanpa font mesin ketik di mana-mana. */
+.mono { font-family: inherit; font-variant-numeric: tabular-nums; }
+::selection { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+
+/* Header: brand · tab · cari · aksi dalam satu bar yang menempel di atas. */
+header.top {
+  position: sticky; top: 0; z-index: 25; height: auto; min-height: 56px;
+  display: flex; align-items: center; gap: 14px; padding: 8px 0;
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  -webkit-backdrop-filter: saturate(1.4) blur(12px); backdrop-filter: saturate(1.4) blur(12px);
+}
+.brand { flex: none; }
+.tabs-row { position: static; flex: 1 1 auto; min-width: 0; padding: 0; background: none; gap: 12px; justify-content: flex-start; flex-wrap: nowrap; }
+.tabs-row #search { margin-left: auto; flex: 0 1 240px; min-width: 120px; min-height: 36px; padding: 7px 12px 7px 32px;
+  border-radius: 10px; border-color: var(--line);
+  background: var(--surface) no-repeat 11px 50% / 14px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23929b96' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E"); }
+.tabs-row #search:focus { border-color: var(--accent); }
+.tab { font-weight: 600; font-size: 13px; padding: 7px 12px; }
+.tab > [aria-hidden] { opacity: .8; }
+.top-actions { flex: none; align-items: center; }
+.top-actions [hidden] { display: none !important; }
+.top-actions .btn-ghost:not(.ready-alert-btn) { height: 36px; min-width: 36px; display: grid; place-items: center; border-radius: 10px; font-size: 15px; color: var(--ink-muted); }
+.top-actions #settings-btn[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+@media (max-width: 1000px) and (min-width: 761px) {
+  header.top { flex-wrap: wrap; row-gap: 6px; }
+  .tabs-row { order: 3; flex-basis: 100%; }
+}
+
+/* Judul section: satu gaya netral (tak lagi biru/hijau/oranye bercampur). */
+.app .section-head h2, .app .section h2, .app .cal-day-head h3, .app .log-day-head h3 {
+  color: var(--ink); font-size: 13px; font-weight: 700; letter-spacing: 0; text-transform: none;
+}
+.app .section-head { min-height: 32px; padding: 0 2px; gap: 8px; align-items: center; }
+.app .section-head .count, details.done-wrap summary .count, .cal-day-head .count, .log-day-head .log-sum {
+  font-size: 11px; font-weight: 600; color: var(--ink-muted); letter-spacing: 0;
+}
+.app .section-head h2 + .count, details.done-wrap summary .count {
+  min-width: 20px; padding: 1px 7px; border-radius: 999px; text-align: center;
+  background: color-mix(in srgb, var(--line) 60%, transparent);
+}
+details.done-wrap summary, summary.bulan-label {
+  font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink-muted);
+  min-height: 32px; align-items: center; padding: 0 2px;
+}
+details.done-wrap summary:hover, summary.bulan-label:hover { color: var(--ink); }
+.section-eyebrow, .ready-alert-eyebrow { letter-spacing: .08em; }
+
+/* Tautan aksi kecil (sync now, + new sprint, clear, import…) sebagai teks aksen. */
+.clear-done { color: var(--accent); font-size: 12px; font-weight: 600; text-decoration: none; padding: 4px 2px; border-radius: 6px; }
+.clear-done:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+details.done-wrap .clear-done { color: var(--ink-muted); font-weight: 500; }
+details.done-wrap .clear-done:hover { color: var(--late); }
+details.routine-manage summary { color: var(--accent); text-decoration: none; font-weight: 600; font-size: 12px; }
+
+/* Pemisah baris: garis tipis solid, bukan putus-putus. */
+.jira-row, .log-entry, .cal-row, .routine-row, .cal-past { border-top: 1px solid var(--divider); }
+.jira-row:first-child, .log-entry:first-child, .cal-row:first-child, .routine-row:first-child { border-top: 0; }
+.routine-card { border-radius: var(--radius); }
+
+/* Kartu fokus: tautan tiket tak lagi bergaris tebal. */
+.focus-card:not(.empty) .focus-text a { text-decoration-thickness: 1px; text-decoration-color: rgba(255,255,255,.45); }
+.focus-card:not(.empty) .focus-meta { font-size: 12.5px; }
+.focus-card.empty { border: 1px dashed var(--line); background: transparent; padding: 14px 16px; }
+
+/* Baris tugas */
+li.task { gap: 10px; align-items: flex-start; transition: background-color .14s var(--ease); }
+li.task:hover { background: color-mix(in srgb, var(--surface-2) 70%, var(--surface)); box-shadow: none; }
+li.task.p-urgent:not(.done) { box-shadow: inset 3px 0 0 var(--p-urgent); }
+li.task.p-tinggi:not(.done) { box-shadow: inset 3px 0 0 var(--p-tinggi); }
+.task-text { line-height: 1.45; }
+.task-text a, .log-text a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.task-text a:hover, .log-text a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.task-meta { gap: 5px 6px; margin-top: 2px; }
+.task .check { width: 18px; height: 18px; margin-top: 3px; border-radius: 6px; border-color: color-mix(in srgb, var(--ink-faint) 80%, transparent); }
+.pr-tag { padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
+.pr-tag.pr-urgent { background: var(--p-urgent-soft); }
+.pr-tag.pr-tinggi { background: var(--p-tinggi-soft); }
+.pr-tag.pr-sedang { background: var(--p-sedang-soft); }
+.pr-tag.pr-rendah { background: var(--p-rendah-soft); }
+.due-badge, .effort-badge, .log-mins, .jira-jam { font-size: 11px; font-weight: 600; padding: 1px 8px; line-height: 18px; }
+.effort-badge { border-color: transparent; background: var(--surface-2); }
+:root[data-theme="dark"] .effort-badge { background: color-mix(in srgb, var(--line) 55%, transparent); }
+.task-stamp { color: var(--ink-faint); font-size: 11px; }
+.task-actions { gap: 2px; align-items: center; }
+.icon-btn { border-radius: 8px; }
+@media (hover: hover) and (min-width: 761px) {
+  /* Aksi baris muncul saat di-hover/fokus — daftar tetap tenang saat dipindai. */
+  li.task:not(.editing) .task-actions { opacity: 0; transition: opacity .12s var(--ease); }
+  li.task:hover .task-actions, li.task:focus-within .task-actions { opacity: 1; }
+  li.task:not(.editing) .task-actions .in-sprint { opacity: 1; }
+}
+
+/* Capture */
+.capture { border-color: var(--line); }
+.capture:focus-within { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
+.capture input[type="text"]:focus-visible { outline: none; }
+.capture .btn-solid, .capture .btn-line, .capture-more { border-radius: 9px; min-height: 34px; }
+
+/* Sidebar & kartu konteks */
+.context-card { border-radius: var(--radius); }
+.context-routine { border-radius: 0; }
+.context-routine:hover > span:nth-child(2) { color: var(--accent); }
+.context-check { border-radius: 6px; width: 18px; height: 18px; }
+.context-routine.done .context-check { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+/* Jira */
+a.jira-key { font-size: 11.5px; border-radius: 6px; color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+a.jira-key:hover { border-color: var(--accent); }
+.jira-status { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--ink-muted); }
+
+/* Log kerja */
+.log-day { border-radius: var(--radius); padding: 14px 16px; gap: 4px; }
+.log-day-head { align-items: center; padding-bottom: 6px; }
+.log-day-head h3 { font-size: 14px; }
+.log-jira-bar { flex-wrap: wrap; gap: 4px 12px; }
+.log-jira-bar .count { font-size: 12px; color: var(--ink-muted); }
+.log-filter .cap-label { margin-right: 4px; }
+.log-time { color: var(--ink-muted); min-width: 3.2em; }
+.log-entry { padding: 9px 0; align-items: center; }
+.log-entry .log-text { align-self: center; }
+.log-note summary { font-weight: 600; }
+
+/* Kalender */
+.kal-topbar { gap: 4px; }
+.kal-bulan-label { order: -1; min-width: 0; margin-right: 10px; font-size: 18px; letter-spacing: -.01em; }
+.kal-topbar .icon-btn { border: 1px solid var(--line); background: var(--surface); color: var(--ink-muted); font-size: 18px; }
+.kal-month { gap: 1px; padding: 0; border-radius: var(--radius); }
+.kal-month > .kal-dow { padding: 8px 0; letter-spacing: .06em; }
+.kal-cell { min-height: 92px; padding: 6px; }
+.kal-month > .kal-cell:nth-child(7n+6), .kal-month > .kal-cell:nth-child(7n) { background: color-mix(in srgb, var(--surface-2) 75%, var(--surface)); }
+.kal-cell.luar { opacity: 1; background: color-mix(in srgb, var(--bg) 70%, var(--surface)); }
+.kal-cell.luar > * { opacity: .5; }
+.kal-ev { padding: 1px 5px 1px 3px; border-radius: 5px; background: var(--accent-soft); color: var(--ink); }
+.cal-time { color: var(--accent); font-weight: 600; }
+.cal-loc { color: var(--ink-muted); }
+
+/* Settings: satu kolom terbaca, bukan membentang selebar layar. */
+#settingsview { width: 100%; max-width: 820px; margin: 0 auto; }
+#settingsview > .section { margin-top: 18px !important; }
+.weekly-checkin-head { padding: 0 2px; justify-content: space-between; }
+.weekly-advanced { padding: 2px 14px; border-radius: var(--radius); }
+.weekly-advanced > summary { font-size: 13px; list-style: none; gap: 8px; }
+.weekly-advanced > summary::-webkit-details-marker { display: none; }
+.weekly-advanced > summary::before { content: "›"; font-size: 16px; transition: transform .15s var(--ease); }
+.weekly-advanced[open] > summary::before { transform: rotate(90deg); }
+.weekly-advanced[open] { padding-bottom: 14px; }
+#settingsview .routine-card { padding: 4px 14px; }
+#settingsview .routine-row .r-text { font-size: 13.5px; color: var(--ink-muted); }
+.weekly-advanced { margin: 0; }
+
+/* Bottom nav HP & toast */
+.toast { border-radius: var(--radius); }
+
+@media (max-width: 760px) {
+  header.top { position: static; flex-wrap: wrap; padding: 0; min-height: 48px; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; row-gap: 10px; }
+  body:has(#board-main) .brand-mark { display: grid; width: 26px; height: 26px; font-size: 12px; }
+  .brand { gap: 8px; }
+  .tabs-row { order: 3; flex: 1 1 100%; }
+  .tabs-row #search { flex: 1 1 100%; max-width: none; min-height: 44px; border-radius: 12px; }
+  .top-actions { margin-left: auto; }
+  .top-actions .btn-ghost { height: 44px; border-radius: 12px; }
+  .top-actions .ready-alert-btn { display: flex; }
+  .tabs { box-shadow: 0 -6px 20px rgba(20,30,25,.06); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    background: color-mix(in srgb, var(--surface) 92%, transparent); }
+  :root[data-theme="dark"] .tabs { background: color-mix(in srgb, var(--surface) 92%, transparent); }
+  .tabs .tab { border-radius: 12px; }
+  .tab > [aria-hidden] { opacity: 1; }
+  .tab-label { font-size: 11.5px; }
+
+  /* Baris tugas: centang + isi berdampingan, aksi satu baris di bawah isi. */
+  li.task { display: grid; grid-template-columns: 44px minmax(0,1fr); column-gap: 2px; row-gap: 6px; padding: 10px 10px 10px 2px; }
+  li.task > .task-editor { grid-column: 1 / -1; }
+  .task .check { width: 44px; height: 44px; flex: none; margin: -10px 0 0; border: 0; background: none; position: relative; isolation: isolate; color: transparent; }
+  .task .check::before { content: ""; position: absolute; inset: 11px; z-index: -1; border: 1.5px solid var(--ink-faint); border-radius: 7px; background: var(--surface); }
+  li.task.done .task .check, li.task.done .check { background: none; color: var(--accent-ink); }
+  li.task.done .check::before { background: var(--accent); border-color: var(--accent); }
+  .task-body { grid-column: 2; }
+  .task-text { font-size: 15.5px; }
+  .task-stamp { display: none; }
+  .task-actions { grid-column: 2; width: auto; justify-content: flex-start; gap: 6px; }
+  .task-actions .icon-btn { width: 44px; height: 44px; border: 1px solid var(--line); background: var(--surface); }
+  .task-actions .icon-btn:has(.task-action-label) { display: inline-flex; align-items: center; gap: 6px; padding-inline: 12px; background: var(--surface); font-size: 13px; color: var(--ink-muted); }
+  .task-action-label { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .task-actions .danger { margin-left: auto; border-color: transparent; background: none; }
+  .task-actions .icon-btn.in-sprint { background: var(--accent-soft); border-color: transparent; }
+
+  /* Capture */
+  .capture-label { font-size: 12.5px; color: var(--ink); }
+  .capture-row1 > input { background: var(--surface-2) !important; border: 1px solid var(--line) !important; border-radius: 10px; padding-inline: 12px !important; }
+  .capture-row1 button { border-radius: 10px; }
+
+  /* Meeting: lokasi tetap satu baris dengan judul */
+  .cal-row { flex-wrap: nowrap; align-items: baseline; }
+  .cal-row .cal-text { flex: 1 1 auto; min-width: 0; }
+  .cal-row .cal-loc { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Log kerja: jam + titik + teks satu baris; badge & aksi di bawahnya, rata dengan teks. */
+  .log-day { padding: 12px; }
+  .log-day-head { gap: 4px 8px; }
+  .log-day-head h3 { flex-basis: 100%; }
+  .log-day-head .btn-ghost { flex-basis: auto; margin-left: auto; min-height: 36px; }
+  #worklog .log-entry { align-items: center; gap: 6px 8px; padding: 10px 0; }
+  #worklog .log-entry .log-text { flex: 1 1 calc(100% - 70px); font-size: 15px; }
+  #worklog .log-entry .log-text + * { margin-left: 58px; }
+  #worklog .log-entry .log-badges, #worklog .log-entry .log-actions { margin-left: 0; max-width: 100%; }
+  #worklog .log-entry .icon-btn { width: 40px; min-width: 40px; height: 40px; min-height: 40px; }
+  .log-entry .log-mins { min-height: 30px; }
+  .log-note summary { min-height: 32px; }
+  .log-jira-bar { margin-top: 2px; }
+
+  /* Jira: kunci + status di atas, judul, lalu tombol sejajar */
+  .jira-row { padding: 12px 0; }
+  .jira-row:has(> .jira-key) .jira-status { order: 1; margin-left: auto; }
+  .jira-row:not(:has(> .jira-key)) .icon-btn { margin-left: auto; }
+
+  /* Kalender */
+  .kal-topbar { grid-template-columns: minmax(0,1fr) 44px 44px auto; }
+  .kal-bulan-label { order: 0; grid-column: 1; grid-row: 1; text-align: left; margin: 0; font-size: 17px; }
+  .kal-month { gap: 1px; }
+  .kal-cell { min-height: 52px; padding: 4px 2px; }
+  .kal-ev { background: none; }
+
+  #settingsview > .section { margin-top: 14px !important; }
+}
+/* Sidebar kosong (tanpa sprint/rutinitas): kolom utama memakai lebar penuh. */
+.desktop-shell:not(:has(#board-sidebar .context-card)) { grid-template-columns: minmax(0,1fr); }
