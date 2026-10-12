@@ -27,6 +27,7 @@ Access code dan secret Calendar perangkat tidak masuk backup atau blob state.
   mulai — termasuk aturan penting: tugas **lama** bertenggat dekat disuruh
   dicicil dari sekarang, bukan ditunda. Badge usaha + skor tampil di baris
   tugas, dan skor jadi penentu urutan di dalam prioritas yang sama.
+- **Missing worklog** — filter di tab Jira untuk semua tiket assigned, termasuk Done, yang belum memiliki worklog milikmu di Jira. Test case `QAlity Test`/`QAlity` dikecualikan berdasarkan jenis tiket; Task/Bug terkait QAlity tetap tampil. Daftar read-only dimuat saat filter dibuka, diperbarui lewat **Refresh**, dan tidak mengubah papan/sprint atau mengirim worklog otomatis.
 - **Cari** — satu kolom cari untuk semua tab: tugas di papan, tiket Jira,
   dan entri log kerja.
 - **Tab Jira terpisah** — tiket yang belum diambil punya tab sendiri (🎫,

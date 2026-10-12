@@ -943,6 +943,62 @@ async function tangani(request, env) {
       Accept: "application/json",
     };
 
+    // GET /missing-worklog — semua status; pisahkan dari inbox/sprint reconciliation.
+    if (request.method === "GET" && url.pathname === "/missing-worklog") {
+      const searchAll = async (jql, fields) => {
+        const issues = [], keys = new Set(), tokens = new Set();
+        let token = "";
+        for (let pageNo = 0; pageNo < 100; pageNo++) {
+          const params = new URLSearchParams({ jql, fields, maxResults: "100" });
+          if (token) params.set("nextPageToken", token);
+          const response = await fetch(site + "/rest/api/3/search/jql?" + params, { headers: authHeaders });
+          if (!response.ok) throw new Error("Jira menolak pembacaan worklog (HTTP " + response.status + ").");
+          const page = await response.json();
+          if (!Array.isArray(page.issues)) throw new Error("Format pencarian Jira tidak valid.");
+          for (const issue of page.issues) {
+            if (!issue || typeof issue.key !== "string" || !/^[A-Z][A-Z0-9]{1,9}-\d+$/.test(issue.key) || keys.has(issue.key)) {
+              throw new Error("Jira mengembalikan tiket invalid/duplikat; refresh kembali.");
+            }
+            keys.add(issue.key); issues.push(issue);
+          }
+          if (page.nextPageToken != null && typeof page.nextPageToken !== "string") throw new Error("Pagination Jira tidak valid.");
+          token = page.nextPageToken || "";
+          if (!token) {
+            if (page.isLast === false) throw new Error("Halaman Jira belum lengkap.");
+            return issues;
+          }
+          if (page.isLast === true || tokens.has(token)) throw new Error("Pagination Jira tidak valid.");
+          tokens.add(token);
+        }
+        throw new Error("Terlalu banyak halaman Jira; hasil tidak ditampilkan sebagian.");
+      };
+      try {
+        // ponytail: dua positive sets; tidak perlu 1 request worklog per tiket.
+        const [assigned, worked] = await Promise.all([
+          searchAll("assignee = currentUser() ORDER BY updated DESC", "summary,status,created,issuetype"),
+          searchAll("assignee = currentUser() AND worklogAuthor = currentUser() ORDER BY updated DESC", "key"),
+        ]);
+        const assignedKeys = new Set(assigned.map(i => i.key));
+        if (worked.some(i => !assignedKeys.has(i.key))) throw new Error("Assignment berubah saat membaca; refresh kembali.");
+        const workedKeys = new Set(worked.map(i => i.key));
+        let excludedQality = 0;
+        const items = [];
+        for (const issue of assigned) {
+          if (workedKeys.has(issue.key)) continue;
+          const f = issue.fields;
+          if (!f || !f.issuetype || typeof f.issuetype.name !== "string" || typeof f.summary !== "string") {
+            throw new Error("Metadata jenis tiket Jira belum lengkap.");
+          }
+          if (/^qality(?:\s+test)?$/i.test(f.issuetype.name.trim())) { excludedQality++; continue; }
+          items.push({ key: issue.key, summary: f.summary, status: f.status && f.status.name || null,
+            created: f.created || null, issueType: f.issuetype.name });
+        }
+        return json({ site, items, total: items.length, excludedQality, complete: true, checkedAt: new Date().toISOString() });
+      } catch {
+        return json({ error: "Gagal membaca daftar worklog lengkap dari Jira. Refresh kembali; hasil parsial tidak ditampilkan." }, 502);
+      }
+    }
+
     // POST /pairing-link — unggah SATU pasangan yang sudah dipilih user menjadi
     // native Jira issue link + chip tiket dev di description tiket QA.
     // Endpoint ini tidak pernah dipanggil matcher/sync. Idempoten: existing
@@ -1343,11 +1399,11 @@ async function tangani(request, env) {
       const base = site + "/rest/api/3/issue/" + encodeURIComponent(key) + "/worklog";
       const digest = await sha256hex(JSON.stringify({ key, ...payload }));
       const marker = entryId ? await sha256hex(uid + ":" + entryId) : null;
-      if (marker) payload.properties = [{ key: "catet.entry", value: marker }];
+      if (marker) payload.properties = [{ key: "catet.entry", value: { id: marker } }];
       const text = (n) => !n ? "" : typeof n.text === "string" ? n.text : (n.content || []).map(text).join("");
       const matches = (w) => w && String(w.id || "") && toJiraDate(w.started) === startedJira &&
         w.timeSpentSeconds === payload.timeSpentSeconds && text(w.comment) === comment &&
-        (!marker || (w.properties || []).some(p => p.key === "catet.entry" && p.value === marker));
+        (!marker || (w.properties || []).some(p => p.key === "catet.entry" && p.value && p.value.id === marker));
       const verify = async (id) => {
         if (!/^\d+$/.test(String(id || ""))) throw new Error("Jira tidak mengembalikan worklog ID valid.");
         const read = await fetch(base + "/" + id + "?expand=properties", { headers: authHeaders });
@@ -1391,7 +1447,15 @@ async function tangani(request, env) {
           // Hanya penolakan definitif 4xx (bukan timeout) yang aman dicoba lagi.
           if (entryId && r.status >= 400 && r.status < 500 && r.status !== 408) await d1q(env,
             "DELETE FROM worklog_requests WHERE user_id = ?1 AND entry_id = ?2", [uid, entryId], "run");
-          return json({ error: "Jira menolak (" + r.status + "). Periksa status sebelum mencoba lagi." }, 502);
+          // Teruskan alasan dari Jira (mis. "Worklog tidak boleh pada tiket Done") supaya
+          // user tahu apa yang ditolak; tanpa ini 400 tak bisa didiagnosis.
+          let alasan = "";
+          try {
+            const j = JSON.parse(await r.text());
+            alasan = [...(j.errorMessages || []), ...Object.values(j.errors || {})]
+              .filter(x => typeof x === "string").join("; ").slice(0, 300);
+          } catch {}
+          return json({ error: "Jira menolak (" + r.status + ")" + (alasan ? ": " + alasan : ". Periksa status sebelum mencoba lagi.") }, 502);
         }
         return await verify((await r.json()).id);
       } catch {

@@ -7,6 +7,9 @@
 const JIRA_KEY_STORE = "catet.jira.v1";
 const READY_NOTIFICATIONS_KEY = "catet.readyNotifications.v1";
 const JIRA_RE = /\b([A-Z][A-Z0-9]{1,9}-\d+)\b/g;
+let jiraWorklogFilter = false;
+// Derived, account-scoped results stay in memory, not synced task state.
+let missingWorklog = { data: null, loading: false, error: "" };
 let jira = (() => {
   try {
     const j = JSON.parse(localStorage.getItem(JIRA_KEY_STORE));
@@ -55,6 +58,8 @@ normalisasiJira(jira);
 // sebelumnya tetap terlihat atau nanti ikut terunggah ke akun lain. Preferensi
 // perangkat (tab aktif, reminder, dsb.) sengaja tidak ikut dihapus.
 function kosongkanDataLokalTanpaAkses() {
+  missingWorklog = { data: null, loading: false, error: "" };
+  jiraWorklogFilter = false;
   const proxy = jira.proxy || ""; // Worker custom tetap diperlukan untuk signup/sign in.
   for (const key of [
     "catet.tasks.v1", "catet.worklog.v1", "catet.routines.v1",
@@ -980,6 +985,8 @@ async function tarikProfil(paksa) {
 }
 // Terapkan kode akses (sign in / ganti akun): pull state, tarik profil & tiket.
 async function pakaiKode(kode) {
+  missingWorklog = { data: null, loading: false, error: "" };
+  jiraWorklogFilter = false;
   jira.key = (kode || "").trim();
   saveJira(true); // kredensial perangkat, bukan perubahan data
   setSyncStatus(""); profil = null;
@@ -1126,6 +1133,8 @@ function renderSignedIn(editor) {
   tokenIn.title = "Buat di id.atlassian.com/manage-profile/security/api-tokens";
   const kirimJ = el("button", "btn-solid", jiraOk ? "Update" : "Save Jira credentials");
   kirimJ.onclick = async () => {
+    // Kode/proxy yang sama bisa memakai kredensial Jira lain; lepas request lama.
+    missingWorklog = { data: null, loading: false, error: "" };
     kirimJ.disabled = true;
     try {
       const r = await fetch(jiraProxy() + "/me/jira", {
@@ -1140,6 +1149,7 @@ function renderSignedIn(editor) {
     } catch (e) {
       alert("Gagal menyimpan: " + (e && e.message ? e.message : "koneksi"));
     }
+    missingWorklog = { data: null, loading: false, error: "" };
     kirimJ.disabled = false; render();
   };
   fj.append(siteIn, emailIn, tokenIn, kirimJ);
@@ -1458,9 +1468,89 @@ function sprintPtsUntukBadge(s) { return sprintPts({ sprintId: s.id }); }
 let jiraImportOpen = false;
 let bulanBuka = {};        // ingatan buka/tutup per grup bulan
 let bulanDefaultBuka = true; // default semua terbuka; diubah tombol lipat/buka semua
+async function refreshMissingWorklog() {
+  const proxy = jiraProxy(), key = jira.key, site = jiraSite();
+  if (!proxy || missingWorklog.loading) return;
+  const state = missingWorklog = { data: null, loading: true, error: "" };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 90000);
+  if (view === "jira") render();
+  try {
+    const response = await fetch(proxy + "/missing-worklog", { headers: headerAkses(), cache: "no-store", signal: controller.signal });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Gagal membaca worklog Jira.");
+    if (typeof data.site !== "string" || data.complete !== true || !Array.isArray(data.items) || data.total !== data.items.length ||
+        typeof data.checkedAt !== "string" || !Number.isFinite(Date.parse(data.checkedAt)) ||
+        !Number.isInteger(data.excludedQality) || data.excludedQality < 0 ||
+        !data.items.every(x => x && typeof x.key === "string" && /^[A-Z][A-Z0-9]{1,9}-\d+$/.test(x.key) &&
+          typeof x.summary === "string" && typeof x.issueType === "string" && !/^qality(?:\s+test)?$/i.test(x.issueType.trim())) ||
+        new Set(data.items.map(x => x.key)).size !== data.items.length) throw new Error("Daftar worklog Jira belum lengkap/valid.");
+    const responseSite = new URL(data.site);
+    if ((responseSite.protocol !== "https:" && !(responseSite.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(responseSite.hostname))) ||
+        responseSite.username || responseSite.password || responseSite.pathname !== "/" || responseSite.search || responseSite.hash) {
+      throw new Error("Alamat Jira tidak valid.");
+    }
+    state.data = { ...data, site: responseSite.origin };
+  } catch (error) {
+    state.error = error.name === "AbortError" ? "Jira terlalu lama merespons. Tekan Refresh untuk mencoba kembali." : error.message;
+  } finally {
+    clearTimeout(timeout); state.loading = false;
+    if (state === missingWorklog && jira.key === key && jiraProxy() === proxy && jiraSite() === site) {
+      if (view === "jira") render();
+    } else if (state === missingWorklog) missingWorklog = { data: null, loading: false, error: "" };
+  }
+}
+
+function renderMissingWorklog(wrap) {
+  const sec = el("section", "section s-jira");
+  sec.id = "jira-worklog-list";
+  const head = el("div", "section-head");
+  head.append(el("h2", null, "Missing worklog"));
+  const refresh = el("button", "clear-done", missingWorklog.loading ? "Loading…" : "Refresh");
+  refresh.id = "jira-worklog-refresh"; refresh.setAttribute("aria-disabled", String(missingWorklog.loading));
+  refresh.onclick = () => refreshMissingWorklog(); head.append(refresh); sec.append(head);
+  const feedback = el("div", "cap-hint");
+  feedback.id = "jira-worklog-feedback"; feedback.setAttribute("role", "status");
+  feedback.setAttribute("aria-live", "polite");
+  const data = missingWorklog.data;
+  feedback.textContent = missingWorklog.loading ? "Membaca semua tiket assigned dan worklog milikmu dari Jira…" : missingWorklog.error ||
+    (data ? "Diperiksa " + fmtAgo(data.checkedAt) + ". " + data.excludedQality + " test case QAlity dikecualikan." : "Tekan Refresh untuk membaca Jira.");
+  sec.append(feedback);
+  sec.append(el("div", "cap-hint", "Semua tiket assigned ke kamu, termasuk Done, yang belum memiliki worklog milikmu di Jira. Task/Bug terkait QAlity tetap ditampilkan."));
+  if (data) {
+    const q = searchQuery.trim().toLowerCase();
+    const shown = data.items.filter(x => !q || (x.key + " " + x.summary + " " + (x.status || "") + " " + x.issueType).toLowerCase().includes(q));
+    head.append(el("span", "count mono", q ? shown.length + "/" + data.total : String(data.total)));
+    if (!shown.length) sec.append(el("div", "empty-note", q ? "Tidak ada tiket yang cocok dengan pencarian." : "Semua tiket non-QAlity yang assigned ke kamu sudah memiliki worklog milikmu di Jira."));
+    const card = el("div", "routine-card");
+    for (const item of shown) {
+      const row = el("div", "jira-row");
+      const a = el("a", "jira-key", item.key);
+      a.id = "jira-worklog-ticket-" + item.key;
+      a.href = data.site + "/browse/" + item.key; a.target = "_blank"; a.rel = "noopener noreferrer";
+      a.title = "Buka tiket untuk mengisi worklog di Jira";
+      row.append(a, el("span", "jira-summary", item.summary), el("span", "jira-status", item.status || ""), el("span", "jira-status", item.issueType));
+      card.append(row);
+    }
+    sec.append(card);
+  }
+  wrap.append(sec);
+}
+
 function renderJiraInbox() {
   const wrap = $("#jiraview");
   wrap.innerHTML = "";
+  const filters = el("div", "cap-group log-filter");
+  filters.setAttribute("role", "group"); filters.setAttribute("aria-label", "Filter tiket Jira");
+  for (const [missing, label] of [[false, "Inbox"], [true, "Missing worklog"]]) {
+    const chip = el("button", "chip time", label);
+    chip.id = missing ? "jira-filter-missing-worklog" : "jira-filter-inbox";
+    chip.setAttribute("aria-pressed", String(jiraWorklogFilter === missing));
+    chip.onclick = () => { jiraWorklogFilter = missing; render(); if (missing) refreshMissingWorklog(); };
+    filters.append(chip);
+  }
+  wrap.append(filters);
+  if (jiraWorklogFilter) { renderMissingWorklog(wrap); return; }
   wrap.append(renderSprintBar());
   if (rapikanInbox()) saveJira(true); // penyembuhan mesin — tanpa klaim dirty
   const q = searchQuery.trim().toLowerCase();
