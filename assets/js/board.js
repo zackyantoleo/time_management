@@ -105,7 +105,8 @@ function renderFocus() {
     const actions = el("div", "focus-actions");
     const doneBtn = el("button", "btn-solid", "✓ Done");
     doneBtn.onclick = () => { completeTask(t); render(); };
-    const pauseBtn = el("button", "btn-line", "Pause — back to list");
+    const pauseBtn = el("button", "btn-line", "Pause");
+    pauseBtn.title = "Hentikan fokus dan kembalikan ke daftar";
     pauseBtn.onclick = () => { stopFocus(t); t.status = "aktif"; save(true); render(); };
     const intBtn = el("button", "btn-line", "⚡ Interruption? Note it");
     intBtn.title = "Catat interupsinya di kolom bawah, lalu tekan ▶ padanya kalau harus dikerjakan sekarang — tugas ini otomatis masuk tumpukan dan kembali difokuskan begitu interupsinya selesai.";
@@ -350,13 +351,15 @@ function taskRow(t) {
     }
     const editBtn = el("button", "icon-btn" + (editingTaskId === t.id ? " in-sprint" : ""), "✎");
     editBtn.title = "Ubah prioritas / tenggat / usaha";
-    editBtn.setAttribute("aria-label", editBtn.title);
+    editBtn.setAttribute("aria-label", "Edit — " + editBtn.title);
     editBtn.onclick = () => { editingTaskId = editingTaskId === t.id ? null : t.id; render(); };
+    editBtn.append(el("span", "task-action-label", "Edit"));
     actions.append(editBtn);
     const focusBtn = el("button", "icon-btn", "▶");
     focusBtn.title = "Kerjakan sekarang (jadikan fokus) — yang sedang fokus otomatis masuk tumpukan dan kembali saat ini selesai";
-    focusBtn.setAttribute("aria-label", "Kerjakan sekarang");
+    focusBtn.setAttribute("aria-label", "Run — Kerjakan sekarang");
     focusBtn.onclick = () => { fokuskan(t); render(); };
+    focusBtn.append(el("span", "task-action-label", "Run"));
     actions.append(focusBtn);
   }
   const delBtn = el("button", "icon-btn danger", "✕");

@@ -149,6 +149,9 @@ function initApp() {
   });
   $("#search").placeholder = SEARCH_PLACEHOLDER[view];
   initCapture();
+  if (view === "papan" && jiraProxy() && matchMedia("(min-width: 761px) and (pointer: fine)").matches) {
+    $("#cap-text").focus({ preventScroll: true });
+  }
   initReminders();
   initBackup();
   initWeeklyCheckin();
