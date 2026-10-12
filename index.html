@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Catet — catatan cepat berprioritas</title>
 <meta name="theme-color" content="#0e7a6f">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25,7 +25,7 @@
       <a class="week-chip" id="wrapped-week-chip" href="weekly-wrapped.html" hidden><span class="week-chip-dot" aria-hidden="true"></span><span id="wrapped-week-chip-label" class="week-chip-label"></span></a>
       <span class="week-chip-status" id="wrapped-week-chip-status" role="status" aria-atomic="true"></span>
       <button class="btn-ghost theme-toggle" id="theme-toggle" type="button" aria-label="Gunakan tema gelap" aria-pressed="false">☾</button>
-      <button class="btn-ghost" id="settings-btn" title="Settings" aria-pressed="false">⚙️</button>
+      <button class="btn-ghost" id="settings-btn" aria-label="Settings" title="Settings" aria-pressed="false">⚙️</button>
     </div>
   </header>
 
@@ -67,7 +67,8 @@
   <section class="capture" aria-label="Tambah catatan">
     <div class="capture-row1">
       <span class="capture-plus" aria-hidden="true">+</span>
-      <input type="text" id="cap-text" placeholder="Apa yang perlu kamu catat?" autofocus>
+      <label class="capture-label" for="cap-text">Quick capture</label>
+      <input type="text" id="cap-text" placeholder="Apa yang perlu kamu catat?" enterkeyhint="done">
       <button class="btn-ghost capture-more" id="capture-more" type="button" aria-expanded="false" aria-controls="capture-options">Options</button>
       <button class="btn-line" id="cap-run" title="Simpan lalu langsung jadikan In progress">▶ Run</button>
       <button class="btn-solid" id="cap-save">Save</button>

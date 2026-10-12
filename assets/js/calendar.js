@@ -375,9 +375,16 @@ function renderCalendar() {
     const dt = new Date(win.start.getFullYear(), win.start.getMonth(), win.start.getDate() + i);
     const day = localDateStr(dt);
     const evs = byDay.get(day) || [];
-    const cell = el("div", "kal-cell" + (dt.getMonth() !== curM ? " luar" : "") +
+    const cell = el("button", "kal-cell" + (dt.getMonth() !== curM ? " luar" : "") +
       (day === hariIni ? " ini" : "") + (day === calSel ? " pilih" : "") + (evs.length ? " ada" : ""));
-    cell.onclick = () => { calSel = day; render(); };
+    cell.type = "button";
+    cell.dataset.day = day;
+    cell.setAttribute("aria-label", fmtDayHeading(day) + ", " + evs.length + " acara");
+    cell.setAttribute("aria-pressed", String(day === calSel));
+    cell.onclick = () => {
+      calSel = day; render();
+      $(".kal-cell[data-day=\"" + day + "\"]").focus({ preventScroll: true });
+    };
     cell.append(el("div", "kal-num", String(dt.getDate())));
     const list = el("div", "kal-cell-evs");
     for (const e of evs.slice(0, cap)) {
@@ -389,6 +396,11 @@ function renderCalendar() {
     }
     if (evs.length > cap) list.append(el("div", "kal-more", "+" + (evs.length - cap)));
     cell.append(list);
+    if (evs.length) {
+      const count = el("span", "kal-mobile-count", String(evs.length));
+      count.setAttribute("aria-hidden", "true");
+      cell.append(count);
+    }
     grid.append(cell);
   }
   wrap.append(grid);
