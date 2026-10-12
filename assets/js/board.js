@@ -330,8 +330,8 @@ function taskRow(t) {
       meta.append(bb);
     }
   }
-  meta.append(el("span", "mono", "added " + fmtStempel(t.createdAt)));
-  if (t.status === "selesai" && t.doneAt) meta.append(el("span", "mono", "done " + fmtAgo(t.doneAt)));
+  meta.append(el("span", "task-stamp mono", "added " + fmtStempel(t.createdAt)));
+  if (t.status === "selesai" && t.doneAt) meta.append(el("span", "task-stamp mono", "done " + fmtAgo(t.doneAt)));
   body.append(meta);
 
   const actions = el("div", "task-actions");
