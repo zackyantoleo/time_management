@@ -464,9 +464,9 @@ a.jira-key:hover { border-color: var(--accent); }
 .cal-loc { color: var(--ink-muted); }
 
 /* Settings: satu kolom terbaca, bukan membentang selebar layar. */
-#settingsview { width: 100%; max-width: 820px; margin: 0 auto; }
 #settingsview > .section { margin-top: 18px !important; }
-.weekly-checkin-head { padding: 0 2px; justify-content: space-between; }
+.weekly-checkin-head { padding: 0 2px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+.weekly-checkin-head > .tab-link { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding-inline: 12px; border-radius: 9px; }
 .weekly-advanced { padding: 2px 14px; border-radius: var(--radius); }
 .weekly-advanced > summary { font-size: 13px; list-style: none; gap: 8px; }
 .weekly-advanced > summary::-webkit-details-marker { display: none; }
@@ -547,6 +547,8 @@ a.jira-key:hover { border-color: var(--accent); }
   .kal-ev { background: none; }
 
   #settingsview > .section { margin-top: 14px !important; }
+  .weekly-checkin-head > .tab-link { min-height: 44px; border-radius: 12px; }
+  details.routine-manage > summary { display: flex; align-items: center; }
 }
 /* Sidebar kosong (tanpa sprint/rutinitas): kolom utama memakai lebar penuh. */
 .desktop-shell:not(:has(#board-sidebar .context-card)) { grid-template-columns: minmax(0,1fr); }
