@@ -43,6 +43,8 @@ async function main() {
   const old = JSON.parse(fs.readFileSync(path.join(root, 'assets/data/weekly-wrapped.sample.json')));
   assert.equal((await call('PUT', old)).status, 200, 'legacy v1 initial write preserved');
   const get = await call('GET'); assert.equal(get.headers.get('ETag'), etag(old));
+  assert.match(get.headers.get('Cache-Control'), /no-transform/, 'edge must preserve strong digest ETag');
+  assert.equal(get.headers.get('Content-Encoding'), 'identity');
   assert.equal((await call('PUT', fixture, { 'If-Match': etag(fixture) })).status, 412);
   assert.equal((await call('PUT', fixture, { 'If-Match': etag(old) })).status, 200);
   assert.deepEqual(JSON.parse(row.blob), fixture);

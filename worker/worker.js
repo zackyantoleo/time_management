@@ -718,6 +718,8 @@ async function tangani(request, env) {
         report.updated_at = row.updated_at;
         const response = json(report);
         response.headers.set("ETag", etag);
+        response.headers.set("Cache-Control", "no-store, no-transform");
+        response.headers.set("Content-Encoding", "identity");
         response.headers.set("X-Wrapped-Publish-Protocol", "cas-v1");
         return response;
       }
