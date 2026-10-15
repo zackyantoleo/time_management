@@ -4,8 +4,10 @@
 const THEME_KEY = "catet.theme.v1";
 const THEME_MEDIA = matchMedia("(prefers-color-scheme: dark)");
 let themeMode = (() => {
-  const saved = localStorage.getItem(THEME_KEY);
-  return ["light", "dark", "system"].includes(saved) ? saved : "system";
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    return ["light", "dark", "system"].includes(saved) ? saved : "system";
+  } catch { return "system"; }
 })();
 
 function effectiveTheme() {
@@ -24,7 +26,7 @@ function applyTheme() {
 }
 function setThemeMode(mode) {
   themeMode = ["light", "dark", "system"].includes(mode) ? mode : "system";
-  localStorage.setItem(THEME_KEY, themeMode);
+  try { localStorage.setItem(THEME_KEY, themeMode); } catch { /* Sandboxed local preview keeps theme in memory. */ }
   applyTheme();
 }
 function toggleTheme() {

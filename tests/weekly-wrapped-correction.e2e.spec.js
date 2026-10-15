@@ -19,7 +19,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('sample report can be corrected without the long form', async ({ page }) => {
-  await page.goto(`${BASE_URL}/weekly-wrapped.html`);
+  await page.goto(`${BASE_URL}/weekly-wrapped.html?demo=legacy`);
   await expect(page.locator('#wrapped-source-status')).toHaveAttribute('data-source', 'demo');
   await expect(page.locator('#story-title')).toHaveText('Minggu ini, tanpa noise.');
   await page.keyboard.press('Escape');

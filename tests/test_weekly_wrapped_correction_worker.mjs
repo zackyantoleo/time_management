@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("../worker/worker.js", import.meta.url), "utf8");
+const source = (await readFile(new URL("../worker/worker.js", import.meta.url), "utf8")).replace("../assets/js/work-pattern-report-contract.js", new URL("../assets/js/work-pattern-report-contract.js", import.meta.url).href);
 const { default: worker } = await import("data:text/javascript;base64," + Buffer.from(source).toString("base64"));
 
 const reports = new Map();
@@ -177,6 +177,28 @@ try {
   const ownJson = await ownRead.json();
   assert.equal(ownJson.correction.verdict, "missed");
   assert.equal(ownJson.correction.note, "Hidden pairing review");
+
+  const pattern = JSON.parse(await readFile(new URL('../assets/data/work-patterns.sample.json', import.meta.url), 'utf8'));
+  const putPattern = body => worker.fetch(new Request('https://worker.test/weekly-wrapped', {
+    method: 'PUT', headers: { ...accessHeaders, Authorization: 'Bearer wrapped-secret' }, body: JSON.stringify(body),
+  }), env);
+  assert.equal((await putPattern(pattern)).status, 200, 'no-plan v2 can be stored');
+  const readPattern = await worker.fetch(new Request('https://worker.test/weekly-wrapped', { headers: accessHeaders }), env);
+  assert.equal(readPattern.status, 200);
+  const readPatternBody = await readPattern.json();
+  assert.equal(typeof readPatternBody.updated_at, 'string');
+  delete readPatternBody.updated_at;
+  assert.deepEqual(readPatternBody, pattern, 'exact v2 content read-back');
+  for (const change of [
+    v => { v.report.next_week = {}; },
+    v => { v.report.insights[0].evidence_refs = ['missing']; },
+    v => { v.report.insights[0].counter_context = []; },
+    v => { v.report.evidence[0].sensitivity = 'raw'; },
+  ]) {
+    const bad = structuredClone(pattern); change(bad);
+    assert.equal((await putPattern(bad)).status, 400);
+    assert.deepEqual(JSON.parse(reports.get(CATET_USER_ID).blob), pattern, 'bad payload cannot replace stored report');
+  }
 } finally {
   // Worker imported in memory; no temporary module to remove.
 }

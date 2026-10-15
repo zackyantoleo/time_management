@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';import {readFile} from 'node:fs/promises';import vm from 'node:vm';
-const source=await readFile(new URL('../worker/worker.js',import.meta.url),'utf8');const worker=(await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'))).default;
+const source=(await readFile(new URL('../worker/worker.js',import.meta.url),'utf8')).replace('../assets/js/work-pattern-report-contract.js',new URL('../assets/js/work-pattern-report-contract.js',import.meta.url).href);const worker=(await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'))).default;
 let stored=null;const env={CATET_KV:{get:async()=>stored,put:async(k,v)=>stored=v}};
 const req=body=>new Request('https://worker.test/state',{method:'PUT',headers:{Origin:'https://zackyantoleo.github.io','Content-Type':'application/json'},body:JSON.stringify(body)});
 const good={updatedAt:'2026-10-09T02:00:00Z',stores:{tasks:[{id:'t',text:'Synthetic',extra:true}],worklog:[],routines:[],routineday:{},jira:{items:[]},sprints:{list:[],aktif:null},weekly:{weeks:{}}}};

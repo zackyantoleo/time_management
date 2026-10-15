@@ -151,7 +151,12 @@ function jumlahPerubahan(result) {
   return result.meta && Number.isInteger(result.meta.changes) ? result.meta.changes : 0;
 }
 
+import workPatternContract from "../assets/js/work-pattern-report-contract.js";
+
 function validateWeeklyWrappedReport(body) {
+  if (body?.schema_version === 2) {
+    try { workPatternContract.validateWorkPatternReport(body); return true; } catch { return false; }
+  }
   const isoDate = /^\d{4}-\d{2}-\d{2}$/;
   const isoWeek = /^\d{4}-W\d{2}$/;
   const tones = new Set(["accent", "success", "info", "warning", "dark"]);

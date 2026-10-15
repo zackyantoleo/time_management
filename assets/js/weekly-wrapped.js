@@ -1,7 +1,8 @@
-// weekly-wrapped.js — slideshow-first presentation followed by an auditable report.
+// weekly-wrapped.js — report-first; legacy story remains optional.
 "use strict";
 
 const WRAPPED_DEMO_URL = "assets/data/weekly-wrapped.sample.json";
+const WRAPPED_PATTERN_DEMO_URL = "assets/data/work-patterns.sample.json";
 const WRAPPED_PROXY_DEFAULT = "https://catet-jira-proxy.zackyanto-leo.workers.dev";
 const WRAPPED_JIRA_KEY = "catet.jira.v1";
 const SLIDE_MS = 8000;
@@ -9,6 +10,7 @@ let wrappedData = null;
 let slideIndex = 0;
 let autoAdvance = null;
 let touchStartX = null;
+let wrappedLoadToken = 0;
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
 
 function wrappedEl(tag, className, text) {
@@ -32,26 +34,31 @@ function setWrappedSource(source, label) {
   badge.dataset.source = source;
   badge.textContent = label;
 }
-async function fetchWeeklyWrappedReport() {
+async function fetchWeeklyWrappedReport(loadToken) {
   const { key, proxy } = wrappedConnection();
-  if (key) {
-    try {
-      const response = await fetch(proxy + "/weekly-wrapped", { headers: headerAksesWrapped(key), cache: "no-store" });
-      if (response.ok) {
-        const report = await response.json();
-        if (report && report.schema_version === 1 && report.report) {
-          setWrappedSource("live", "Live report");
-          return report;
-        }
-      } else if (response.status !== 404) {
-        console.warn("Weekly Wrapped live report unavailable", response.status);
+  const explicitDemo = new URLSearchParams(location.search).get('demo');
+  if (key && !explicitDemo) {
+    const response = await fetch(proxy + "/weekly-wrapped", { headers: headerAksesWrapped(key), cache: "no-store" });
+    if (response.ok) {
+      const report = await response.json();
+      if (report && report.report === null && report.updatedAt === null && Object.keys(report).length === 2) {
+        // Existing Worker uses an explicit empty sentinel instead of HTTP 404.
+      } else {
+        if (loadToken !== wrappedLoadToken) return null;
+        validateWrappedData(report);
+        setWrappedSource("live", "Live report");
+        return report;
       }
-    } catch (error) { console.warn("Weekly Wrapped live report unavailable", error.message); }
+    }
+    if (!response.ok && response.status !== 404) throw new Error(`live HTTP ${response.status}`);
   }
-  const demo = await fetch(WRAPPED_DEMO_URL, { cache: "no-store" });
+  const demo = await fetch(explicitDemo === 'legacy' ? WRAPPED_DEMO_URL : WRAPPED_PATTERN_DEMO_URL, { cache: "no-store" });
   if (!demo.ok) throw new Error(`demo HTTP ${demo.status}`);
-  setWrappedSource("demo", key ? "Demo · no report yet" : "Demo · connect CATET");
-  return demo.json();
+  const report = await demo.json();
+  if (loadToken !== wrappedLoadToken) return null;
+  validateWrappedData(report);
+  setWrappedSource("demo", key && !explicitDemo ? "Demo · no report yet" : "Demo · synthetic example");
+  return report;
 }
 
 function wrappedRefs(ids) {
@@ -238,6 +245,7 @@ function renderEvidence() {
 }
 
 function validateWrappedData(data) {
+  if (data?.schema_version === 2) return WorkPatternReportContract.validateWorkPatternReport(data);
   if (!data || (data.schema_version !== undefined && data.schema_version !== 1) || !Array.isArray(data.slides) || data.slides.length < 1 || !data.report) throw new Error("missing story/report");
   if (!Array.isArray(data.report.scorecard) || !Array.isArray(data.report.evidence)) throw new Error("invalid report collections");
   if (data.report.evidence.some((item) => item.sensitivity !== "sanitized")) throw new Error("unsanitized evidence rejected");
@@ -269,38 +277,116 @@ function bindWrappedEvents() {
   }, {passive: true});
 }
 
-async function initWrapped() {
-  try {
-    wrappedData = await fetchWeeklyWrappedReport();
-    validateWrappedData(wrappedData);
-    document.querySelector("#wrapped-period").textContent = wrappedData.period.label;
-    document.querySelector("#report-summary").textContent = wrappedData.report.summary;
-    document.querySelector("#report-status").textContent = wrappedData.report.status;
-    renderCommitments();
-    renderScorecard();
-    renderClaims();
-    renderNextWeek();
-    renderEvidence();
-    bindWrappedEvents();
-    if (typeof initWeeklyCheckin === "function") {
-      try { initWeeklyCheckin(); } catch (error) { console.warn("Weekly check-in init skipped", error); }
-    }
-    if (typeof initWeeklyCorrection === "function") {
-      const sourceBadge = document.querySelector("#wrapped-source-status");
-      initWeeklyCorrection({
-        report: wrappedData,
-        source: sourceBadge && sourceBadge.dataset.source === "live" ? "live" : "demo",
-        connection: wrappedConnection(),
-      });
-    }
-    renderSlide(0);
-    startAutoAdvance();
-  } catch (error) {
-    console.error("Weekly Wrapped init failed", error);
-    document.querySelector("#wrapped-story").classList.add("hidden");
-    document.querySelector("#wrapped-report").classList.add("hidden");
-    document.querySelector("#wrapped-error").classList.remove("hidden");
-  }
+function showWrappedError() {
+  stopAutoAdvance();
+  for (const id of ['wrapped-story', 'wrapped-report', 'work-pattern-report']) document.getElementById(id).classList.add('hidden');
+  document.querySelector('#wrapped-error').classList.remove('hidden');
+  setWrappedSource('error', 'Report error');
 }
 
+function renderWorkPatternReport(data) {
+  const report = data.report;
+  document.querySelector('#work-pattern-summary').textContent = report.summary;
+  document.querySelector('#work-pattern-snapshot').textContent = `Snapshot ${data.generated_at} · ${data.report_id} · total pekerjaan unik unknown`;
+  const evidence = new Map(report.evidence.map(e => [e.id, e]));
+  for (const [hostId, items] of [
+    ['work-pattern-highlights', report.insights.filter(i => i.dimension !== 'activity')],
+    ['work-pattern-item-list', report.insights.filter(i => i.dimension === 'activity')],
+  ]) {
+    const host = document.getElementById(hostId);
+    host.replaceChildren();
+    if (!items.length) host.append(wrappedEl('p', '', 'Belum ada fakta bersitasi pada scope ini; bukan berarti tidak ada kerja.'));
+    for (const item of items) {
+      const card = wrappedEl('article', 'claim-card');
+      card.append(wrappedEl('span', 'section-eyebrow', `${item.source} · recorded fact`), wrappedEl('h3', '', item.observation), wrappedEl('p', '', item.interpretation));
+      const details = wrappedEl('details', 'pattern-evidence');
+      details.append(wrappedEl('summary', '', `Evidence & limits · ${item.evidence_refs.length} refs`));
+      details.append(wrappedEl('p', '', `Batas interpretasi: ${item.interpretation_limits.join(' ')}`),
+        wrappedEl('p', '', `Konteks tandingan: ${item.counter_context.join(' ')}`),
+        wrappedEl('p', '', `Keyakinan: ${item.confidence_reason}`),
+        wrappedEl('p', '', `Dampak ${item.impact.status}: ${item.impact.reason}`));
+      if (item.observed_by_day) for (const [day, count] of Object.entries(item.observed_by_day)) details.append(wrappedEl('p', '', `${day}: ${count} rekaman teramati.`));
+      for (const ref of item.evidence_refs) {
+        const e = evidence.get(ref);
+        const row = wrappedEl('div', 'pattern-ref');
+        row.append(wrappedEl('strong', '', `${e.source} · ${e.kind}`), wrappedEl('span', '', e.event_at), wrappedEl('code', '', e.id), wrappedEl('code', '', e.provenance_ref));
+        details.append(row);
+      }
+      card.append(details); host.append(card);
+    }
+  }
+  const abstentions = document.querySelector('#work-pattern-abstentions');
+  const labels = { communication: 'Communication', focus: 'Focus', workload: 'Actual workload', feedback: 'Critique / appreciation', comparison: 'Trends' };
+  abstentions.replaceChildren(...Object.entries(report.abstentions).map(([key, value]) => {
+    const item = wrappedEl('details', 'pattern-abstention');
+    item.append(wrappedEl('summary', '', `${labels[key]} · not assessed`), wrappedEl('p', '', value.reason));
+    return item;
+  }));
+  const sources = document.querySelector('#work-pattern-source-list');
+  sources.replaceChildren(...Object.entries(report.coverage).map(([source, c]) => {
+    const row = wrappedEl('p', '', `${source}: ${c.status}; ${c.observed_event_count} observed; weekly total unknown. ${c.reason}`);
+    return row;
+  }));
+  document.querySelector('#work-pattern-agent-gap').textContent = `${report.agent_scope.included_refs} accepted / ${report.agent_scope.excluded_refs} excluded agent refs. ${report.agent_scope.reason}`;
+  const ledger = document.querySelector('#work-pattern-evidence');
+  ledger.replaceChildren(...report.evidence.map(e => {
+    const row = wrappedEl('div', 'pattern-ref');
+    row.append(wrappedEl('strong', '', `${e.source} · ${e.kind} · ${e.attribution}`), wrappedEl('span', '', e.event_at), wrappedEl('code', '', e.id), wrappedEl('code', '', e.provenance_ref));
+    return row;
+  }));
+}
+
+function applyWrappedReport(data) {
+  validateWrappedData(data);
+  wrappedData = data;
+  stopAutoAdvance();
+  document.querySelector('#wrapped-error').classList.add('hidden');
+  document.querySelector('#wrapped-story').classList.add('hidden');
+  document.querySelector('#wrapped-period').textContent = data.period.label;
+  const patterns = data.schema_version === 2;
+  document.querySelector('#wrapped-report').classList.toggle('hidden', patterns);
+  document.querySelector('#work-pattern-report').classList.toggle('hidden', !patterns);
+  if (patterns) { renderWorkPatternReport(data); return; }
+  document.querySelector('#report-summary').textContent = data.report.summary;
+  document.querySelector('#report-status').textContent = data.report.status;
+  renderCommitments(); renderScorecard(); renderClaims(); renderNextWeek(); renderEvidence();
+  if (typeof initWeeklyCheckin === 'function') initWeeklyCheckin();
+  if (typeof initWeeklyCorrection === 'function') initWeeklyCorrection({ report: data,
+    source: document.querySelector('#wrapped-source-status').dataset.source === 'live' ? 'live' : 'demo', connection: wrappedConnection() });
+  renderSlide(0);
+}
+
+async function initWrapped() {
+  const token = ++wrappedLoadToken;
+  try {
+    const embedded = document.querySelector('#wrapped-local-report');
+    if (embedded) {
+      const data = JSON.parse(embedded.textContent);
+      if (data.schema_version !== 2) throw new Error('invalid local schema');
+      applyWrappedReport(data);
+      setWrappedSource('local', 'Local draft · not published');
+    } else {
+      const data = await fetchWeeklyWrappedReport(token);
+      if (token === wrappedLoadToken && data) applyWrappedReport(data);
+    }
+  } catch { if (token === wrappedLoadToken) showWrappedError(); }
+}
+
+bindWrappedEvents();
+document.querySelector('#wrapped-retry').onclick = initWrapped;
+document.querySelector('#wrapped-local-input').onchange = async event => {
+  const file = event.target.files[0];
+  if (!file) return;
+  const token = ++wrappedLoadToken;
+  try {
+    if (file.size > 256 * 1024) throw new Error('oversize');
+    const data = JSON.parse(await file.text());
+    if (token !== wrappedLoadToken) return;
+    if (data.schema_version !== 2) throw new Error('local mode accepts work-pattern reports only');
+    applyWrappedReport(data);
+    setWrappedSource('local', 'Local draft · not published');
+    document.querySelector('#wrapped-local-status').textContent = 'Draft lokal dibuka di memory browser saja; tidak diunggah atau disimpan.';
+  } catch { if (token === wrappedLoadToken) { showWrappedError(); document.querySelector('#wrapped-local-status').textContent = 'File invalid atau terlalu besar; tidak disimpan.'; } }
+  event.target.value = '';
+};
 initWrapped();

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("../worker/worker.js", import.meta.url), "utf8");
+const source = (await readFile(new URL("../worker/worker.js", import.meta.url), "utf8")).replace("../assets/js/work-pattern-report-contract.js", new URL("../assets/js/work-pattern-report-contract.js", import.meta.url).href);
 const { default: worker } = await import("data:text/javascript;base64," + Buffer.from(source).toString("base64"));
 
 const sprint = { id: 77, state: "active", name: "Sprint 77", endDate: "2026-09-01T00:00:00Z" };

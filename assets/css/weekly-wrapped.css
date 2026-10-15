@@ -152,6 +152,29 @@
   .correction-actions { display: grid; grid-template-columns: 1fr; }
   .correction-foot { flex-direction: column; align-items: stretch; }
 }
+.wrapped-local-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 16px; }
+.wrapped-local-tools label { display: inline-flex; min-height: 44px; align-items: center; cursor: pointer; }
+.wrapped-local-tools input { max-width: 100%; min-width: 0; }
+#wrapped-local-status { flex-basis: 100%; color: var(--ink-muted); font-size: 14px; }
+#work-pattern-report { font-size: 16px; line-height: 1.5; }
+#work-pattern-report .report-hero { grid-template-columns: minmax(0, 1fr); }
+#work-pattern-report .claim-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+#work-pattern-report .claim-card { min-width: 0; }
+#work-pattern-report h1 { max-width: 22ch; text-wrap: balance; }
+#work-pattern-report summary { min-height: 44px; padding: 10px 0; cursor: pointer; font-weight: 650; }
+#work-pattern-report summary:focus-visible, .wrapped-local-tools input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+#work-pattern-report .pattern-ref { display: grid; gap: 4px; padding: 12px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+#work-pattern-report code { overflow-wrap: anywhere; white-space: normal; font-size: 13px; }
+.pattern-abstention { border-bottom: 1px solid var(--line); }
+#work-pattern-snapshot { margin-top: 12px; font-size: 14px; overflow-wrap: anywhere; }
+.wrapped-source-status[data-source="local"] { background: var(--wrapped-info-soft); color: var(--wrapped-info); }
+.wrapped-source-status[data-source="error"] { background: var(--wrapped-warning-soft); color: var(--wrapped-warning); }
+@media (max-width: 760px) {
+  header.top.wrapped-top { height: auto; align-items: start; flex-wrap: wrap; }
+  .wrapped-top .top-actions { min-width: 0; width: 100%; flex-wrap: wrap; }
+  .wrapped-period { display: block; flex-basis: 100%; min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; font-size: 12px; }
+  #work-pattern-report .claim-grid { grid-template-columns: minmax(0, 1fr); }
+}
 @media (prefers-reduced-motion: reduce) {
   .story-copy, .story-metric { transition: none; }
   html { scroll-behavior: auto; }

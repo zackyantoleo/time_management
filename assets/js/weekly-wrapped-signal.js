@@ -9,7 +9,7 @@ function wrappedWeekChipDecision(reportBody, correctionBody) {
   const reportId = reportBody && typeof reportBody.report_id === "string"
     ? reportBody.report_id.trim() : "";
   const live = !!(reportBody
-    && reportBody.schema_version === 1
+    && (reportBody.schema_version === 1 || (reportBody.schema_version === 2 && reportBody.report_kind === 'work_patterns'))
     && reportBody.report
     && WRAPPED_SIGNAL_ISO_WEEK.test(reportId));
   if (!live) return { show: false, reportId: "" };
