@@ -274,6 +274,15 @@ async function sha256hex(s) {
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
+
+function wrappedStable(value) {
+  if (Array.isArray(value)) return value.map(wrappedStable);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort().map(key => [key, wrappedStable(value[key])]));
+}
+async function wrappedEtag(report) {
+  return '"sha256:' + await sha256hex(JSON.stringify(wrappedStable(report))) + '"';
+}
 function kodeAcak() {
   return [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -705,8 +714,12 @@ async function tangani(request, env) {
           "SELECT blob, updated_at FROM weekly_wrapped_reports WHERE user_id = ?1", [uid], "first");
         if (!row) return json({ report: null, updatedAt: null });
         const report = JSON.parse(row.blob);
+        const etag = await wrappedEtag(report);
         report.updated_at = row.updated_at;
-        return json(report);
+        const response = json(report);
+        response.headers.set("ETag", etag);
+        response.headers.set("X-Wrapped-Publish-Protocol", "cas-v1");
+        return response;
       }
       if (request.method === "PUT") {
         if (!weeklyWrappedServiceOk) return json({ error: "Weekly Wrapped write membutuhkan service token khusus." }, 401);
@@ -715,9 +728,27 @@ async function tangani(request, env) {
         if (!validateWeeklyWrappedReport(body)) return json({ error: "Format Weekly Wrapped tidak valid atau belum tersanitasi." }, 400);
         const raw = JSON.stringify(body);
         const updatedAt = new Date().toISOString();
-        await d1q(env,
-          "INSERT INTO weekly_wrapped_reports (user_id, report_id, blob, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(user_id) DO UPDATE SET report_id = ?2, blob = ?3, updated_at = ?4",
-          [uid, body.report_id, raw, updatedAt], "run");
+        const match = request.headers.get("If-Match");
+        let result;
+        if (body.schema_version === 2 || match !== null) {
+          if (!match) return json({ error: "Exact If-Match required." }, 428);
+          const prior = await d1q(env,
+            "SELECT blob, updated_at FROM weekly_wrapped_reports WHERE user_id = ?1", [uid], "first");
+          // ponytail: v2 replaces an existing report only; initial publication needs a separate create protocol.
+          if (!prior || match !== await wrappedEtag(JSON.parse(prior.blob))) return json({ error: "Report changed." }, 412);
+          result = await d1q(env,
+            "UPDATE weekly_wrapped_reports SET report_id = ?2, blob = ?3, updated_at = ?4 WHERE user_id = ?1 AND blob = ?5 AND updated_at = ?6",
+            [uid, body.report_id, raw, updatedAt, prior.blob, prior.updated_at], "run");
+        } else {
+          const prior = await d1q(env,
+            "SELECT blob, updated_at FROM weekly_wrapped_reports WHERE user_id = ?1", [uid], "first");
+          if (prior && JSON.parse(prior.blob).schema_version === 2) return json({ error: "Exact If-Match required." }, 428);
+          // Preserve v1 upsert, but atomically refuse downgrade if a v2 writer wins the race.
+          result = await d1q(env,
+            "INSERT INTO weekly_wrapped_reports (user_id, report_id, blob, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(user_id) DO UPDATE SET report_id = ?2, blob = ?3, updated_at = ?4 WHERE json_extract(weekly_wrapped_reports.blob, '$.schema_version') = 1",
+            [uid, body.report_id, raw, updatedAt], "run");
+        }
+        if (result?.meta?.changes !== 1) return json({ error: "Report changed." }, 412);
         return json({ ok: true, reportId: body.report_id, updatedAt });
       }
       return json({ error: "Method tidak didukung." }, 405);
