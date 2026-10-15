@@ -67,6 +67,8 @@ assertDecision(context.wrappedWeekChipDecision(sample, null),
   { show: true, reportId: sample.report_id },
   'a schema-valid body is eligible; the fetch path is what forbids demo');
 assertDecision(context.wrappedWeekChipDecision(live, null), { show: true, reportId: '2026-W37' });
+const patterns = require('../assets/data/work-patterns.sample.json');
+assertDecision(context.wrappedWeekChipDecision(patterns, null), { show: true, reportId: patterns.report_id }, 'v2 no-plan report remains discoverable');
 assertDecision(context.wrappedWeekChipDecision(live, { correction: null }),
   { show: true, reportId: '2026-W37' });
 assertDecision(context.wrappedWeekChipDecision(live, { correction: { verdict: 'looks_right' } }),

@@ -1,0 +1,252 @@
+{
+  "schema_version": 2,
+  "report_kind": "work_patterns",
+  "report_id": "2026-W41",
+  "generated_at": "2026-10-13T03:00:00.000Z",
+  "period": {
+    "start": "2026-10-05",
+    "end": "2026-10-11",
+    "label": "2026-10-05 – 2026-10-11 · WIB",
+    "timezone": "Asia/Jakarta"
+  },
+  "objective": "Review pola kerja berbukti, tanpa skor atau rencana mingguan.",
+  "report": {
+    "status": "local-partial",
+    "summary": "Contoh sintetis, bukan aktivitas atau penilaian Zack. Rekaman aktivitas dan jadwal dapat diperiksa; kualitas kerja belum dinilai.",
+    "insights": [
+      {
+        "id": "activity:1",
+        "dimension": "activity",
+        "type": "fact",
+        "source": "catet",
+        "work_ref": "work:fc382432bff6c2d7dad2cc171c8f517f7c99803336acd2e1e24a5ee69b616516",
+        "attribution": "unknown",
+        "observed_by_kind": {
+          "worklog": 2
+        },
+        "weekly_total": null,
+        "observation": "Rekaman catet dalam scope item ini: worklog 2.",
+        "evidence_refs": [
+          "event:catet:4754bcb47f4cf1826bc1dfc69e47802341e9ba651446d803e17627390cc78154",
+          "event:catet:48f140231a40d92ec677aaa186c14745dacb0f5a96fddd487bead12419e66a56"
+        ],
+        "interpretation": "Fakta rekaman sumber, bukan hasil pribadi atau dampak kerja.",
+        "interpretation_limits": [
+          "Coverage partial; jumlah teramati bukan total mingguan.",
+          "Identitas kerja lintas sumber belum dipetakan; jumlah antar-sumber tidak dijumlahkan.",
+          "Deadline sekarang bukan deadline efektif historis.",
+          "Metadata/agent output bukan completion atau hasil Zack."
+        ],
+        "impact": {
+          "status": "unknown",
+          "reason": "Tidak ada bukti outcome atau nilai yang dihasilkan."
+        },
+        "confidence_reason": "Timestamp dan referensi ada; actor atau hasil pribadi belum terverifikasi.",
+        "counter_context": [
+          "Completion dapat rekonsiliasi/backfill; waktu pencatatan bukan durasi pengerjaan."
+        ],
+        "suggestion": null
+      },
+      {
+        "id": "rhythm:catet",
+        "dimension": "rhythm",
+        "type": "fact",
+        "source": "catet",
+        "observed_by_day": {
+          "2026-10-05": 1,
+          "2026-10-06": 1
+        },
+        "weekly_total": null,
+        "observation": "Timestamp catet teramati pada 2 tanggal WIB.",
+        "evidence_refs": [
+          "event:catet:4754bcb47f4cf1826bc1dfc69e47802341e9ba651446d803e17627390cc78154",
+          "event:catet:48f140231a40d92ec677aaa186c14745dacb0f5a96fddd487bead12419e66a56"
+        ],
+        "interpretation": "Sebaran waktu rekaman sumber, bukan pola kerja berulang.",
+        "interpretation_limits": [
+          "Coverage partial; hari tanpa rekaman bukan hari tanpa kerja.",
+          "Bukan jam kerja, deep work, jumlah context switches atau penundaan deadline."
+        ],
+        "impact": {
+          "status": "unknown",
+          "reason": "Tidak ada bukti efek terhadap hasil kerja."
+        },
+        "confidence_reason": "Tanggal dihitung dari timestamp zoned, tidak dari waktu snapshot atau deadline sekarang.",
+        "counter_context": [
+          "Backfill, perubahan scope/dependency dan perubahan status oleh orang lain dapat mengubah sebaran."
+        ],
+        "suggestion": null
+      },
+      {
+        "id": "schedule:calendar",
+        "dimension": "schedule",
+        "type": "fact",
+        "source": "calendar",
+        "observed_union_minutes": 180,
+        "weekly_total": null,
+        "observation": "Union interval jadwal teramati 180 menit; overlap dihitung sekali.",
+        "evidence_refs": [
+          "event:calendar:0882f3c0c962193d75978ec3417b999d6786c05330b9b14c76c6a1aa8f9467e0",
+          "event:calendar:0220c5b3a855061385b32033d630befe59339de8952aa4ec5d0289aee90be5c2"
+        ],
+        "interpretation": "Beban jadwal yang terlihat saja, bukan beban kerja aktual.",
+        "interpretation_limits": [
+          "Jadwal bukan kehadiran atau jam kerja.",
+          "Coverage partial; total jadwal mingguan dan beban kerja tetap unknown."
+        ],
+        "impact": {
+          "status": "unknown",
+          "reason": "Kehadiran dan dampak pada kapasitas tidak tercatat."
+        },
+        "confidence_reason": "Interval/provenance tersedia dan union dihitung ulang oleh validator T3.",
+        "counter_context": [
+          "Kategori belum diketahui; reminder atau event non-meeting dapat ikut. Tidak ada bukti semua jadwal dihadiri."
+        ],
+        "suggestion": null
+      }
+    ],
+    "coverage": {
+      "catet": {
+        "status": "partial",
+        "reason": "Snapshot current-state, bukan histori status/fokus lengkap; date-only tidak diberi jam buatan.",
+        "scope_ref": "scope:catet-work",
+        "observed_at": "2026-10-13T03:00:00.000Z",
+        "observed_event_count": 2,
+        "event_count": null
+      },
+      "jira": {
+        "status": "missing",
+        "reason": "Sumber scoped tidak tersedia.",
+        "scope_ref": null,
+        "observed_at": null,
+        "observed_event_count": 0,
+        "event_count": null
+      },
+      "telegram": {
+        "status": "missing",
+        "reason": "Sumber scoped tidak tersedia.",
+        "scope_ref": null,
+        "observed_at": null,
+        "observed_event_count": 0,
+        "event_count": null
+      },
+      "calendar": {
+        "status": "partial",
+        "reason": "Jadwal existing; truncation/recurrence completeness dan kehadiran tidak dilaporkan.",
+        "scope_ref": "scope:calendar-work",
+        "observed_at": "2026-10-13T03:00:00.000Z",
+        "observed_event_count": 2,
+        "event_count": null
+      },
+      "hermes": {
+        "status": "missing",
+        "reason": "Sumber scoped tidak tersedia.",
+        "scope_ref": null,
+        "observed_at": null,
+        "observed_event_count": 0,
+        "event_count": null
+      },
+      "github": {
+        "status": "missing",
+        "reason": "Sumber scoped tidak tersedia.",
+        "scope_ref": null,
+        "observed_at": null,
+        "observed_event_count": 0,
+        "event_count": null
+      },
+      "test_artifacts": {
+        "status": "missing",
+        "reason": "Sumber scoped tidak tersedia.",
+        "scope_ref": null,
+        "observed_at": null,
+        "observed_event_count": 0,
+        "event_count": null
+      }
+    },
+    "agent_scope": {
+      "status": "missing",
+      "included_refs": 0,
+      "excluded_refs": 0,
+      "total_work": null,
+      "reason": "Accepted/excluded refs adalah metadata cakupan; nol accepted bukan nol kerja."
+    },
+    "unique_work_total": null,
+    "abstentions": {
+      "communication": {
+        "status": "abstain",
+        "reason": "Telegram DIPARKIR dan tidak dikumpulkan; tidak ada penilaian komunikasi."
+      },
+      "focus": {
+        "status": "abstain",
+        "reason": "Rangkaian aktivitas dan hasil tidak cukup untuk menilai fokus atau deep work."
+      },
+      "workload": {
+        "status": "abstain",
+        "reason": "Jadwal bukan kehadiran; backlog, kapasitas dan aktivitas aktual belum lengkap."
+      },
+      "feedback": {
+        "status": "abstain",
+        "reason": "Metadata aktivitas belum mendukung kritik/apresiasi perilaku atau saran personal.",
+        "items": []
+      },
+      "comparison": {
+        "status": "abstain",
+        "reason": "Tidak ada baseline mingguan dengan scope, coverage dan definisi comparable."
+      }
+    },
+    "evidence": [
+      {
+        "id": "event:calendar:0882f3c0c962193d75978ec3417b999d6786c05330b9b14c76c6a1aa8f9467e0",
+        "source": "calendar",
+        "provenance_ref": "calendar:4cd3709e13aed49213b8f1386055cce8276fc72a5d464dcf3d3ad440cc5a8b3a",
+        "work_ref": null,
+        "event_at": "2026-10-05T02:00:00.000Z",
+        "attribution": "unknown",
+        "kind": "meeting",
+        "interval": {
+          "start": "2026-10-05T02:00:00.000Z",
+          "end": "2026-10-05T04:00:00.000Z",
+          "provenance_ref": "calendar:4cd3709e13aed49213b8f1386055cce8276fc72a5d464dcf3d3ad440cc5a8b3a"
+        },
+        "sensitivity": "sanitized"
+      },
+      {
+        "id": "event:catet:4754bcb47f4cf1826bc1dfc69e47802341e9ba651446d803e17627390cc78154",
+        "source": "catet",
+        "provenance_ref": "catet:a010edc5476c3b64cba73f5808a1cf92a2e10e0365cf9cac68728e5ded55b107",
+        "work_ref": "work:fc382432bff6c2d7dad2cc171c8f517f7c99803336acd2e1e24a5ee69b616516",
+        "event_at": "2026-10-05T02:00:00.000Z",
+        "attribution": "unknown",
+        "kind": "worklog",
+        "interval": null,
+        "sensitivity": "sanitized"
+      },
+      {
+        "id": "event:calendar:0220c5b3a855061385b32033d630befe59339de8952aa4ec5d0289aee90be5c2",
+        "source": "calendar",
+        "provenance_ref": "calendar:d3ee06a23c16c2d5bfa2eb7ac54a8b408dddc0072c6be601f6070d270587f4da",
+        "work_ref": null,
+        "event_at": "2026-10-05T03:00:00.000Z",
+        "attribution": "unknown",
+        "kind": "meeting",
+        "interval": {
+          "start": "2026-10-05T03:00:00.000Z",
+          "end": "2026-10-05T05:00:00.000Z",
+          "provenance_ref": "calendar:d3ee06a23c16c2d5bfa2eb7ac54a8b408dddc0072c6be601f6070d270587f4da"
+        },
+        "sensitivity": "sanitized"
+      },
+      {
+        "id": "event:catet:48f140231a40d92ec677aaa186c14745dacb0f5a96fddd487bead12419e66a56",
+        "source": "catet",
+        "provenance_ref": "catet:a84bbdd25bf9b37445d33ea5ebabf825c061939d7ca5649fdefd383b9473273b",
+        "work_ref": "work:fc382432bff6c2d7dad2cc171c8f517f7c99803336acd2e1e24a5ee69b616516",
+        "event_at": "2026-10-06T02:00:00.000Z",
+        "attribution": "unknown",
+        "kind": "worklog",
+        "interval": null,
+        "sensitivity": "sanitized"
+      }
+    ]
+  }
+}

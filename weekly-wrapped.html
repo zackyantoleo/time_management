@@ -28,6 +28,41 @@
   </header>
 
   <main>
+    <div class="wrapped-local-tools">
+      <label class="btn-line" for="wrapped-local-input">Open local draft</label>
+      <input id="wrapped-local-input" type="file" accept="application/json,.json" aria-label="Open local draft" />
+      <span id="wrapped-local-status" role="status">File dibaca di browser saja; tidak diunggah atau disimpan.</span>
+    </div>
+    <section class="wrapped-report hidden" id="work-pattern-report" aria-labelledby="work-pattern-title">
+      <header class="report-hero">
+        <div><span class="section-eyebrow">Work patterns · partial evidence</span>
+          <h1 id="work-pattern-title" tabindex="-1">Rekaman minggu ini, tanpa verdict palsu.</h1>
+          <p id="work-pattern-summary"></p>
+          <p id="work-pattern-snapshot"></p>
+        </div>
+      </header>
+      <section class="report-section" aria-labelledby="work-pattern-highlights-title">
+        <h2 id="work-pattern-highlights-title">Recorded rhythm &amp; schedule</h2>
+        <p>Waktu rekaman bukan jam kerja. Jadwal bukan bukti hadir.</p>
+        <div id="work-pattern-highlights" class="claim-grid"></div>
+      </section>
+      <section class="report-section" aria-labelledby="work-pattern-abstentions-title">
+        <h2 id="work-pattern-abstentions-title">Not assessed</h2>
+        <div id="work-pattern-abstentions"></div>
+      </section>
+      <details class="report-section" id="work-pattern-items">
+        <summary>Item facts · source audit</summary>
+        <p>Item antar-sumber belum dipetakan. Hitungan tidak dijumlahkan sebagai pekerjaan unik atau impact.</p>
+        <div id="work-pattern-item-list" class="claim-grid"></div>
+      </details>
+      <details class="report-section" id="work-pattern-coverage">
+        <summary>Evidence &amp; limits</summary>
+        <p>Ref aktivitas dan ritme yang sama bukan bukti independen tambahan. Total minggu tetap unknown pada coverage partial/missing.</p>
+        <div id="work-pattern-source-list"></div>
+        <p id="work-pattern-agent-gap"></p>
+        <div id="work-pattern-evidence"></div>
+      </details>
+    </section>
     <section class="wrapped-story" id="wrapped-story" aria-label="Weekly Wrapped slideshow">
       <div class="story-progress" id="story-progress" aria-label="Progress slideshow"></div>
       <article class="story-card" id="story-card" aria-live="polite" tabindex="0">
@@ -55,7 +90,7 @@
       <header class="report-hero">
         <div>
           <span class="section-eyebrow">Full report</span>
-          <h1 id="report-title">Evidence before vibes.</h1>
+          <h1 id="report-title" tabindex="-1">Evidence before vibes.</h1>
           <p id="report-summary"></p>
         </div>
         <div class="report-score"><strong id="overall-score">—</strong><span>provisional / 5</span></div>
@@ -153,13 +188,15 @@
     <section class="wrapped-error hidden" id="wrapped-error" role="alert">
       <h1>Weekly Wrapped gagal dimuat.</h1>
       <p>Data report tidak tersedia atau formatnya invalid. Coba refresh setelah report di-generate ulang.</p>
-      <a class="btn-line wrapped-link" href="index.html">Back to CATET</a>
+      <button class="btn-solid" id="wrapped-retry" type="button">Retry</button>
+      <a class="btn-line wrapped-link" href="index.html">Settings / CATET</a>
     </section>
   </main>
 </div>
 <script src="assets/js/util.js"></script>
 <script src="assets/js/weekly-checkin.js"></script>
 <script src="assets/js/weekly-correction.js"></script>
+<script src="assets/js/work-pattern-report-contract.js"></script>
 <script src="assets/js/weekly-wrapped.js"></script>
 </body>
 </html>

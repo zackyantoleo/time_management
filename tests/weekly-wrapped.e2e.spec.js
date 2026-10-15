@@ -15,10 +15,12 @@ test.beforeEach(async ({ page }) => {
   page.on('pageerror', (error) => errors.push(error.message));
 });
 
-test('slideshow starts first and opens the report', async ({ page }) => {
-  await page.goto(`${BASE_URL}/weekly-wrapped.html`);
+test('legacy report opens first and story remains optional', async ({ page }) => {
+  await page.goto(`${BASE_URL}/weekly-wrapped.html?demo=legacy`);
+  await expect(page.locator('#wrapped-story')).toBeHidden();
+  await expect(page.locator('#wrapped-report')).toBeVisible();
+  await page.locator('#replay-story').click();
   await expect(page.locator('#wrapped-story')).toBeVisible();
-  await expect(page.locator('#wrapped-report')).toBeHidden();
   await expect(page.locator('#story-title')).toHaveText('Minggu ini, tanpa noise.');
   await expect(page.locator('#story-index')).toHaveText('01 / 06');
   await expect(page.locator('#wrapped-source-status')).toHaveAttribute('data-source', CATET_ACCESS_KEY ? 'live' : 'demo');
@@ -40,7 +42,8 @@ test('slideshow starts first and opens the report', async ({ page }) => {
 test('mobile story fits without horizontal overflow', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 740 });
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
-  await page.goto(`${BASE_URL}/weekly-wrapped.html`);
+  await page.goto(`${BASE_URL}/weekly-wrapped.html?demo=legacy`);
+  await page.locator('#replay-story').click();
   await expect(page.locator('#story-next')).toBeVisible();
   const fits = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
   expect(fits).toBe(true);

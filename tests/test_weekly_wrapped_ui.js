@@ -10,9 +10,9 @@ const data = JSON.parse(fs.readFileSync(path.join(root, 'assets/data/weekly-wrap
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 
 assert(html.includes('href="index.html"'), 'Wrapped must provide a route back to CATET');
-assert(html.includes('id="wrapped-story"'), 'story/slideshow must be the first experience');
-assert(html.indexOf('id="wrapped-story"') < html.indexOf('id="wrapped-report"'),
-  'story must appear before the detailed report');
+assert(html.includes('id="wrapped-story"'), 'legacy story remains optional');
+assert(js.includes('applyWrappedReport') && !js.includes('    startAutoAdvance();'), 'report opens without auto-advance');
+assert(html.includes('id="work-pattern-report"'), 'work-pattern review is report-first');
 assert(html.includes('id="story-next"') && html.includes('id="story-prev"'),
   'story must expose explicit previous/next controls');
 assert(html.includes('id="view-report"'), 'story must expose a report CTA');

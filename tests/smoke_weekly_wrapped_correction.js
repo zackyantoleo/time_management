@@ -4,7 +4,7 @@ const assert = require('assert');
 
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
   || '/home/zackVPS/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome';
-const fileUrl = 'file://' + path.resolve(__dirname, '..', 'weekly-wrapped.html');
+const fileUrl = 'file://' + path.resolve(__dirname, '..', 'weekly-wrapped.html') + '?demo=legacy';
 
 (async () => {
   const browser = await chromium.launch({
