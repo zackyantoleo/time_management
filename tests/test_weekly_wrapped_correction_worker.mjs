@@ -68,9 +68,13 @@ const env = {
                 });
                 return { success: true, meta: { changes: 1 } };
               }
-              if (sql.includes("UPDATE weekly_wrapped_reports")) {
-                throw new Error("correction path must not rewrite the immutable report");
+              if (sql.startsWith("UPDATE weekly_wrapped_reports SET report_id")) {
+                const row = reports.get(args[0]);
+                if (!row || row.blob !== args[4] || row.updated_at !== args[5]) return { meta: { changes: 0 } };
+                reports.set(args[0], { report_id: args[1], blob: args[2], updated_at: args[3] });
+                return { meta: { changes: 1 } };
               }
+              if (sql.includes("UPDATE weekly_wrapped_reports")) throw new Error("correction path must not rewrite the immutable report");
               return { success: true, meta: { changes: 0 } };
             },
             async all() { return { results: [] }; },
@@ -179,8 +183,9 @@ try {
   assert.equal(ownJson.correction.note, "Hidden pairing review");
 
   const pattern = JSON.parse(await readFile(new URL('../assets/data/work-patterns.sample.json', import.meta.url), 'utf8'));
+  const beforePattern = await worker.fetch(new Request('https://worker.test/weekly-wrapped', { headers: accessHeaders }), env);
   const putPattern = body => worker.fetch(new Request('https://worker.test/weekly-wrapped', {
-    method: 'PUT', headers: { ...accessHeaders, Authorization: 'Bearer wrapped-secret' }, body: JSON.stringify(body),
+    method: 'PUT', headers: { ...accessHeaders, Authorization: 'Bearer wrapped-secret', 'If-Match': beforePattern.headers.get('ETag') }, body: JSON.stringify(body),
   }), env);
   assert.equal((await putPattern(pattern)).status, 200, 'no-plan v2 can be stored');
   const readPattern = await worker.fetch(new Request('https://worker.test/weekly-wrapped', { headers: accessHeaders }), env);

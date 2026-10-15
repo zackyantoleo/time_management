@@ -47,3 +47,16 @@ separate approved publication. Unauthenticated demo is explicitly synthetic.
 W37 is not a comparable baseline. Communication/focus/actual workload/feedback/
 trends remain abstain without additional evidence. Publishing, cron and Telegram
 are separate permissions.
+
+## Post-release local publisher gate — 2026-10-15 (NOT deployed)
+
+A later implementation-only session adds canonical GET ETag/protocol `cas-v1`,
+mandatory exact `If-Match` for v2 and atomic SQL CAS on prior blob/updated_at.
+Legacy v1 upsert remains but cannot downgrade v2; conditional rollback is allowed.
+New Worker race/auth/precondition tests plus updated correction publisher harness
+pass; full gate is 68/68 and legacy browser tests 3/3. No migration/auth policy,
+frontend or existing cron changes. These local dirty edits are **not** part of
+release `c33d3e2` / merge `3d5cd07`, have not been committed/deployed, and do not
+publish the personal report. The engine refuses the old Worker protocol before PUT.
+Engine proof: `state/t7-publisher-gate-2026-10-15/gate-proof.json`; detailed engine
+doc: `docs/work-pattern-publisher-gate-verification-2026-10-15.md`.
