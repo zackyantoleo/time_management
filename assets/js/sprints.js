@@ -43,7 +43,8 @@ function rekonsiliasiSprintJira(feed) {
   for (const f of feed) {
     if (!f.sprint || f.sprint.jiraId == null) continue;
     if (jira.dismissed.includes(f.key)) continue;
-    if (tasks.some((t) => t.status !== "selesai" && t.text.includes(f.key))) continue;
+    // Riwayat selesai tetap menjaga identitas tiket setelah dismissed dipangkas.
+    if (tasks.some((t) => (t.text.match(JIRA_RE) || []).includes(f.key))) continue;
     tasks.push({
       id: uid(), text: f.key + " — " + (f.summary || ""), priority: "sedang", due: null,
       createdAt: new Date().toISOString(), status: "aktif", doneAt: null, focusedAt: null,
@@ -180,6 +181,17 @@ function fmtSisaSprint(s) {
   if (hari < 0) return "" + Math.abs(hari) + " d overdue";
   if (hari === 0) return "ends today";
   return hari + " d left";
+}
+// Ringkas salinan selesai hanya bila tiket yang sama masih aktif di sprint ini.
+// Data asli tetap utuh untuk Board, worklog, backup, dan sinkronisasi.
+function tugasSprintTampil(id) {
+  const anggota = tasks.filter((t) => t.sprintId === id);
+  const key = (t) => {
+    const keys = t.text.match(JIRA_RE) || [];
+    return keys.length === 1 ? keys[0] : null;
+  };
+  const aktif = new Set(anggota.filter((t) => t.status !== "selesai").map(key).filter(Boolean));
+  return anggota.filter((t) => t.status !== "selesai" || !aktif.has(key(t)));
 }
 function jumlahTugasSprint(id) {
   return tasks.filter((t) => t.status !== "selesai" && t.sprintId === id).length;

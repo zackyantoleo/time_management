@@ -1304,7 +1304,9 @@ function sprintRow(s, sec) {
   }
 
   // daftar task di sprint ini
-  const anggota = tasks.filter((t) => t.sprintId === s.id);
+  const anggota = tugasSprintTampil(s.id);
+  const riwayat = tasks.filter((t) => t.sprintId === s.id).length - anggota.length;
+  if (riwayat) ed.append(el("div", "cap-hint", riwayat + " riwayat selesai untuk tiket aktif diringkas; tetap tersedia di Board dan Log kerja."));
   const lbl = el("div", "cap-label"); lbl.style.marginTop = "2px";
   lbl.textContent = "Sprint items (" + anggota.length + ")";
   ed.append(lbl);
