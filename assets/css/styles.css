@@ -823,6 +823,17 @@
   }
   .testcase-pre { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
   .cap-hint.qality-warn { color: color-mix(in srgb, var(--p-tinggi) 72%, var(--ink)); font-weight: 600; }
+  /* Push (Fase 3): hasil per case + History dari D1 (Retry link). */
+  .testcase-pushres, .testcase-history {
+    display: flex; flex-direction: column; gap: 8px; min-width: 0; padding-top: 8px; border-top: 1px dashed var(--line);
+  }
+  .testcase-pushres:focus { outline: none; }
+  .testcase-badge.warn { color: var(--tc-warn); background: var(--p-tinggi-soft); border-color: color-mix(in srgb, var(--p-tinggi) 45%, var(--line)); }
+  .testcase-badge.err { color: var(--p-urgent); background: var(--p-urgent-soft); border-color: color-mix(in srgb, var(--p-urgent) 45%, var(--line)); }
+  ul.testcase-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .testcase-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; font-size: 12.5px; }
+  .testcase-row .testcase-title { font-size: 12.5px; }
+  .testcase-row .testcase-hint { flex: 0 0 100%; }
   @media (max-width: 760px) {
     .testcase-card-head { min-height: 44px; }
     .testcase-card-head input { width: 20px; height: 20px; }

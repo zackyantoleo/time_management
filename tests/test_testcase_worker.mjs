@@ -249,7 +249,8 @@ try {
     }
   }
 
-  // Fase 2 tidak punya push/relink; seluruh pengujian hanya GET ke luar.
+  // Flag TESTCASE_PUSH_ENABLED tidak di-set → push/relink 404; seluruh pengujian
+  // di file ini hanya GET ke luar (push diuji di test_testcase_push_worker.mjs).
   calls = [];
   assert.equal((await call("/testcases/push", { method: "POST", body: { issueKey: "CD-1234", cases: [single], previewHash: "x" } })).status, 404);
   assert.equal((await call("/testcases/relink", { method: "POST", body: { issueKey: "CD-1234", testKey: "CD-1" } })).status, 404);

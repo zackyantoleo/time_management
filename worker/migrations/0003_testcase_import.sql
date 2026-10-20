@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS testcase_pushes (
   case_hash TEXT NOT NULL,
   title TEXT NOT NULL,
   test_key TEXT,
-  status TEXT NOT NULL CHECK (status IN ('created_linked','created_unlinked','link_unverified','failed')),
+  status TEXT NOT NULL CHECK (status IN ('pending','created_linked','created_unlinked','link_unverified','failed')),
   error TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,

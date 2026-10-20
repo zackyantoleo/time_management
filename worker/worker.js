@@ -112,7 +112,7 @@ const SKEMA = [
   // Import test case QAlity (migrasi 0003). Token di tabel sendiri, bukan kolom
   // users: CREATE IF NOT EXISTS aman diulang di sini maupun lewat wrangler.
   "CREATE TABLE IF NOT EXISTS qality_credentials (user_id TEXT PRIMARY KEY, token TEXT NOT NULL, expires_at TEXT, updated_at TEXT NOT NULL)",
-  "CREATE TABLE IF NOT EXISTS testcase_pushes (user_id TEXT NOT NULL, issue_key TEXT NOT NULL, case_hash TEXT NOT NULL, title TEXT NOT NULL, test_key TEXT, status TEXT NOT NULL CHECK (status IN ('created_linked','created_unlinked','link_unverified','failed')), error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (user_id, issue_key, case_hash))",
+  "CREATE TABLE IF NOT EXISTS testcase_pushes (user_id TEXT NOT NULL, issue_key TEXT NOT NULL, case_hash TEXT NOT NULL, title TEXT NOT NULL, test_key TEXT, status TEXT NOT NULL CHECK (status IN ('pending','created_linked','created_unlinked','link_unverified','failed')), error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (user_id, issue_key, case_hash))",
 ];
 // Kolom yang ditambahkan setelah tabel pertama dibuat (instalasi lama).
 const MIGRASI = ["ALTER TABLE users ADD COLUMN cal_ics_url TEXT"];
@@ -535,16 +535,22 @@ function withDevChip(desc, site, devKey) {
   return doc;
 }
 
-/* ---------- test case QAlity (Fase 2: token + dry run, tanpa write) ----------
+/* ---------- test case QAlity (token, dry run, push di balik flag) ----------
    Host QAlity tetap — tidak bisa diatur klien. Validasi hard di sini setara
    validateTestCases di assets/js/testcases.js: Worker otoritatif, browser
-   hanya UX. Warning standar penulisan cukup di browser. */
+   hanya UX. Warning standar penulisan cukup di browser. Push/relink hanya
+   ada bila env.TESTCASE_PUSH_ENABLED === "on"; selain itu 404. */
 const QALITY_API = "https://apps-qalityplus.soldevelo.com/api";
 const TC_MAX_BATCH = 20;
 const TC_TITLE_MAX = 255;
 const TC_TEKS_MAX = 5000; // batas keamanan per butir, bukan aturan standar
 const TC_BUTIR_MAX = 30;
 const TC_STATUS_DIBUAT = ["created_linked", "created_unlinked", "link_unverified"];
+// Baris 'pending' = case sedang/pernah di-import tapi hasilnya belum tercatat.
+// Lewat batas ini dianggap terputus: push berikutnya mencari dulu test case
+// berjudul sama di Jira sebelum membuat ulang (supaya tidak kembar).
+const TC_PENDING_BASI_MS = 10 * 60 * 1000;
+const TC_LINK_TYPE = "QAlity Test";
 const kunciJudulTc = (s) => String(s || "").replace(/\s+/g, " ").trim().toLowerCase();
 
 // Body klien → case ter-normalisasi + error per case/batch, bentuknya sama
@@ -652,6 +658,39 @@ async function bacaTiketTestCase(site, authHeaders, key) {
     issueType: (f.issuetype && f.issuetype.name) || "",
     existing: [...existing.values()],
   };
+}
+
+// Baca beberapa issue sekaligus (satu subrequest) → Map key → fields; null bila gagal.
+async function bacaIssues(site, authHeaders, keys, fields) {
+  try {
+    const r = await fetch(site + "/rest/api/3/issue/bulkfetch", {
+      method: "POST",
+      headers: { ...authHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ issueIdsOrKeys: keys, fields }),
+    });
+    if (!r.ok) return null;
+    const d = await r.json();
+    return new Map((d.issues || []).map((i) => [i.key, i.fields || {}]));
+  } catch { return null; }
+}
+
+// Link "QAlity Test" (payload terverifikasi spike Fase 0): test case = inward,
+// tiket = outward. Dibaca balik: di test case outwardIssue = tiket, di tiket
+// inwardIssue = test case.
+const tcLinkKeTiket = (links, ticketKey) => (links || []).some((l) =>
+  l && l.type && l.type.name === TC_LINK_TYPE && l.outwardIssue && l.outwardIssue.key === ticketKey);
+const tcLinkDariTest = (links, testKey) => (links || []).some((l) =>
+  l && l.type && l.type.name === TC_LINK_TYPE && l.inwardIssue && l.inwardIssue.key === testKey);
+async function buatLinkQality(site, authHeaders, testKey, ticketKey) {
+  let r;
+  try {
+    r = await fetch(site + "/rest/api/3/issueLink", {
+      method: "POST",
+      headers: { ...authHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ type: { name: TC_LINK_TYPE }, inwardIssue: { key: testKey }, outwardIssue: { key: ticketKey } }),
+    });
+  } catch { return "Jira tidak bisa dihubungi saat membuat link."; }
+  return r.ok ? null : "Jira menolak link (HTTP " + r.status + ").";
 }
 
 export default {
@@ -1298,10 +1337,12 @@ async function tangani(request, env) {
       return json(hasil(alreadyLinked, alreadyMentioned, linkType));
     }
 
-    // GET /testcases?issue=KEY · POST /testcases/preview — import test case
-    // QAlity Fase 2: test case yang sudah ter-link + riwayat push, dan dry run.
-    // Keduanya read-only ke Jira/QAlity; push/relink baru ada di Fase 3.
+    // GET /testcases?issue=KEY · POST /testcases/preview · POST /testcases/push
+    // · POST /testcases/relink — import test case QAlity. GET dan preview
+    // read-only; push/relink menulis ke QAlity/Jira dan hanya ada bila flag on.
     if (url.pathname === "/testcases" || url.pathname.startsWith("/testcases/")) {
+      const tulis = url.pathname === "/testcases/push" || url.pathname === "/testcases/relink";
+      if (tulis && env.TESTCASE_PUSH_ENABLED !== "on") return json({ error: "Rute test case tidak dikenal." }, 404);
       if (!user) return json({ error: "Butuh kode akses — token QAlity disimpan per akun (Settings → Account)." }, 401);
       const KEY_1 = /^[A-Z][A-Z0-9]{1,9}-\d+$/;
       const riwayat = async (issueKey) => {
@@ -1310,6 +1351,7 @@ async function tangani(request, env) {
           [user.id, issueKey], "all");
         return (rs && rs.results) || [];
       };
+      const basi = (r, sekarang) => !(Date.parse(r.updated_at) >= sekarang - TC_PENDING_BASI_MS);
       if (request.method === "GET" && url.pathname === "/testcases") {
         const issueKey = (url.searchParams.get("issue") || "").trim().toUpperCase();
         if (!KEY_1.test(issueKey)) return json({ error: "Parameter issue tidak valid (contoh: CD-1234)." }, 400);
@@ -1317,26 +1359,28 @@ async function tangani(request, env) {
         if (t.error) return json({ error: t.error }, t.status);
         return json({ issueKey: t.key, projectKey: t.projectKey, existing: t.existing, history: await riwayat(t.key) });
       }
-      if (request.method === "POST" && url.pathname === "/testcases/preview") {
+      // Dry run dan push memakai persiapan yang sama: body, validasi hard,
+      // token, tiket + settings QAlity, project aktif (opsi A).
+      const siapkan = async () => {
         const raw = await request.text();
-        if (raw.length > 256 * 1024) return json({ error: "Body terlalu besar (maks 256 KB)." }, 413);
-        let b; try { b = JSON.parse(raw); } catch { return json({ error: "Body harus JSON." }, 400); }
+        if (raw.length > 256 * 1024) return { res: json({ error: "Body terlalu besar (maks 256 KB)." }, 413) };
+        let b; try { b = JSON.parse(raw); } catch { return { res: json({ error: "Body harus JSON." }, 400) }; }
         const issueKey = String((b && b.issueKey) || "").trim().toUpperCase();
-        if (!KEY_1.test(issueKey)) return json({ error: "issueKey tidak valid (contoh: CD-1234)." }, 400);
+        if (!KEY_1.test(issueKey)) return { res: json({ error: "issueKey tidak valid (contoh: CD-1234)." }, 400) };
         const v = validasiTestCases(b && b.cases);
         if (v.errors.length || v.cases.some((c) => c.errors.length)) {
-          return json({ error: "Ada case yang tidak valid — perbaiki atau hapus centangnya.", errors: v.errors, cases: v.cases }, 400);
+          return { res: json({ error: "Ada case yang tidak valid — perbaiki atau hapus centangnya.", errors: v.errors, cases: v.cases }, 400) };
         }
         const kred = await d1q(env, "SELECT token, expires_at FROM qality_credentials WHERE user_id = ?1", [user.id], "first");
-        if (!kred || !kred.token) return json({ error: "Token QAlity belum disimpan — isi di Settings → Account → QAlity token." }, 400);
+        if (!kred || !kred.token) return { res: json({ error: "Token QAlity belum disimpan — isi di Settings → Account → QAlity token." }, 400) };
         if (kred.expires_at && kred.expires_at < new Date().toISOString().slice(0, 10)) {
-          return json({ error: "Token QAlity kedaluwarsa sejak " + kred.expires_at + " — buat token baru lalu simpan di Settings." }, 400);
+          return { res: json({ error: "Token QAlity kedaluwarsa sejak " + kred.expires_at + " — buat token baru lalu simpan di Settings." }, 400) };
         }
         const [t, qs] = await Promise.all([bacaTiketTestCase(site, authHeaders, issueKey), qalityGet("/qalitySettings", kred.token)]);
-        if (t.error) return json({ error: t.error }, t.status);
-        if (qs.error) return json({ error: qs.error }, qs.status);
+        if (t.error) return { res: json({ error: t.error }, t.status) };
+        if (qs.error) return { res: json({ error: qs.error }, qs.status) };
         if (isQalityType(t.issueType)) {
-          return json({ error: t.key + " sendiri adalah test case QAlity — buka task tiket story/bug yang mau diuji." }, 400);
+          return { res: json({ error: t.key + " sendiri adalah test case QAlity — buka task tiket story/bug yang mau diuji." }, 400) };
         }
         // Keputusan Zack (opsi A): hanya project yang terdaftar aktif di
         // pengaturan QAlity token ini; createmeta saja tidak cukup (PROD/CHEC/PROM).
@@ -1347,29 +1391,40 @@ async function tangani(request, env) {
         }).sort();
         const proj = aktif.includes(t.projectKey) ? settings[t.projectKey] : null;
         if (!proj) {
-          return json({ error: "Project " + (t.projectKey || "?") + " belum aktif di QAlity untuk akunmu, jadi belum didukung. Project aktif: " +
-            (aktif.join(", ") || "—") + ".", projectKey: t.projectKey, eligibleProjects: aktif }, 400);
+          return { res: json({ error: "Project " + (t.projectKey || "?") + " belum aktif di QAlity untuk akunmu, jadi belum didukung. Project aktif: " +
+            (aktif.join(", ") || "—") + ".", projectKey: t.projectKey, eligibleProjects: aktif }, 400) };
         }
         const projectId = String(proj.projectId);
         if (t.projectId && projectId !== t.projectId) {
-          return json({ error: "Id project " + t.projectKey + " di QAlity (" + projectId + ") beda dengan Jira (" + t.projectId + "); dry run dihentikan." }, 409);
+          return { res: json({ error: "Id project " + t.projectKey + " di QAlity (" + projectId + ") beda dengan Jira (" + t.projectId + "); dihentikan." }, 409) };
         }
+        return { b, t, v, kred, projectId };
+      };
+      if (request.method === "POST" && url.pathname === "/testcases/preview") {
+        const s = await siapkan();
+        if (s.res) return s.res;
+        const { t, v, projectId } = s;
         // Duplikat: judul sama dengan test case yang sudah ter-link, atau case
         // yang sama pernah dibuat dari CATET. QAlity sendiri tidak menolak kembar.
         const terlink = new Map(t.existing.map((x) => [kunciJudulTc(x.summary), x.key]));
-        const dibuat = new Map();
-        for (const r of await riwayat(t.key)) if (TC_STATUS_DIBUAT.includes(r.status) && r.test_key) dibuat.set(r.case_hash, r.test_key);
+        const lama = new Map((await riwayat(t.key)).map((r) => [r.case_hash, r]));
+        const sekarang = Date.now();
         const plan = [];
         for (const [index, c] of v.norm.entries()) {
           const caseHash = await tcCaseHash(t.key, c);
           const linked = terlink.get(kunciJudulTc(c.title)) || null;
-          const dup = linked || dibuat.get(caseHash) || null;
+          const r = lama.get(caseHash);
+          const dibuat = r && TC_STATUS_DIBUAT.includes(r.status) && r.test_key ? r.test_key : null;
+          const sibuk = !linked && !dibuat && r && r.status === "pending";
+          const dup = linked || dibuat;
           plan.push({
             index, title: c.title, caseHash,
-            action: dup ? "skip_duplicate" : "create",
+            action: dup ? "skip_duplicate" : sibuk && !basi(r, sekarang) ? "skip_busy" : "create",
             duplicateOf: dup,
             reason: linked ? "Judul sama dengan test case yang sudah ter-link: " + linked + "."
-              : dup ? "Sudah pernah dibuat dari CATET: " + dup + "." : null,
+              : dup ? "Sudah pernah dibuat dari CATET: " + dup + "."
+              : sibuk && !basi(r, sekarang) ? "Push sebelumnya untuk case ini belum selesai — tunggu ±10 menit lalu Dry run lagi."
+              : sibuk ? "Push sebelumnya terputus; saat Push, Worker mencari dulu judul ini di Jira supaya tidak kembar." : null,
             testCase: petaQality(c),
           });
         }
@@ -1377,12 +1432,217 @@ async function tangani(request, env) {
         return json({
           issueKey: t.key,
           project: { key: t.projectKey, id: projectId },
-          linkType: "QAlity Test",
+          linkType: TC_LINK_TYPE,
           existing: t.existing,
           plan,
           counts: { create, skip: plan.length - create },
           previewHash: await tcPreviewHash(t.key, v.norm),
         });
+      }
+      if (request.method === "POST" && url.pathname === "/testcases/push") {
+        const s = await siapkan();
+        if (s.res) return s.res;
+        const { b, t, v, kred, projectId } = s;
+        // Yang dipush harus persis yang sudah dilihat di dry run.
+        if (String((b && b.previewHash) || "") !== await tcPreviewHash(t.key, v.norm)) {
+          return json({ error: "Isi test case berubah sejak Dry run — jalankan Dry run lagi sebelum Push." }, 409);
+        }
+        const mulai = new Date().toISOString();
+        const terlink = new Map(t.existing.map((x) => [kunciJudulTc(x.summary), x.key]));
+        const lama = new Map((await riwayat(t.key)).map((r) => [r.case_hash, r]));
+        const hasil = [];
+        const klaim = []; // { h, c, basi } — case yang dipegang push ini
+        for (const [index, c] of v.norm.entries()) {
+          const caseHash = await tcCaseHash(t.key, c);
+          const h = { index, title: c.title, caseHash, status: null, testKey: null, error: null };
+          hasil.push(h);
+          const linked = terlink.get(kunciJudulTc(c.title));
+          const r = lama.get(caseHash);
+          if (linked || (r && TC_STATUS_DIBUAT.includes(r.status) && r.test_key)) {
+            h.status = "skipped_duplicate"; h.testKey = linked || r.test_key;
+            continue;
+          }
+          // Klaim atomik per case di D1: klik ganda / dua tab tidak membuat kembar.
+          let dapat = false;
+          const lewat = !!r && r.status === "pending" && basi(r, Date.parse(mulai));
+          if (!r) {
+            dapat = jumlahPerubahan(await d1q(env,
+              "INSERT INTO testcase_pushes (user_id, issue_key, case_hash, title, test_key, status, error, created_at, updated_at) " +
+              "VALUES (?1, ?2, ?3, ?4, NULL, 'pending', NULL, ?5, ?5) ON CONFLICT DO NOTHING",
+              [user.id, t.key, caseHash, c.title, mulai], "run")) === 1;
+          } else if (r.status === "failed") {
+            dapat = jumlahPerubahan(await d1q(env,
+              "UPDATE testcase_pushes SET status = 'pending', error = NULL, title = ?4, updated_at = ?5 " +
+              "WHERE user_id = ?1 AND issue_key = ?2 AND case_hash = ?3 AND status = 'failed'",
+              [user.id, t.key, caseHash, c.title, mulai], "run")) === 1;
+          } else if (lewat) {
+            dapat = jumlahPerubahan(await d1q(env,
+              "UPDATE testcase_pushes SET updated_at = ?5 WHERE user_id = ?1 AND issue_key = ?2 AND case_hash = ?3 AND status = 'pending' AND updated_at = ?4",
+              [user.id, t.key, caseHash, r.updated_at, mulai], "run")) === 1;
+          }
+          if (!dapat) {
+            h.status = "skipped_busy";
+            h.error = "Case ini sedang diproses push lain — tunggu ±10 menit lalu Dry run lagi.";
+            continue;
+          }
+          klaim.push({ h, c, basi: lewat });
+        }
+
+        // Push sebelumnya terputus (pending basi): cari dulu judulnya di Jira.
+        // Ketemu → cukup di-link; tidak bisa dicek → tidak membuat apa pun.
+        const terputus = klaim.filter((k) => k.basi);
+        if (terputus.length) {
+          let temu = null;
+          if (/^[A-Z][A-Z0-9_]{0,19}$/.test(t.projectKey)) {
+            const sejak = Math.min(...terputus.map((k) => Date.parse((lama.get(k.h.caseHash) || {}).created_at) || Date.parse(mulai)));
+            const menit = Math.ceil((Date.parse(mulai) - sejak) / 60000) + 5;
+            const jql = 'project = "' + t.projectKey + '" AND issuetype = "QAlity Test" AND created >= -' + menit + "m ORDER BY created DESC";
+            try {
+              const r = await fetch(site + "/rest/api/3/search/jql?jql=" + encodeURIComponent(jql) + "&fields=summary&maxResults=100", { headers: authHeaders });
+              if (r.ok) {
+                const d = await r.json();
+                if (!d.nextPageToken) {
+                  temu = new Map();
+                  for (const i of d.issues || []) {
+                    const kj = kunciJudulTc(i.fields && i.fields.summary);
+                    if (kj && !temu.has(kj)) temu.set(kj, i.key);
+                  }
+                }
+              }
+            } catch { temu = null; }
+          }
+          for (const k of terputus) {
+            if (!temu) {
+              k.h.status = "pending";
+              k.h.error = "Push sebelumnya terputus dan Jira belum bisa dicek — tidak ada yang dibuat; coba lagi nanti.";
+            } else if (temu.has(kunciJudulTc(k.c.title))) k.h.testKey = temu.get(kunciJudulTc(k.c.title));
+          }
+        }
+
+        // Import QAlity: satu request untuk semua case yang perlu dibuat.
+        const buat = klaim.filter((k) => !k.h.status && !k.h.testKey);
+        const tanpaPeta = []; // key yang terbuat tapi belum jelas milik case mana
+        if (buat.length) {
+          let r = null, d = null;
+          try {
+            r = await fetch(QALITY_API + "/testCases/import", {
+              method: "POST",
+              headers: { Authorization: "Bearer " + kred.token, "Content-Type": "application/json", Accept: "application/json" },
+              body: JSON.stringify({ projectId, testCases: buat.map((k) => petaQality(k.c)) }),
+            });
+            if (r.ok) d = await r.json();
+          } catch { d = null; }
+          if (r && !r.ok && r.status < 500) {
+            // 4xx/429 = QAlity menolak seluruh request; aman dicoba lagi.
+            const pesan = r.status === 401 || r.status === 403 ? "Token QAlity ditolak (HTTP " + r.status + ") — perbarui token di Settings; tidak ada yang dibuat."
+              : r.status === 429 ? "QAlity membatasi request (HTTP 429) — tidak ada yang dibuat; coba lagi sebentar."
+              : "QAlity menolak import (HTTP " + r.status + ") — tidak ada yang dibuat.";
+            for (const k of buat) { k.h.status = "failed"; k.h.error = pesan; }
+          } else if (!d || !Array.isArray(d.success)) {
+            // 5xx / jaringan / body aneh: bisa saja sudah terbuat. Tetap pending.
+            for (const k of buat) {
+              k.h.status = "pending";
+              k.h.error = "Hasil import QAlity tidak pasti" + (r ? " (HTTP " + r.status + ")" : "") +
+                " — jangan buat manual; Push ulang setelah ±10 menit mencari dulu judulnya di Jira.";
+            }
+          } else {
+            // Respons spike hanya { testCaseKey }; nama dipakai bila ada, sisanya
+            // urut. Pemetaan akhir dipastikan dari Summary di Jira (di bawah).
+            const ditolak = new Set((Array.isArray(d.errors) ? d.errors : []).map((x) => kunciJudulTc(x && x.name)).filter(Boolean));
+            const keys = d.success.map((x) => x && x.testCaseKey).filter((k) => KEY_1.test(String(k || "")));
+            const sisaKey = [];
+            for (const x of d.success) {
+              if (!keys.includes(x && x.testCaseKey)) continue;
+              const k = x.name != null ? buat.find((k) => !k.h.testKey && kunciJudulTc(k.c.title) === kunciJudulTc(x.name)) : null;
+              if (k) k.h.testKey = x.testCaseKey; else sisaKey.push(x.testCaseKey);
+            }
+            const belum = buat.filter((k) => !k.h.testKey && !ditolak.has(kunciJudulTc(k.c.title)));
+            if (sisaKey.length === belum.length) belum.forEach((k, i) => { k.h.testKey = sisaKey[i]; });
+            else tanpaPeta.push(...sisaKey);
+            for (const k of buat) {
+              if (k.h.testKey) continue;
+              if (ditolak.has(kunciJudulTc(k.c.title))) { k.h.status = "failed"; k.h.error = "QAlity menolak case ini — tidak dibuat."; }
+              else k.h.belumPasti = true;
+            }
+          }
+        }
+
+        // Link setiap test case ke tiket, lalu baca balik kedua sisi.
+        const linkGagal = new Map();
+        const semuaKey = [...new Set([...klaim.map((k) => k.h.testKey).filter(Boolean), ...tanpaPeta])];
+        for (const key of semuaKey) {
+          const e = await buatLinkQality(site, authHeaders, key, t.key);
+          if (e) linkGagal.set(key, e);
+        }
+        const cek = semuaKey.length ? await bacaIssues(site, authHeaders, [t.key, ...semuaKey], ["summary", "issuelinks"]) : null;
+        if (cek) {
+          // Pemetaan pasti key → case lewat Summary (judul unik per batch).
+          const bySummary = new Map(semuaKey.filter((key) => cek.get(key)).map((key) => [kunciJudulTc(cek.get(key).summary), key]));
+          const terpakai = new Set();
+          for (const k of klaim) {
+            if (k.h.status) continue;
+            const key = bySummary.get(kunciJudulTc(k.c.title));
+            if (key) { k.h.testKey = key; k.h.belumPasti = false; terpakai.add(key); k.pasti = true; }
+          }
+          // Key hasil urutan yang ternyata milik case lain → belum pasti.
+          for (const k of klaim) if (!k.h.status && !k.pasti && terpakai.has(k.h.testKey)) k.h.belumPasti = true;
+        }
+        const tiket = cek && cek.get(t.key);
+        for (const k of klaim) {
+          const h = k.h;
+          if (h.status) { /* failed / pending ditetapkan di atas */ }
+          else if (!h.testKey || h.belumPasti) {
+            h.status = "pending"; h.testKey = null;
+            h.error = "QAlity tidak mengembalikan key untuk case ini — Push ulang setelah ±10 menit mencari dulu judulnya di Jira.";
+          } else if (linkGagal.has(h.testKey)) {
+            h.status = "created_unlinked"; h.error = linkGagal.get(h.testKey) + " Klik Retry link.";
+          } else if (cek && cek.get(h.testKey) && tiket &&
+              tcLinkKeTiket(cek.get(h.testKey).issuelinks, t.key) && tcLinkDariTest(tiket.issuelinks, h.testKey)) {
+            h.status = "created_linked";
+          } else {
+            h.status = "link_unverified"; h.error = "Link dikirim tapi belum terbaca balik di Jira — klik Retry link untuk cek ulang.";
+          }
+          delete h.belumPasti;
+          // pending: updated_at baru = jeda ±10 menit dihitung dari sekarang.
+          await d1q(env,
+            "UPDATE testcase_pushes SET status = ?4, test_key = ?5, error = ?6, title = ?7, updated_at = ?8 WHERE user_id = ?1 AND issue_key = ?2 AND case_hash = ?3",
+            [user.id, t.key, h.caseHash, h.status, h.testKey, h.error, h.title, new Date().toISOString()], "run");
+        }
+        const counts = {};
+        for (const h of hasil) counts[h.status] = (counts[h.status] || 0) + 1;
+        return json({
+          issueKey: t.key, project: { key: t.projectKey, id: projectId }, linkType: TC_LINK_TYPE,
+          results: hasil, counts, unmappedKeys: tanpaPeta.filter((key) => !klaim.some((k) => k.h.testKey === key)),
+          history: await riwayat(t.key),
+        });
+      }
+      if (request.method === "POST" && url.pathname === "/testcases/relink") {
+        let b; try { b = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
+        const issueKey = String((b && b.issueKey) || "").trim().toUpperCase();
+        const testKey = String((b && b.testKey) || "").trim().toUpperCase();
+        if (!KEY_1.test(issueKey) || !KEY_1.test(testKey)) return json({ error: "issueKey/testKey tidak valid (contoh: CD-1234)." }, 400);
+        const row = await d1q(env,
+          "SELECT case_hash FROM testcase_pushes WHERE user_id = ?1 AND issue_key = ?2 AND test_key = ?3 AND status IN ('created_unlinked','link_unverified')",
+          [user.id, issueKey, testKey], "first");
+        if (!row) return json({ error: "Tidak ada test case " + testKey + " yang menunggu link ke " + issueKey + "." }, 404);
+        const awal = await bacaIssues(site, authHeaders, [testKey], ["issuetype", "issuelinks"]);
+        const f = awal && awal.get(testKey);
+        if (!f) return json({ error: "Jira belum bisa membaca " + testKey + " — coba lagi sebentar." }, 502);
+        if (!isQalityType(f.issuetype && f.issuetype.name)) return json({ error: testKey + " bukan test case QAlity." }, 409);
+        // Sudah ter-link (mis. link_unverified yang ternyata berhasil) → tidak POST lagi.
+        let error = tcLinkKeTiket(f.issuelinks, issueKey) ? null : await buatLinkQality(site, authHeaders, testKey, issueKey);
+        let status = "created_unlinked";
+        if (!error) {
+          const cek = await bacaIssues(site, authHeaders, [issueKey, testKey], ["issuelinks"]);
+          const ok = !!cek && !!cek.get(testKey) && !!cek.get(issueKey) &&
+            tcLinkKeTiket(cek.get(testKey).issuelinks, issueKey) && tcLinkDariTest(cek.get(issueKey).issuelinks, testKey);
+          status = ok ? "created_linked" : "link_unverified";
+          if (!ok) error = "Link belum terbaca balik di Jira — coba Retry link lagi sebentar.";
+        }
+        await d1q(env,
+          "UPDATE testcase_pushes SET status = ?4, error = ?5, updated_at = ?6 WHERE user_id = ?1 AND issue_key = ?2 AND case_hash = ?3",
+          [user.id, issueKey, row.case_hash, status, error, new Date().toISOString()], "run");
+        return json({ issueKey, testKey, status, error, history: await riwayat(issueKey) });
       }
       return json({ error: "Rute test case tidak dikenal." }, 404);
     }
