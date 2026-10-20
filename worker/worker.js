@@ -478,6 +478,18 @@ function acaraDalamJendela(icsText, from, to, tz) {
   return out;
 }
 
+// Test case QAlity adalah issue Jira biasa (tipe "QAlity Test") yang di-link
+// ke tiketnya. Ia bukan pekerjaan inbox, bukan tiket QA/dev untuk pairing,
+// dan bukan dependensi yang harus Done sebelum tiket QA siap dites.
+function isQalityType(name) {
+  return typeof name === "string" && /^qality(?:\s+test)?$/i.test(name.trim());
+}
+function isQalityLink(link) {
+  const other = link && (link.outwardIssue || link.inwardIssue);
+  const type = other && other.fields && other.fields.issuetype;
+  return isQalityType(link && link.type && link.type.name) || isQalityType(type && type.name);
+}
+
 function descriptionMentionsKey(desc, key) {
   if (!desc || !key) return false;
   const raw = typeof desc === "string" ? desc : JSON.stringify(desc);
@@ -1027,7 +1039,7 @@ async function tangani(request, env) {
           if (!f || !f.issuetype || typeof f.issuetype.name !== "string" || typeof f.summary !== "string") {
             throw new Error("Metadata jenis tiket Jira belum lengkap.");
           }
-          if (/^qality(?:\s+test)?$/i.test(f.issuetype.name.trim())) { excludedQality++; continue; }
+          if (isQalityType(f.issuetype.name)) { excludedQality++; continue; }
           items.push({ key: issue.key, summary: f.summary, status: f.status && f.status.name || null,
             created: f.created || null, issueType: f.issuetype.name });
         }
@@ -1141,6 +1153,7 @@ async function tangani(request, env) {
     // dependensi tiket dev-nya (deps): dari issue link DAN key yang disebut di
     // description. Untuk pencocokan CATET-only, Worker juga mengambil metadata
     // minimal seluruh issue di sprint aktif (termasuk Done dan issue orang lain).
+    // Test case QAlity dikecualikan dari ketiganya (lihat isQalityType).
     // Description mentah tidak pernah diteruskan ke browser.
     if (request.method === "GET" && url.pathname === "/tickets") {
       const jql = "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC";
@@ -1162,7 +1175,16 @@ async function tangani(request, env) {
         }
         if (assignedToken) seenAssignedTokens.add(assignedToken);
       } while (assignedToken);
-      const data = { issues: assignedIssues };
+      // Test case QAlity yang di-assign ke user tidak masuk inbox; key-nya
+      // diingat supaya juga tidak terhitung dependensi atau kandidat pairing.
+      const qalityKeys = new Set();
+      const data = { issues: assignedIssues.filter((i) => {
+        const t = i.fields && i.fields.issuetype;
+        if (!isQalityType(t && t.name)) return true;
+        qalityKeys.add(i.key);
+        return false;
+      }) };
+      const excludedQality = assignedIssues.length - data.issues.length;
       const KEY_G = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/g;
       const beres = (st) => !!st && ((st.statusCategory && st.statusCategory.key === "done") || /^done$/i.test(st.name || ""));
       const statusByKey = new Map(); // key → { status, done, doneAt }
@@ -1173,6 +1195,7 @@ async function tangani(request, env) {
         for (const l of f.issuelinks || []) {
           const lain = l.outwardIssue || l.inwardIssue;
           if (!lain || !lain.key) continue;
+          if (isQalityLink(l)) { qalityKeys.add(lain.key); continue; }
           set.add(lain.key);
           const st = lain.fields && lain.fields.status;
           if (st) {
@@ -1203,19 +1226,22 @@ async function tangani(request, env) {
           });
         }
       }
-      const tanya = [...new Set([...[...depsByTiket.values()].flatMap((s) => [...s]), ...papanKeys])]
+      const tanya = [...new Set([...[...depsByTiket.values()].flatMap((s) => [...s]).filter((k) => !qalityKeys.has(k)), ...papanKeys])]
         .filter((k) => !statusByKey.has(k) || (statusByKey.get(k).done && !statusByKey.get(k).doneAt)).slice(0, 100);
       if (tanya.length) {
         const rb = await fetch(site + "/rest/api/3/issue/bulkfetch", {
           method: "POST",
           headers: { ...authHeaders, "Content-Type": "application/json" },
           body: JSON.stringify({ issueIdsOrKeys: tanya,
-            fields: ["status", "resolutiondate", "statuscategorychangedate"] }),
+            fields: ["status", "resolutiondate", "statuscategorychangedate", "issuetype"] }),
         });
         if (rb.ok) {
           const db = await rb.json();
           for (const bi of db.issues || []) {
             const f = bi.fields || {};
+            // Key test case yang hanya disebut di description baru ketahuan
+            // tipenya di sini.
+            if (isQalityType(f.issuetype && f.issuetype.name)) qalityKeys.add(bi.key);
             const st = f.status;
             if (!st) continue;
             const done = beres(st);
@@ -1259,15 +1285,22 @@ async function tangani(request, env) {
           // tidak ada warning daripada menuduh pasangan hilang dari data bolong.
           if (!pairingComplete) pairRaw = [];
           const assignedKeys = new Set((data.issues || []).map((i) => i.key));
+          pairRaw = pairRaw.filter((i) => {
+            const t = i.fields && i.fields.issuetype;
+            if (!isQalityType(t && t.name)) return true;
+            qalityKeys.add(i.key);
+            return false;
+          });
           pairingIssues = pairRaw.map((i) => {
             const f = i.fields || {};
             const arr = Array.isArray(f[sf]) ? f[sf] : [];
             const aktif = arr.find((x) => x && x.state === "active");
             const st = f.status || null;
-            const links = (f.issuelinks || []).map((l) => l.outwardIssue || l.inwardIssue)
-              .filter((x) => x && x.key).map((x) => x.key);
+            const links = (f.issuelinks || []).filter((l) => !isQalityLink(l))
+              .map((l) => l.outwardIssue || l.inwardIssue)
+              .filter((x) => x && x.key && !qalityKeys.has(x.key)).map((x) => x.key);
             const mentions = [...String(JSON.stringify(f.description || "")).matchAll(KEY_G)].map((m) => m[0])
-              .filter((k) => k !== i.key);
+              .filter((k) => k !== i.key && !qalityKeys.has(k));
             return {
               key: i.key,
               summary: f.summary || "",
@@ -1292,6 +1325,7 @@ async function tangani(request, env) {
       const body = {
         site,
         pairingIssues,
+        excludedQality,
         items: (data.issues || []).map((i) => {
           const it = {
             key: i.key,
@@ -1301,7 +1335,7 @@ async function tangani(request, env) {
           };
           const set = depsByTiket.get(i.key);
           const deps = set
-            ? [...set].filter((k) => statusByKey.has(k)).map((k) => ({ key: k, ...statusByKey.get(k) }))
+            ? [...set].filter((k) => statusByKey.has(k) && !qalityKeys.has(k)).map((k) => ({ key: k, ...statusByKey.get(k) }))
             : [];
           if (deps.length) it.deps = deps;
           // Sprint aktif tiket ini (kalau ada) — klien memakainya untuk

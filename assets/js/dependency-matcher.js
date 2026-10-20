@@ -36,7 +36,13 @@
     const bs = new Set(b || []);
     return uniq((a || []).filter((x) => bs.has(x)));
   }
+  // Test case QAlity (tipe "QAlity Test") bukan tiket QA maupun dev: ia
+  // artefak uji yang di-link ke tiket, jadi tidak ikut dipasangkan.
+  function isTestCase(i) {
+    return /^qality(\s+test)?$/i.test(String(i.issueType || "").trim());
+  }
   function isQa(i) {
+    if (isTestCase(i)) return false;
     const kind = String(i.issueType || "").toLowerCase();
     const labels = (i.labels || []).map((x) => String(x).toLowerCase());
     const title = String(i.summary || "").toLowerCase();
@@ -45,7 +51,7 @@
       /(^|[\]\)\s:_-])(test|testing|qa)\b/i.test(title);
   }
   function isDeliveryDev(i) {
-    if (isQa(i)) return false;
+    if (isTestCase(i) || isQa(i)) return false;
     const kind = String(i.issueType || "").toLowerCase();
     if (NON_DELIVERY_TYPES.test(kind)) return false;
     const labels = (i.labels || []).map((x) => String(x).toLowerCase());
@@ -161,7 +167,7 @@
   }
 
   root.CatetDependencyMatcher = {
-    isQa, isDev: isDeliveryDev, scorePair, matchSprintIssues, words,
+    isQa, isDev: isDeliveryDev, isTestCase, scorePair, matchSprintIssues, words,
     assignedKeysFromIssues, filterAssignedReview,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);
