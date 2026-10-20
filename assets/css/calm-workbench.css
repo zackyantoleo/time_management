@@ -100,6 +100,10 @@ header.top { height: 48px; align-items: center; }
 .focus-card:not(.empty) .focus-meta { color:#c1dcd7; }
 .focus-card:not(.empty) .btn-solid { background:#fff; color:#174b42; border-color:#fff; }
 .focus-card:not(.empty) .btn-line { color:#fff; border-color:rgba(255,255,255,.28); background:rgba(255,255,255,.08); }
+/* Panel Test cases di kartu fokus: kembali ke permukaan biasa supaya pratinjaunya terbaca. */
+.focus-card:not(.empty) .testcase-panel { margin-top:6px; padding:12px; border:0; border-radius:10px; background:var(--surface); color:var(--ink); }
+.focus-card:not(.empty) .testcase-panel .btn-solid { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+.focus-card:not(.empty) .testcase-panel .btn-line { color:var(--ink); border-color:var(--line); background:var(--surface-2); }
 .capture { margin-top:0; padding:9px; border-radius:12px; box-shadow:0 1px 3px rgba(20,30,25,.03); gap:8px; }
 .capture-row1 { align-items:center; }
 .capture-plus { width:31px; height:31px; flex:0 0 auto; display:grid; place-items:center; border-radius:8px; background:var(--accent-soft); color:var(--accent); font-size:20px; }
@@ -239,6 +243,7 @@ footer.foot { margin-top:8px; }
   .focus-meta { gap:5px 8px; overflow-wrap:anywhere; }
   .focus-card .focus-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
   .focus-actions > button:last-child { grid-column:1 / -1; }
+  .focus-actions > .focus-testcases { grid-column:1 / -1; }
   .focus-actions > button { width:100%; min-width:0; min-height:44px; padding:9px 10px; white-space:normal; }
   .capture { padding:10px; }
   .capture-row1 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); align-items:stretch; gap:8px; }
