@@ -1,7 +1,9 @@
 // testcases.js — tempel test case hasil AI ke task bertiket Jira, parse
 // (markdown standar Zack atau JSON catet.testcases.v1), validasi, dan pratinjau.
-// Parse lokal; Dry run (Fase 2) minta Worker mengecek tiket, project QAlity, dan
-// duplikat — read-only, belum ada Push. Token QAlity diatur di Settings.
+// Parse lokal; Dry run minta Worker mengecek tiket, project QAlity, dan duplikat
+// (read-only). Push (setelah dry run + konfirmasi) membuat test case di QAlity
+// dan me-link-nya ke tiket; Worker hanya menerimanya bila flag push menyala.
+// Token QAlity diatur di Settings.
 "use strict";
 
 const TESTCASE_FORMAT = "catet.testcases.v1";
@@ -241,6 +243,11 @@ let testcaseHasil = null;  // { taskId, text, parsed, pilih: [bool] } — parse 
 // Dry run terakhir: { taskId, sig, loading, error, rinci, data }. sig = isi case
 // terpilih saat dikirim; hasil hanya tampil selama pilihan/isi masih sama.
 let testcaseDry = null;
+// Push terakhir: { taskId, loading, error, data } — tetap tampil walau draft
+// sudah dibersihkan setelah push sukses.
+let testcasePush = null;
+// Riwayat dari Worker: { taskId, key, loading, error, data: { existing, history } }.
+let testcaseRiwayat = null;
 
 function keyTestCase(t) { return (String(t.text || "").match(JIRA_RE) || [null])[0]; }
 
@@ -262,7 +269,11 @@ function tombolTestCase(t, kelas, label) {
   btn.setAttribute("aria-label", "Test cases");
   btn.setAttribute("aria-expanded", String(terbuka));
   btn.setAttribute("aria-controls", "tc-panel-" + t.id);
-  btn.onclick = () => { testcaseTaskId = terbuka ? null : t.id; renderLaluFokus(btn.id); };
+  btn.onclick = () => {
+    testcaseTaskId = terbuka ? null : t.id;
+    renderLaluFokus(btn.id);
+    if (!terbuka) muatRiwayatTestCase(t);
+  };
   return btn;
 }
 
@@ -278,7 +289,8 @@ function renderTestCasePanel(t) {
   panel.append(head);
   panel.append(el("p", "testcase-hint",
     "Tempel test case hasil AI: bagian Title / Precondition / Test Step(s) / Expected Result, antar-case dipisah ---, " +
-    "atau JSON " + TESTCASE_FORMAT + ". Parse hanya di perangkat ini; Dry run mengecek ke Jira/QAlity tanpa membuat apa pun."));
+    "atau JSON " + TESTCASE_FORMAT + ". Parse hanya di perangkat ini; Dry run mengecek ke Jira/QAlity tanpa membuat apa pun; " +
+    "Push baru menulis ke QAlity setelah dikonfirmasi."));
 
   const hasil = testcaseHasil && testcaseHasil.taskId === t.id ? testcaseHasil : null;
   const ta = document.createElement("textarea");
@@ -320,7 +332,10 @@ function renderTestCasePanel(t) {
   aksi.append(parseBtn, clearBtn, closeBtn);
   panel.append(aksi);
 
+  const push = testcasePush && testcasePush.taskId === t.id ? testcasePush : null;
+  if (push && (push.error || push.data)) panel.append(hasilPushTestCase(t, push));
   if (hasil) panel.append(pratinjauTestCase(t, hasil));
+  panel.append(riwayatTestCase(t));
   return panel;
 }
 
@@ -389,7 +404,7 @@ function dryRunTestCase(t, dipilih) {
   box.append(bar);
   if (!jiraProxy()) box.append(el("p", "testcase-hint", "Dry run butuh sign in (Settings → Account) dan token QAlity."));
   if (d && d.error) box.append(daftarIsuTestCase([d.error, ...(d.rinci || [])], "err"));
-  if (d && d.data) box.append(rencanaTestCase(d.data));
+  if (d && d.data) box.append(rencanaTestCase(d.data, t, dipilih));
   return box;
 }
 
@@ -420,7 +435,7 @@ async function jalankanDryRun(t, key, cases, sig) {
   if (testcaseTaskId === t.id) renderLaluFokus("tc-dry-" + t.id);
 }
 
-function rencanaTestCase(d) {
+function rencanaTestCase(d, t, dipilih) {
   const wrap = el("div", "testcase-plan");
   wrap.setAttribute("role", "status");
   const n = d.counts || { create: 0, skip: 0 };
@@ -434,7 +449,7 @@ function rencanaTestCase(d) {
     const buat = p.action === "create";
     const li = el("li", "testcase-card" + (buat ? "" : " excluded"));
     const head = el("div", "testcase-plan-head");
-    head.append(el("span", "testcase-badge" + (buat ? " create" : ""), buat ? "Create" : "Skip"),
+    head.append(el("span", "testcase-badge" + (buat ? " create" : ""), buat ? "Create" : p.action === "skip_busy" ? "Busy" : "Skip"),
       el("strong", "testcase-title", p.title || ""));
     li.append(head);
     if (p.reason) li.append(el("p", "testcase-hint", p.reason));
@@ -445,8 +460,188 @@ function rencanaTestCase(d) {
   if (Array.isArray(d.existing) && d.existing.length) {
     wrap.append(el("p", "testcase-hint", "Sudah ter-link ke " + d.issueKey + ": " + d.existing.map((x) => x.key).join(", ") + "."));
   }
-  wrap.append(el("p", "testcase-hint", "Dry run tidak membuat apa pun di Jira/QAlity. Push ke QAlity belum tersedia di versi ini."));
+  wrap.append(el("p", "testcase-hint", "Dry run tidak membuat apa pun di Jira/QAlity."));
+  if (t && n.create > 0) {
+    const p = testcasePush && testcasePush.taskId === t.id ? testcasePush : null;
+    const bar = el("div", "testcase-actions");
+    const btn = el("button", "btn-solid", p && p.loading ? "Pushing…" : "Push " + n.create + " to QAlity");
+    btn.type = "button"; btn.id = "tc-push-" + t.id;
+    btn.title = "Buat test case di QAlity lalu link ke " + d.issueKey;
+    btn.disabled = !jiraProxy() || !!(p && p.loading);
+    btn.onclick = () => jalankanPushTestCase(t, d, dipilih);
+    bar.append(btn);
+    wrap.append(bar);
+  }
   return wrap;
+}
+
+/* ---------- push (Worker menulis ke QAlity + Jira) ---------- */
+
+const TC_STATUS = {
+  created_linked: ["Linked", " create"], created_unlinked: ["Unlinked", " warn"], link_unverified: ["Unverified", " warn"],
+  pending: ["Pending", " warn"], failed: ["Failed", " err"], skipped_duplicate: ["Skipped", ""], skipped_busy: ["Busy", " warn"],
+};
+const TC_PERLU_LINK = ["created_unlinked", "link_unverified"];
+
+async function jalankanPushTestCase(t, d, cases) {
+  const key = d.issueKey;
+  const n = (d.counts && d.counts.create) || 0;
+  if (!confirm("Buat " + n + " test case di QAlity (project " + ((d.project && d.project.key) || "?") + ") lalu link “" +
+    (d.linkType || "QAlity Test") + "” ke " + key + "?\n\nIni menulis ke Jira/QAlity dan tidak dihapus otomatis.")) return;
+  testcasePush = { taskId: t.id, loading: true, error: "", data: null };
+  renderLaluFokus("tc-push-" + t.id);
+  let hasil;
+  try {
+    const r = await fetch(jiraProxy() + "/testcases/push", {
+      method: "POST", headers: { "Content-Type": "application/json", ...headerAkses() },
+      body: JSON.stringify({ issueKey: key, cases: kirimanTestCase(cases), previewHash: d.previewHash }),
+    });
+    const b = await r.json().catch(() => ({}));
+    if (r.ok && b && Array.isArray(b.results)) hasil = { data: b };
+    else if (r.status === 404) hasil = { error: "Push belum diaktifkan di Worker (flag TESTCASE_PUSH_ENABLED mati). Dry run tetap bisa dipakai." };
+    else hasil = { error: "Push gagal: " + (b.error || "HTTP " + r.status) };
+  } catch (e) {
+    hasil = { error: "Push gagal: " + ((e && e.message) || "koneksi") + ". Cek History sebelum mencoba lagi — bisa saja sebagian sudah terbuat." };
+  }
+  testcasePush = { taskId: t.id, loading: false, error: hasil.error || "", data: hasil.data || null };
+  if (hasil.data) {
+    // Rencana lama sudah dipakai; Dry run ulang akan menunjukkan sisanya.
+    if (testcaseDry && testcaseDry.taskId === t.id) testcaseDry = null;
+    const beres = hasil.data.results.every((x) => x.status === "created_linked" || x.status === "skipped_duplicate");
+    if (beres) {
+      simpanDraftTestCase(t.id, "");
+      if (testcaseHasil && testcaseHasil.taskId === t.id) testcaseHasil = null;
+    }
+  }
+  if (testcaseTaskId === t.id) renderLaluFokus("tc-pushres-" + t.id);
+  if (hasil.data) muatRiwayatTestCase(t);
+}
+
+function tautanTiket(key) {
+  if (!key) return el("span", "testcase-empty", "—");
+  if (!jiraSite()) return el("span", "jira-key", key);
+  const a = el("a", "jira-key", key);
+  a.href = jiraUrl(key); a.target = "_blank"; a.rel = "noopener";
+  return a;
+}
+
+function barisStatusTestCase(status, title, testKey, error) {
+  const li = el("li", "testcase-row");
+  const [label, kelas] = TC_STATUS[status] || [status || "?", ""];
+  li.append(el("span", "testcase-badge" + kelas, label), tautanTiket(testKey), el("span", "testcase-title", title || ""));
+  if (error) li.append(el("p", "testcase-hint", error));
+  return li;
+}
+
+function hasilPushTestCase(t, p) {
+  const wrap = el("div", "testcase-pushres");
+  wrap.id = "tc-pushres-" + t.id;
+  wrap.tabIndex = -1;
+  wrap.setAttribute("role", "status");
+  if (p.error) { wrap.append(daftarIsuTestCase([p.error], "err")); return wrap; }
+  const d = p.data;
+  const n = d.counts || {};
+  const bagian = Object.keys(TC_STATUS).filter((s) => n[s]).map((s) => n[s] + " " + TC_STATUS[s][0].toLowerCase());
+  const ok = d.results.every((x) => x.status === "created_linked" || x.status === "skipped_duplicate");
+  wrap.append(el("p", "testcase-status" + (ok ? " ok" : ""), "Push selesai — " + bagian.join(", ") + "." +
+    (ok ? " Draft dibersihkan." : " Draft disimpan; yang Unlinked/Unverified bisa di-Retry link di History.")));
+  const ul = el("ul", "testcase-rows");
+  for (const x of d.results) ul.append(barisStatusTestCase(x.status, x.title, x.testKey, x.error));
+  wrap.append(ul);
+  if (Array.isArray(d.unmappedKeys) && d.unmappedKeys.length) {
+    wrap.append(el("p", "testcase-hint", "QAlity juga mengembalikan " + d.unmappedKeys.join(", ") +
+      " yang tidak cocok ke case mana pun — sudah di-link ke " + d.issueKey + "; cek di Jira."));
+  }
+  return wrap;
+}
+
+/* ---------- riwayat (GET /testcases) + Retry link ---------- */
+
+async function muatRiwayatTestCase(t) {
+  const key = keyTestCase(t);
+  if (!key || !jiraProxy()) return;
+  const lama = testcaseRiwayat && testcaseRiwayat.taskId === t.id ? testcaseRiwayat.data : null;
+  testcaseRiwayat = { taskId: t.id, key, loading: true, error: "", data: lama };
+  gantiRiwayatTestCase(t);
+  let hasil;
+  try {
+    const r = await fetch(jiraProxy() + "/testcases?issue=" + encodeURIComponent(key), { headers: headerAkses() });
+    const d = await r.json().catch(() => ({}));
+    hasil = r.ok && d && Array.isArray(d.history) ? { data: d } : { error: d.error || "HTTP " + r.status };
+  } catch (e) {
+    hasil = { error: (e && e.message) || "koneksi" };
+  }
+  if (!testcaseRiwayat || testcaseRiwayat.taskId !== t.id) return;
+  testcaseRiwayat = { taskId: t.id, key, loading: false, error: hasil.error || "", data: hasil.data || lama };
+  gantiRiwayatTestCase(t);
+}
+
+// Hanya bagian History yang diganti — render() penuh akan membuang fokus/
+// kursor textarea yang mungkin sedang dipakai saat riwayat selesai dimuat.
+function gantiRiwayatTestCase(t) {
+  const n = document.getElementById("tc-hist-" + t.id);
+  if (n) n.replaceWith(riwayatTestCase(t));
+}
+
+async function ulangLinkTestCase(t, key, testKey, btn) {
+  btn.disabled = true; btn.textContent = "Linking…";
+  try {
+    const r = await fetch(jiraProxy() + "/testcases/relink", {
+      method: "POST", headers: { "Content-Type": "application/json", ...headerAkses() },
+      body: JSON.stringify({ issueKey: key, testKey }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
+    if (d.status !== "created_linked") alert("Link " + testKey + " belum terverifikasi: " + (d.error || d.status));
+  } catch (e) {
+    alert("Retry link gagal: " + ((e && e.message) || "koneksi"));
+  }
+  await muatRiwayatTestCase(t);
+}
+
+function riwayatTestCase(t) {
+  const key = keyTestCase(t);
+  const st = testcaseRiwayat && testcaseRiwayat.taskId === t.id ? testcaseRiwayat : null;
+  const box = el("div", "testcase-history");
+  box.id = "tc-hist-" + t.id;
+  const head = el("div", "testcase-plan-head");
+  head.append(el("strong", "testcase-title", "History"));
+  const muat = el("button", "btn-line", st && st.loading ? "Loading…" : "Refresh");
+  muat.type = "button";
+  muat.disabled = !jiraProxy() || !!(st && st.loading);
+  muat.onclick = () => muatRiwayatTestCase(t);
+  head.append(muat);
+  box.append(head);
+  if (!jiraProxy()) { box.append(el("p", "testcase-hint", "Riwayat push butuh sign in (Settings → Account).")); return box; }
+  if (st && st.error) box.append(daftarIsuTestCase(["Riwayat gagal dimuat: " + st.error], "err"));
+  const d = st && st.data;
+  if (!d) {
+    if (!st) box.append(el("p", "testcase-hint", "Klik Refresh untuk melihat test case yang sudah ter-link ke " + key + "."));
+    return box;
+  }
+  if (Array.isArray(d.existing) && d.existing.length) {
+    const p = el("p", "testcase-hint", "Ter-link ke " + d.issueKey + ": ");
+    d.existing.forEach((x, i) => { if (i) p.append(", "); p.append(tautanTiket(x.key)); });
+    box.append(p);
+  }
+  if (!d.history.length) {
+    box.append(el("p", "testcase-hint", "Belum ada push dari CATET untuk " + d.issueKey + "."));
+    return box;
+  }
+  const ul = el("ul", "testcase-rows");
+  for (const h of d.history) {
+    const li = barisStatusTestCase(h.status, h.title, h.test_key, h.error);
+    if (h.test_key && TC_PERLU_LINK.includes(h.status)) {
+      const btn = el("button", "btn-line", "Retry link");
+      btn.type = "button";
+      btn.title = "Link ulang " + h.test_key + " ke " + d.issueKey + " lalu baca balik";
+      btn.onclick = () => ulangLinkTestCase(t, d.issueKey, h.test_key, btn);
+      li.insertBefore(btn, li.querySelector(".testcase-hint"));
+    }
+    ul.append(li);
+  }
+  box.append(ul);
+  return box;
 }
 
 // Baris QAlity persis seperti yang akan dibuat: Step / Test data / Expected.
@@ -477,7 +672,7 @@ function qalitySettingsForm() {
   const exp = (profil && profil.qality_expires_at) || "";
   let status = !profil ? "Memeriksa…"
     : ada ? "✓ Tersimpan di server" + (exp ? " — berlaku sampai " + fmtDayName(exp) : "") + "."
-    : "Belum diisi — dibutuhkan untuk Dry run test case.";
+    : "Belum diisi — dibutuhkan untuk Dry run & Push test case.";
   let kelas = "cap-hint";
   if (ada && exp) {
     const sisa = Math.round((Date.parse(exp) - Date.parse(localDateStr(new Date()))) / 86400000);
@@ -520,7 +715,7 @@ function qalitySettingsForm() {
   if (ada) {
     const hapus = el("button", "btn-line", "Remove");
     hapus.onclick = () => {
-      if (!confirm("Hapus token QAlity dari server? Dry run tidak bisa dipakai sampai token diisi lagi.")) return;
+      if (!confirm("Hapus token QAlity dari server? Dry run & Push tidak bisa dipakai sampai token diisi lagi.")) return;
       kirim(hapus, { token: "" }, "Token QAlity dihapus.");
     };
     form.append(hapus);

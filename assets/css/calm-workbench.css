@@ -500,7 +500,7 @@ a.jira-key:hover { border-color: var(--accent); }
 
   /* Baris tugas: centang + isi berdampingan, aksi satu baris di bawah isi. */
   li.task { display: grid; grid-template-columns: 44px minmax(0,1fr); column-gap: 2px; row-gap: 6px; padding: 10px 10px 10px 2px; }
-  li.task > .task-editor { grid-column: 1 / -1; }
+  li.task > .task-editor, li.task > .testcase-panel { grid-column: 1 / -1; }
   .task .check { width: 44px; height: 44px; flex: none; margin: -10px 0 0; border: 0; background: none; position: relative; isolation: isolate; color: transparent; }
   .task .check::before { content: ""; position: absolute; inset: 11px; z-index: -1; border: 1.5px solid var(--ink-faint); border-radius: 7px; background: var(--surface); }
   li.task.done .task .check, li.task.done .check { background: none; color: var(--accent-ink); }

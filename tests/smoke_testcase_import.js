@@ -1,6 +1,7 @@
 // Synthetic fixtures; Worker di-mock dan semua request lain diblokir. Parse +
-// pratinjau lokal tanpa request; Dry run (Fase 2) hanya POST /testcases/preview
-// ke Worker mock; token QAlity lewat /me/qality. Tidak ada push/Jira/QAlity.
+// pratinjau lokal tanpa request; membuka panel memuat History (GET /testcases);
+// Dry run = POST /testcases/preview; Push/Retry link = POST /testcases/push|relink
+// ke Worker mock; token QAlity lewat /me/qality. Tidak ada request ke Jira/QAlity.
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -60,8 +61,9 @@ const json21 = JSON.stringify({ format: 'catet.testcases.v1', cases: Array.from(
     for (const mode of ['http', 'file']) {
       const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block' });
       const page = await context.newPage();
-      const errors = [], consoleErrors = [], workerCalls = [], blocked = [], stateBodies = [], previewBodies = [], qalityBodies = [];
-      let previewMode = 'ok';
+      const errors = [], consoleErrors = [], workerCalls = [], blocked = [], stateBodies = [], previewBodies = [], qalityBodies = [], pushBodies = [];
+      let previewMode = 'ok', pushMode = 'ok', history = [];
+      const XSS = 'Check profile <img src=x onerror="window.__xss=1">';
       // Token kedaluwarsa 10 hari lagi → Settings menampilkan peringatan.
       const exp = new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10);
       page.on('pageerror', e => errors.push(e.message));
@@ -98,6 +100,30 @@ const json21 = JSON.stringify({ format: 'catet.testcases.v1', cases: Array.from(
               { index: 1, title: body.cases[1].title, action: 'skip_duplicate', duplicateOf: 'QA-900', reason: 'Judul sama dengan test case yang sudah ter-link: QA-900.', testCase: { name: body.cases[1].title, properties: {}, testSteps: [] } },
             ] } });
         }
+        if (u.pathname === '/testcases' && req.method() === 'GET') {
+          const issueKey = u.searchParams.get('issue');
+          return route.fulfill({ json: { issueKey, projectKey: 'QA', history: issueKey === 'QA-123' ? history : [],
+            existing: issueKey === 'QA-123' ? [{ key: 'QA-900', summary: XSS, status: 'To Do', linkType: 'QAlity Test' }] : [] } });
+        }
+        if (u.pathname === '/testcases/push') {
+          const body = JSON.parse(req.postData() || '{}');
+          pushBodies.push(body);
+          if (pushMode === 'off') return route.fulfill({ status: 404, json: { error: 'Rute test case tidak dikenal.' } });
+          const st0 = pushMode === 'partial' ? 'created_unlinked' : 'created_linked';
+          const err0 = st0 === 'created_linked' ? null : 'Jira menolak link (HTTP 403). Klik Retry link.';
+          const now = new Date().toISOString();
+          history = [{ case_hash: 'h0', title: body.cases[0].title, test_key: 'QA-901', status: st0, error: err0, created_at: now, updated_at: now }];
+          return route.fulfill({ json: { issueKey: body.issueKey, project: { key: 'QA', id: '10999' }, linkType: 'QAlity Test', unmappedKeys: [], history,
+            counts: { [st0]: 1, skipped_duplicate: 1 },
+            results: [{ index: 0, title: body.cases[0].title, caseHash: 'h0', status: st0, testKey: 'QA-901', error: err0 },
+              { index: 1, title: body.cases[1].title, caseHash: 'h1', status: 'skipped_duplicate', testKey: 'QA-900', error: null }] } });
+        }
+        if (u.pathname === '/testcases/relink') {
+          const body = JSON.parse(req.postData() || '{}');
+          assert.deepEqual(body, { issueKey: 'QA-123', testKey: 'QA-901' });
+          history = history.map(h => ({ ...h, status: 'created_linked', error: null }));
+          return route.fulfill({ json: { issueKey: 'QA-123', testKey: 'QA-901', status: 'created_linked', error: null, history } });
+        }
         if (u.pathname === '/me/qality') { qalityBodies.push(JSON.parse(req.postData() || '{}')); return route.fulfill({ json: { ok: true, qality_tersimpan: true, qality_expires_at: exp } }); }
         return route.fulfill({ json: u.pathname === '/me' ? { name: 'Synthetic', jira_site: 'https://jira.invalid', jira_tersimpan: true, qality_tersimpan: true, qality_expires_at: exp }
           : u.pathname === '/state' ? { stores: null, updatedAt: null } : { items: [], events: [], days: {}, summaries: {} } });
@@ -117,7 +143,12 @@ const json21 = JSON.stringify({ format: 'catet.testcases.v1', cases: Array.from(
       await panel.waitFor();
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
       assert.equal(await page.evaluate(() => document.activeElement.id), 'tc-btn-tc1', 'fokus tetap di tombol pembuka');
-      assert.match(await panel.locator('.jira-key').textContent(), /^QA-123$/);
+      assert.match(await panel.locator('.testcase-head .jira-key').textContent(), /^QA-123$/);
+      // History dimuat saat panel dibuka: test case ter-link + belum ada push.
+      const hist = panel.locator('.testcase-history');
+      await hist.locator('a.jira-key', { hasText: 'QA-900' }).waitFor();
+      assert.match(await hist.textContent(), /Belum ada push dari CATET untuk QA-123/);
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'tc-btn-tc1', 'History dimuat tanpa memindah fokus');
 
       // Parse → pratinjau dengan error + warning; teks pengguna tidak dirender sebagai HTML.
       await panel.locator('textarea').fill(SAMPLE);
@@ -150,7 +181,7 @@ const json21 = JSON.stringify({ format: 'catet.testcases.v1', cases: Array.from(
       assert.match(await cards.nth(2).textContent(), /Excluded/);
       assert.deepEqual(await panel.locator('.testcase-chip').allTextContents(), ['3 cases', '2 selected', '0 errors', '1 warning']);
       assert.match(await panel.locator('.testcase-status.ok').textContent(), /2 case siap/);
-      assert(!workerCalls.some(c => /\/testcases/.test(c)), 'Parse/pratinjau tidak memanggil Worker');
+      assert.deepEqual(workerCalls.filter(c => /\/testcases/.test(c)), ['GET /testcases'], 'Parse/pratinjau tidak memanggil Worker; hanya History saat panel dibuka');
 
       // Dry run → rencana dari Worker: Create + Skip, baris QAlity persis, teks tetap teks.
       await panel.getByRole('button', { name: 'Dry run', exact: true }).click();
@@ -166,11 +197,11 @@ const json21 = JSON.stringify({ format: 'catet.testcases.v1', cases: Array.from(
       assert.deepEqual(await plan.locator('.testcase-step .testcase-pre').allTextContents(),
         ['Send a GET request to `/customers/v2/profile` using a valid access token.', 'Precondition:\n- Customer has a valid access token (' + MARKER + ').', '1. A\n2. B']);
       assert.match(await plan.textContent(), /sudah ter-link: QA-900/);
-      assert.match(await plan.textContent(), /Push ke QAlity belum tersedia/);
+      assert.match(await plan.textContent(), /Dry run tidak membuat apa pun/);
       assert.equal(await panel.locator('img').count(), 0);
       assert.equal(await page.evaluate(() => window.__xss), undefined);
       assert.equal(await page.evaluate(() => document.activeElement.id), 'tc-dry-tc1', 'fokus kembali ke Dry run');
-      assert.equal(await panel.getByRole('button', { name: /^Push/ }).count(), 0, 'belum ada tombol Push');
+      assert.equal(await panel.getByRole('button', { name: 'Push 1 to QAlity', exact: true }).count(), 1, 'Push hanya muncul setelah dry run');
       for (const theme of ['light', 'dark']) {
         await page.evaluate(t => document.documentElement.dataset.theme = t, theme);
         await page.screenshot({ path: path.join(out, `testcase-${mode}-dryrun-${theme}.png`), fullPage: true });
@@ -238,6 +269,9 @@ const json21 = JSON.stringify({ format: 'catet.testcases.v1', cases: Array.from(
       await page.locator('#focus-card').getByRole('button', { name: 'Test cases' }).click(); // tutup
       await page.locator('li.task[data-task-id="tc1"]').getByRole('button', { name: 'Test cases', exact: true }).click();
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'task row + panel fit on phone');
+      // Di HP baris tugas jadi grid 2 kolom; panel harus selebar baris, bukan kolom ikon 44 px.
+      assert(await page.evaluate(() => { const p = document.getElementById('tc-panel-tc1'); return p.getBoundingClientRect().width > 0.9 * p.parentElement.getBoundingClientRect().width; }),
+        'panel Test cases selebar baris tugas di HP');
 
       // Clear (dengan konfirmasi) menghapus draft task itu saja.
       page.once('dialog', d => d.accept());
@@ -246,6 +280,61 @@ const json21 = JSON.stringify({ format: 'catet.testcases.v1', cases: Array.from(
       const left = await draft();
       assert.equal(left.tc1, undefined);
       assert.match(left.tc3.text, /Verify Get Customer Profile/);
+
+      // Push: konfirmasi wajib; flag mati → 404 jelas; push sebagian → Retry link
+      // di History; push sukses → draft dibersihkan. Teks tetap teks.
+      const tc1 = page.locator('#tc-panel-tc1');
+      const siapPush = async () => {
+        await tc1.locator('textarea').fill(SAMPLE);
+        await tc1.getByRole('button', { name: 'Parse', exact: true }).click();
+        await tc1.locator('.testcase-card').nth(2).getByRole('checkbox').click();
+        await tc1.getByRole('button', { name: 'Dry run', exact: true }).click();
+        await tc1.locator('.testcase-plan').waitFor();
+      };
+      await siapPush();
+      const pushBtn = tc1.getByRole('button', { name: 'Push 1 to QAlity', exact: true });
+      page.once('dialog', d => { assert.match(d.message(), /Buat 1 test case di QAlity \(project QA\) lalu link “QAlity Test” ke QA-123/); d.dismiss(); });
+      await pushBtn.click();
+      assert.equal(pushBodies.length, 0, 'batal konfirmasi = tidak ada push');
+      pushMode = 'off';
+      page.once('dialog', d => d.accept());
+      await pushBtn.click();
+      await tc1.locator('.testcase-pushres .testcase-issues.err').waitFor();
+      assert.match(await tc1.locator('.testcase-pushres').textContent(), /Push belum diaktifkan di Worker/);
+      assert.deepEqual(pushBodies[0], { issueKey: 'QA-123', previewHash: 'f'.repeat(64), cases: previewBodies.at(-1).cases }, 'push mengirim isi + hash dry run');
+      pushMode = 'partial';
+      page.once('dialog', d => d.accept());
+      await pushBtn.click();
+      await tc1.locator('.testcase-pushres .testcase-rows').waitFor();
+      const res = tc1.locator('.testcase-pushres');
+      assert.match(await res.locator('.testcase-status').textContent(), /Push selesai — 1 unlinked, 1 skipped\. Draft disimpan/);
+      assert.deepEqual(await res.locator('.testcase-badge').allTextContents(), ['Unlinked', 'Skipped']);
+      assert.deepEqual(await res.locator('a.jira-key').allTextContents(), ['QA-901', 'QA-900']);
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'tc-pushres-tc1', 'fokus ke hasil push');
+      assert.match((await draft()).tc1.text, /Verify Get Customer Profile/, 'push sebagian: draft tetap');
+      assert.equal(await tc1.locator('.testcase-plan').count(), 0, 'rencana lama dibuang setelah push');
+      const retry = tc1.locator('.testcase-history').getByRole('button', { name: 'Retry link', exact: true });
+      await retry.waitFor();
+      assert.equal(await tc1.locator('img').count(), 0);
+      assert.equal(await page.evaluate(() => window.__xss), undefined);
+      for (const theme of ['light', 'dark']) {
+        await page.evaluate(t => document.documentElement.dataset.theme = t, theme);
+        await tc1.screenshot({ path: path.join(out, `testcase-${mode}-push-${theme}.png`) });
+      }
+      await retry.click();
+      await tc1.locator('.testcase-history .testcase-badge', { hasText: /^Linked$/ }).waitFor();
+      assert.equal(await tc1.locator('.testcase-history').getByRole('button', { name: 'Retry link' }).count(), 0);
+      pushMode = 'ok';
+      await tc1.getByRole('button', { name: 'Dry run', exact: true }).click();
+      await tc1.locator('.testcase-plan').waitFor();
+      page.once('dialog', d => d.accept());
+      await tc1.getByRole('button', { name: 'Push 1 to QAlity', exact: true }).click();
+      await tc1.locator('.testcase-pushres .testcase-status.ok').waitFor();
+      assert.match(await tc1.locator('.testcase-pushres .testcase-status').textContent(), /1 linked, 1 skipped\. Draft dibersihkan/);
+      assert.equal(await tc1.locator('textarea').inputValue(), '', 'push sukses membersihkan draft');
+      assert.equal((await draft()).tc1, undefined);
+      assert.equal(await tc1.locator('.testcase-card').count(), 0);
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'hasil push + History muat di HP');
 
       // Settings → Account: status token + peringatan 14 hari; Save mengirim token + tanggal.
       await page.locator('#settings-btn').click();
@@ -260,18 +349,20 @@ const json21 = JSON.stringify({ format: 'catet.testcases.v1', cases: Array.from(
       assert.deepEqual(qalityBodies, [{ token: 'synthetic-qality-token-0123456789', expiresAt: exp }]);
       assert(!(await page.content()).includes('synthetic-qality-token-0123456789'), 'token tidak tertinggal di DOM');
 
-      // Tidak ada write ke luar; draft tidak ikut state yang disinkronkan.
-      assert(!workerCalls.some(c => /\/testcases\/(push|relink)/.test(c)), 'tidak ada push/relink: ' + workerCalls.join(', '));
-      assert.deepEqual(workerCalls.filter(c => /\/testcases/.test(c)), ['POST /testcases/preview', 'POST /testcases/preview'], 'hanya dua dry run');
+      // Write hanya lewat Worker mock dan hanya setelah konfirmasi; draft tidak ikut state.
+      const n = (re) => workerCalls.filter(c => re.test(c)).length;
+      assert.equal(n(/^POST \/testcases\/push$/), 3, 'tiga push dikonfirmasi (off, partial, ok)');
+      assert.equal(n(/^POST \/testcases\/relink$/), 1);
+      assert.equal(n(/^POST \/testcases\/preview$/), 4);
       assert.deepEqual(blocked, [], 'tidak ada request ke host lain (Jira/QAlity)');
       assert(!stateBodies.some(b => b.includes(MARKER)), 'draft tidak ikut /state');
       assert(await page.evaluate(m => ['catet.tasks.v1', 'catet.jira.v1'].every(k => !(localStorage.getItem(k) || '').includes(m)), MARKER));
       assert.deepEqual(errors, []);
-      // Satu-satunya console error yang diizinkan: 400 dari dry run error yang disengaja.
-      const expected400 = /Failed to load resource: the server responded with a status of 400/;
-      assert.equal(consoleErrors.filter(m => expected400.test(m)).length, 1);
-      assert.deepEqual(consoleErrors.filter(m => !expected400.test(m)), []);
-      console.log(`PASS ${mode}: toggle/parse/preview/error+warning/XSS-safe/uncheck/dry run plan+error/draft/reload/batch 21/rusak/focus card/mobile/clear/QAlity token settings, no push, no console errors`);
+      // Console error yang diizinkan: 400 dry run error + 404 push flag mati (disengaja).
+      const expected = /Failed to load resource: the server responded with a status of (400|404)/;
+      assert.equal(consoleErrors.filter(m => expected.test(m)).length, 2);
+      assert.deepEqual(consoleErrors.filter(m => !expected.test(m)), []);
+      console.log(`PASS ${mode}: toggle/history/parse/preview/error+warning/XSS-safe/uncheck/dry run plan+error/draft/reload/batch 21/rusak/focus card/mobile/clear/push cancel+off+partial+retry link+ok/QAlity token settings, no console errors`);
       await context.close();
     }
     console.log('Screenshots: ' + out);
