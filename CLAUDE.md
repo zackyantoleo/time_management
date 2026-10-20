@@ -27,6 +27,7 @@ dependensi, tanpa framework. Data pengguna di `localStorage`.
   5. `routines.js` — rutinitas harian + render section-nya
   6. `jira.js` — autolink kode tiket, inbox tiket, impor, sinkron via proxy; topik BAU (`jira.bau`, `cocokBau`, `syncBau` — worklog non-sprint ke tiket topik, mis. project TDBU)
   6b. `calendar.js` — jadwal Google Calendar (secret iCal URL) → section "Today's meetings" di Board + tab **Calendar** (`renderCalendar`: agenda 7 hari lalu s/d 31 hari depan, dikelompokkan per hari); tarik via proxy (`/calendar`, rentang `CAL_BACK`/`CAL_AHEAD`), parse iCal + RRULE di Worker
+  6c. `testcases.js` — panel **Test cases** pada task bertiket Jira (tombol 🧪 di baris tugas & kartu fokus): tempel test case hasil AI (markdown Title/Precondition/Test Step(s)/Expected Result atau JSON `catet.testcases.v1`) → `parseTestCases` → `validateTestCases` (error memblokir, warning tidak; maks 20 case) → pratinjau → **Dry run** (`POST /testcases/preview` di Worker, read-only: project aktif di QAlity, duplikat, baris step/data/result persis) → **Push** (konfirmasi, `POST /testcases/push` dengan `previewHash`; Worker membuat test case QAlity + link `QAlity Test` + baca balik; hanya bila flag Worker `TESTCASE_PUSH_ENABLED=on`, selain itu 404). **History** (`GET /testcases`, dimuat saat panel dibuka) + **Retry link** (`POST /testcases/relink`) untuk case Unlinked/Unverified. `qalitySettingsForm` = isian token QAlity di Settings → Account (dipanggil `renderSignedIn` di `jira.js`, simpan lewat `POST /me/qality`). Draft per task di `catet.testcaseDrafts.v1` (tidak ikut `/state`/backup)
   7. `board.js` — render papan (kartu fokus, "Kerjakan hari ini" terurut skor, "Nanti" terlipat)
   8. `worklog.js` — render tab Log kerja, salin per hari, kirim worklog → Jira
   9. `reminders.js` — toggle pengingat, toast + bip, notifikasi, `checkDue`
@@ -50,7 +51,7 @@ dependensi, tanpa framework. Data pengguna di `localStorage`.
   bukan bagian dari Pages); panduan di `worker/README.md`
 - Kunci localStorage: `catet.tasks.v1`, `catet.worklog.v1`, `catet.routines.v1`,
   `catet.routineday.v1`, `catet.reminders.v1`, `catet.jira.v1`,
-  `catet.sprints.v1` — jaga
+  `catet.sprints.v1` (+ `catet.testcaseDrafts.v1`, lokal per perangkat) — jaga
   kompatibilitas mundur; kalau skema berubah, tulis migrasi, jangan menghapus
   data pengguna.
 

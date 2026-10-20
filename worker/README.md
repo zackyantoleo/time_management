@@ -212,9 +212,49 @@ Endpoint `POST /signup` di-origin-gate (hanya dari app) + butuh passphrase itu.
 | POST | `/worklog` | Kirim worklog: `{key, started, timeSpentSeconds, comment}` |
 | POST | `/transition` | `{key, target:"inprogress"\|"done"}` → geser status tiket (tak pernah mundur) — In Progress saat difokuskan, Done saat diselesaikan |
 | GET/PUT | `/state` | Simpan/ambil state Catet untuk sinkron antar perangkat (butuh KV) |
+| POST | `/me/qality` | `{token, expiresAt?}` simpan token QAlity Plus milik akun (`""` = hapus); token tidak pernah dikembalikan |
+| GET | `/testcases?issue=KEY` | Test case QAlity yang sudah ter-link ke tiket + riwayat push dari D1, read-only |
+| POST | `/testcases/preview` | Dry run import test case: validasi, project aktif di QAlity, duplikat, rencana per case + `previewHash`; read-only |
+| POST | `/testcases/push` | `{issueKey, cases, previewHash}` → import QAlity + link `QAlity Test` + baca balik; status per case. **Hanya bila `TESTCASE_PUSH_ENABLED=on`**, selain itu 404 |
+| POST | `/testcases/relink` | `{issueKey, testKey}` → link ulang case `created_unlinked`/`link_unverified`; flag sama dengan push |
 
 Endpoint biasa memeriksa Origin, tetapi autentikasi data membutuhkan access
 code dan konfigurasi `REQUIRE_AUTH`. Origin bukan pengganti autentikasi.
+
+## Import test case QAlity
+
+Butuh access code (token QAlity disimpan per akun di tabel D1
+`qality_credentials`, dibuat otomatis lewat auto-schema; file
+`migrations/0003_testcase_import.sql` berisi tabel yang sama). Dry run hanya
+GET ke Jira (`project,issuetype,issuelinks` tiket, tanpa description) dan
+`GET /api/qalitySettings` QAlity — tidak ada write. Project yang tidak
+terdaftar aktif di pengaturan QAlity ditolak. Body error QAlity/Jira tidak
+diteruskan ke browser.
+
+**Push (feature flag).** `push`/`relink` mengembalikan 404 kecuali variabel
+Worker `TESTCASE_PUSH_ENABLED` = `on`. Nyalakan/matikan tanpa redeploy Pages:
+
+```bash
+cd worker
+wrangler deploy --keep-vars --var TESTCASE_PUSH_ENABLED:on    # nyalakan
+wrangler deploy --keep-vars --var TESTCASE_PUSH_ENABLED:off   # rollback cepat
+```
+
+(`--keep-vars` menjaga variabel yang diatur di dashboard, mis. `REQUIRE_AUTH`.)
+Alur push: `previewHash` wajib sama dengan dry run (409 bila beda) → klaim
+atomik per case di `testcase_pushes` (status `pending`; klik ganda/dua tab
+tidak membuat kembar) → satu `POST /api/testCases/import` → link `QAlity Test`
+per test case (`inwardIssue` = test case, `outwardIssue` = tiket) → baca balik
+kedua sisi lewat satu bulkfetch. Status per case: `created_linked`,
+`created_unlinked` (link ditolak → Retry link), `link_unverified`, `failed`
+(QAlity 4xx/429, aman diulang), `pending` (hasil import tidak pasti, mis. 5xx),
+`skipped_duplicate`, `skipped_busy`. Case `pending` tidak pernah dibuat ulang
+membabi buta: setelah ±10 menit, push berikutnya mencari dulu judulnya di Jira
+(project + tipe QAlity Test + rentang waktu) dan cukup me-link bila ketemu;
+bila Jira tidak bisa dicek, tetap `pending`. Test case yang sudah terbuat
+tidak pernah dihapus otomatis; daftarnya ada di `testcase_pushes`.
+Subrequest per push: 2 baca + 1 import + N link + 1 bulkfetch (≤ 24 untuk 20
+case; +1 pencarian bila ada `pending` basi).
 
 ## Pengiriman worklog aman
 
