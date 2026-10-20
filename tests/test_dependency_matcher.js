@@ -125,4 +125,19 @@ assert(!review.some((x) => x.key === 'DEV-301' || x.key === 'DEV-302'),
 assert.deepStrictEqual(matcher.filterAssignedReview(r6.warnings, null), r6.warnings,
   'legacy candidate cache without assigned flags must not hide the list');
 
-console.log(JSON.stringify({ ok: true, cases: 7 }));
+// Test case QAlity ("QAlity Test") mengandung kata "test" tetapi bukan tiket
+// QA: tidak boleh dipasangkan, memicu warning, atau dianggap dev.
+const qalityCase = issue('CD-5962', 'Verify voucher expiry', { issueType: 'QAlity Test', linkedKeys: ['QA-301'] });
+assert.strictEqual(matcher.isTestCase(qalityCase), true);
+assert.strictEqual(matcher.isQa(qalityCase), false, 'QAlity test case is not a QA ticket');
+assert.strictEqual(matcher.isDev(qalityCase), false, 'QAlity test case is not a dev ticket');
+assert.strictEqual(matcher.isQa({ summary: 'x', issueType: 'QAlity', labels: [] }), false);
+const r7 = matcher.matchSprintIssues([
+  qalityCase,
+  issue('QA-301', 'Test voucher expiry', { issueType: 'Task', labels: ['qa'], linkedKeys: ['DEV-401', 'CD-5962'] }),
+  issue('DEV-401', 'Implement voucher expiry', {}),
+], { overrides: {} });
+assert.deepStrictEqual(JSON.parse(JSON.stringify(r7.matches.map((x) => [x.qaKey, x.devKey]))), [['QA-301', 'DEV-401']]);
+assert(!r7.warnings.some((x) => x.key === 'CD-5962'), 'QAlity test case must not raise pairing warnings');
+
+console.log(JSON.stringify({ ok: true, cases: 8 }));
