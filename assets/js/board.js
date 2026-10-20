@@ -111,8 +111,12 @@ function renderFocus() {
     const intBtn = el("button", "btn-line", "⚡ Interruption? Note it");
     intBtn.title = "Catat interupsinya di kolom bawah, lalu tekan ▶ padanya kalau harus dikerjakan sekarang — tugas ini otomatis masuk tumpukan dan kembali difokuskan begitu interupsinya selesai.";
     intBtn.onclick = () => { $("#cap-text").focus(); };
-    actions.append(doneBtn, pauseBtn, intBtn);
+    actions.append(doneBtn, pauseBtn);
+    const tcBtn = tombolTestCase(t, "btn-line focus-testcases", "🧪 Test cases");
+    if (tcBtn) actions.append(tcBtn);
+    actions.append(intBtn);
     card.append(actions);
+    if (tcBtn && testcaseTaskId === t.id) card.append(renderTestCasePanel(t));
   } else {
     card.classList.add("empty");
     eyebrow.textContent = "In progress";
@@ -250,7 +254,7 @@ function taskEditor(t) {
 
 function taskRow(t) {
   const li = el("li", "task p-" + t.priority + (t.status === "selesai" ? " done" : "") +
-    (editingTaskId === t.id ? " editing" : ""));
+    (editingTaskId === t.id ? " editing" : "") + (testcaseTaskId === t.id ? " testcase-open" : ""));
   li.dataset.taskId = t.id;
 
   const check = el("button", "check", "✓");
@@ -361,6 +365,9 @@ function taskRow(t) {
     focusBtn.onclick = () => { fokuskan(t); render(); };
     focusBtn.append(el("span", "task-action-label", "Run"));
     actions.append(focusBtn);
+    // Test cases → panel tempel/cek test case QAlity (hanya task bertiket Jira).
+    const tcBtn = tombolTestCase(t, "icon-btn", "🧪");
+    if (tcBtn) actions.append(tcBtn);
   }
   const delBtn = el("button", "icon-btn danger", "✕");
   delBtn.title = "Hapus"; delBtn.setAttribute("aria-label", "Hapus");
@@ -388,6 +395,7 @@ function taskRow(t) {
 
   li.append(check, body, actions);
   if (editingTaskId === t.id && t.status !== "selesai") li.append(taskEditor(t));
+  if (testcaseTaskId === t.id && t.status !== "selesai" && keyTestCase(t)) li.append(renderTestCasePanel(t));
   return li;
 }
 
