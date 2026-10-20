@@ -812,6 +812,17 @@
   }
   ul.testcase-issues.err .testcase-issue-tag { color: var(--p-urgent); background: var(--p-urgent-soft); }
   ul.testcase-issues.warn .testcase-issue-tag { color: var(--tc-warn); background: var(--p-tinggi-soft); }
+  /* Dry run (Fase 2): rencana per case + baris Step / Test data / Expected QAlity. */
+  .testcase-dryrun, .testcase-plan { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .testcase-plan-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .testcase-badge.create { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  ol.testcase-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .testcase-step {
+    display: flex; flex-direction: column; gap: 3px; min-width: 0;
+    padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface);
+  }
+  .testcase-pre { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+  .cap-hint.qality-warn { color: color-mix(in srgb, var(--p-tinggi) 72%, var(--ink)); font-weight: 600; }
   @media (max-width: 760px) {
     .testcase-card-head { min-height: 44px; }
     .testcase-card-head input { width: 20px; height: 20px; }

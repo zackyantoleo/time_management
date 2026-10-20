@@ -1,6 +1,6 @@
-// Synthetic fixtures; Worker di-mock dan semua request lain diblokir. Fase 1:
-// panel Test cases hanya parse + pratinjau — tidak boleh ada request ke
-// /testcases, /me/qality, Jira, atau QAlity.
+// Synthetic fixtures; Worker di-mock dan semua request lain diblokir. Parse +
+// pratinjau lokal tanpa request; Dry run (Fase 2) hanya POST /testcases/preview
+// ke Worker mock; token QAlity lewat /me/qality. Tidak ada push/Jira/QAlity.
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -60,7 +60,10 @@ const json21 = JSON.stringify({ format: 'catet.testcases.v1', cases: Array.from(
     for (const mode of ['http', 'file']) {
       const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block' });
       const page = await context.newPage();
-      const errors = [], consoleErrors = [], workerCalls = [], blocked = [], stateBodies = [];
+      const errors = [], consoleErrors = [], workerCalls = [], blocked = [], stateBodies = [], previewBodies = [], qalityBodies = [];
+      let previewMode = 'ok';
+      // Token kedaluwarsa 10 hari lagi → Settings menampilkan peringatan.
+      const exp = new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10);
       page.on('pageerror', e => errors.push(e.message));
       page.on('console', m => { if (m.type() === 'error') consoleErrors.push(m.text()); });
       await page.addInitScript(() => {
@@ -81,7 +84,22 @@ const json21 = JSON.stringify({ format: 'catet.testcases.v1', cases: Array.from(
         if (u.hostname !== 'synthetic.invalid') { blocked.push(u.hostname); return route.abort(); }
         workerCalls.push(req.method() + ' ' + u.pathname);
         if (u.pathname === '/state' && req.method() !== 'GET') stateBodies.push(req.postData() || '');
-        return route.fulfill({ json: u.pathname === '/me' ? { name: 'Synthetic', jira_site: 'https://jira.invalid', jira_tersimpan: true }
+        if (u.pathname === '/testcases/preview') {
+          const body = JSON.parse(req.postData() || '{}');
+          previewBodies.push(body);
+          if (previewMode === 'error') return route.fulfill({ status: 400, json: { error: 'Project QA belum aktif di QAlity untuk akunmu, jadi belum didukung. Project aktif: CD.' } });
+          return route.fulfill({ json: {
+            issueKey: body.issueKey, project: { key: 'QA', id: '10999' }, linkType: 'QAlity Test',
+            existing: [{ key: 'QA-900', summary: 'Check profile <img src=x onerror="window.__xss=1">', status: 'To Do', linkType: 'QAlity Test' }],
+            counts: { create: 1, skip: 1 }, previewHash: 'f'.repeat(64),
+            plan: [
+              { index: 0, title: body.cases[0].title, action: 'create', duplicateOf: null, reason: null, testCase: { name: body.cases[0].title, properties: {}, testSteps: [
+                { step: body.cases[0].steps[0], data: 'Precondition:\n- ' + body.cases[0].preconditions[0], result: '1. A\n2. B', position: 1 }] } },
+              { index: 1, title: body.cases[1].title, action: 'skip_duplicate', duplicateOf: 'QA-900', reason: 'Judul sama dengan test case yang sudah ter-link: QA-900.', testCase: { name: body.cases[1].title, properties: {}, testSteps: [] } },
+            ] } });
+        }
+        if (u.pathname === '/me/qality') { qalityBodies.push(JSON.parse(req.postData() || '{}')); return route.fulfill({ json: { ok: true, qality_tersimpan: true, qality_expires_at: exp } }); }
+        return route.fulfill({ json: u.pathname === '/me' ? { name: 'Synthetic', jira_site: 'https://jira.invalid', jira_tersimpan: true, qality_tersimpan: true, qality_expires_at: exp }
           : u.pathname === '/state' ? { stores: null, updatedAt: null } : { items: [], events: [], days: {}, summaries: {} } });
       });
       await page.goto(mode === 'http' ? 'http://127.0.0.1:' + PORT : pathToFileURL(path.join(root, 'index.html')).href);
@@ -132,6 +150,40 @@ const json21 = JSON.stringify({ format: 'catet.testcases.v1', cases: Array.from(
       assert.match(await cards.nth(2).textContent(), /Excluded/);
       assert.deepEqual(await panel.locator('.testcase-chip').allTextContents(), ['3 cases', '2 selected', '0 errors', '1 warning']);
       assert.match(await panel.locator('.testcase-status.ok').textContent(), /2 case siap/);
+      assert(!workerCalls.some(c => /\/testcases/.test(c)), 'Parse/pratinjau tidak memanggil Worker');
+
+      // Dry run → rencana dari Worker: Create + Skip, baris QAlity persis, teks tetap teks.
+      await panel.getByRole('button', { name: 'Dry run', exact: true }).click();
+      await panel.locator('.testcase-plan').waitFor();
+      assert.equal(previewBodies.length, 1);
+      assert.equal(previewBodies[0].issueKey, 'QA-123');
+      assert.deepEqual(previewBodies[0].cases.map(c => Object.keys(c).sort()), [['expected', 'preconditions', 'steps', 'title'], ['expected', 'preconditions', 'steps', 'title']], 'hanya 4 field yang dikirim');
+      assert.deepEqual(previewBodies[0].cases.map(c => c.title), ['Verify Get Customer Profile Successfully', 'Check profile <img src=x onerror="window.__xss=1">']);
+      const plan = panel.locator('.testcase-plan');
+      assert.match(await plan.locator('.testcase-status.ok').textContent(), /1 test case akan dibuat di project QA dan di-link “QAlity Test” ke QA-123; 1 dilewati/);
+      assert.deepEqual(await plan.locator('.testcase-badge').allTextContents(), ['Create', 'Skip']);
+      assert.equal(await plan.locator('.testcase-step').count(), 1);
+      assert.deepEqual(await plan.locator('.testcase-step .testcase-pre').allTextContents(),
+        ['Send a GET request to `/customers/v2/profile` using a valid access token.', 'Precondition:\n- Customer has a valid access token (' + MARKER + ').', '1. A\n2. B']);
+      assert.match(await plan.textContent(), /sudah ter-link: QA-900/);
+      assert.match(await plan.textContent(), /Push ke QAlity belum tersedia/);
+      assert.equal(await panel.locator('img').count(), 0);
+      assert.equal(await page.evaluate(() => window.__xss), undefined);
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'tc-dry-tc1', 'fokus kembali ke Dry run');
+      assert.equal(await panel.getByRole('button', { name: /^Push/ }).count(), 0, 'belum ada tombol Push');
+      for (const theme of ['light', 'dark']) {
+        await page.evaluate(t => document.documentElement.dataset.theme = t, theme);
+        await page.screenshot({ path: path.join(out, `testcase-${mode}-dryrun-${theme}.png`), fullPage: true });
+      }
+      // Pilihan berubah → hasil lama hilang; error Worker tampil sebagai Error.
+      await cards.nth(1).getByRole('checkbox').click();
+      assert.equal(await panel.locator('.testcase-plan').count(), 0, 'hasil dry run basi disembunyikan');
+      previewMode = 'error';
+      await panel.getByRole('button', { name: 'Dry run', exact: true }).click();
+      await panel.locator('.testcase-dryrun .testcase-issues.err').waitFor();
+      assert.match(await panel.locator('.testcase-dryrun .testcase-issues.err').textContent(), /Dry run gagal: Project QA belum aktif/);
+      previewMode = 'ok';
+      await cards.nth(1).getByRole('checkbox').click(); // kembali ke 2 case seperti sebelumnya
 
       // Draft per task: tersimpan lokal, ditandai basi saat diedit, bertahan saat panel ditutup & reload.
       const draft = () => page.evaluate(() => JSON.parse(localStorage.getItem('catet.testcaseDrafts.v1') || '{}'));
@@ -195,14 +247,31 @@ const json21 = JSON.stringify({ format: 'catet.testcases.v1', cases: Array.from(
       assert.equal(left.tc1, undefined);
       assert.match(left.tc3.text, /Verify Get Customer Profile/);
 
+      // Settings → Account: status token + peringatan 14 hari; Save mengirim token + tanggal.
+      await page.locator('#settings-btn').click();
+      await page.locator('summary', { hasText: 'account settings' }).click();
+      const qs = page.locator('.qality-settings');
+      await qs.waitFor();
+      assert.match(await qs.locator('.qality-warn').textContent(), /kedaluwarsa dalam 10 hari/);
+      await qs.getByLabel('QAlity API token').fill('synthetic-qality-token-0123456789');
+      page.once('dialog', d => d.accept());
+      await qs.getByRole('button', { name: 'Update', exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector('.qality-settings button[disabled]'));
+      assert.deepEqual(qalityBodies, [{ token: 'synthetic-qality-token-0123456789', expiresAt: exp }]);
+      assert(!(await page.content()).includes('synthetic-qality-token-0123456789'), 'token tidak tertinggal di DOM');
+
       // Tidak ada write ke luar; draft tidak ikut state yang disinkronkan.
-      assert(!workerCalls.some(c => /\/(testcases|me\/qality)/.test(c)), 'Fase 1 tidak memanggil endpoint test case: ' + workerCalls.join(', '));
+      assert(!workerCalls.some(c => /\/testcases\/(push|relink)/.test(c)), 'tidak ada push/relink: ' + workerCalls.join(', '));
+      assert.deepEqual(workerCalls.filter(c => /\/testcases/.test(c)), ['POST /testcases/preview', 'POST /testcases/preview'], 'hanya dua dry run');
       assert.deepEqual(blocked, [], 'tidak ada request ke host lain (Jira/QAlity)');
       assert(!stateBodies.some(b => b.includes(MARKER)), 'draft tidak ikut /state');
       assert(await page.evaluate(m => ['catet.tasks.v1', 'catet.jira.v1'].every(k => !(localStorage.getItem(k) || '').includes(m)), MARKER));
       assert.deepEqual(errors, []);
-      assert.deepEqual(consoleErrors, []);
-      console.log(`PASS ${mode}: toggle/parse/preview/error+warning/XSS-safe/uncheck/draft/reload/batch 21/rusak/focus card/mobile/clear, no writes, no console errors`);
+      // Satu-satunya console error yang diizinkan: 400 dari dry run error yang disengaja.
+      const expected400 = /Failed to load resource: the server responded with a status of 400/;
+      assert.equal(consoleErrors.filter(m => expected400.test(m)).length, 1);
+      assert.deepEqual(consoleErrors.filter(m => !expected400.test(m)), []);
+      console.log(`PASS ${mode}: toggle/parse/preview/error+warning/XSS-safe/uncheck/dry run plan+error/draft/reload/batch 21/rusak/focus card/mobile/clear/QAlity token settings, no push, no console errors`);
       await context.close();
     }
     console.log('Screenshots: ' + out);

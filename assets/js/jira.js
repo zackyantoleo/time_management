@@ -1162,6 +1162,8 @@ function renderSignedIn(editor) {
     profil.cal_tersimpan ? "📅 Kalender tersimpan di server — muncul di semua perangkatmu."
     : "📅 Kalender belum diisi (opsional)."));
   if (typeof calSettingsForm === "function") editor.append(calSettingsForm());
+  // Token QAlity untuk Dry run test case (testcases.js) — juga tersimpan di server.
+  if (typeof qalitySettingsForm === "function") editor.append(qalitySettingsForm());
 }
 
 /* ---------- sprint bar (di atas daftar tiket) ---------- */
