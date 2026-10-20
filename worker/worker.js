@@ -596,8 +596,8 @@ function validasiTestCases(raw) {
 }
 
 // Satu case → TestCaseImportBean QAlity (plan §4): precondition di data step 1,
-// expected bernomor di result step terakhir. position 1-based seperti spike
-// (1 → tersimpan 0); urutan multi-step dikunci setelah uji nyata Fase 3.
+// expected bernomor di result step terakhir. position 1-based: uji nyata
+// 20 Okt (CD-5964, 3 step) → tersimpan 0..N-1 dengan urutan dan isi sama persis.
 function petaQality(c) {
   const n = c.steps.length;
   return {
