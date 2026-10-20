@@ -212,9 +212,22 @@ Endpoint `POST /signup` di-origin-gate (hanya dari app) + butuh passphrase itu.
 | POST | `/worklog` | Kirim worklog: `{key, started, timeSpentSeconds, comment}` |
 | POST | `/transition` | `{key, target:"inprogress"\|"done"}` → geser status tiket (tak pernah mundur) — In Progress saat difokuskan, Done saat diselesaikan |
 | GET/PUT | `/state` | Simpan/ambil state Catet untuk sinkron antar perangkat (butuh KV) |
+| POST | `/me/qality` | `{token, expiresAt?}` simpan token QAlity Plus milik akun (`""` = hapus); token tidak pernah dikembalikan |
+| GET | `/testcases?issue=KEY` | Test case QAlity yang sudah ter-link ke tiket + riwayat push dari D1, read-only |
+| POST | `/testcases/preview` | Dry run import test case: validasi, project aktif di QAlity, duplikat, rencana per case + `previewHash`; read-only |
 
 Endpoint biasa memeriksa Origin, tetapi autentikasi data membutuhkan access
 code dan konfigurasi `REQUIRE_AUTH`. Origin bukan pengganti autentikasi.
+
+## Import test case QAlity (Fase 2: dry run saja)
+
+Butuh access code (token QAlity disimpan per akun di tabel D1
+`qality_credentials`, dibuat otomatis lewat auto-schema; file
+`migrations/0003_testcase_import.sql` berisi tabel yang sama). Dry run hanya
+GET ke Jira (`project,issuetype,issuelinks` tiket, tanpa description) dan
+`GET /api/qalitySettings` QAlity — tidak ada write. Project yang tidak
+terdaftar aktif di pengaturan QAlity ditolak. Body error QAlity tidak
+diteruskan ke browser. Push/relink belum ada (Fase 3, di balik feature flag).
 
 ## Pengiriman worklog aman
 

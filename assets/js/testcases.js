@@ -1,6 +1,7 @@
 // testcases.js — tempel test case hasil AI ke task bertiket Jira, parse
 // (markdown standar Zack atau JSON catet.testcases.v1), validasi, dan pratinjau.
-// Fase 1: murni lokal — belum ada request ke Worker, Jira, atau QAlity.
+// Parse lokal; Dry run (Fase 2) minta Worker mengecek tiket, project QAlity, dan
+// duplikat — read-only, belum ada Push. Token QAlity diatur di Settings.
 "use strict";
 
 const TESTCASE_FORMAT = "catet.testcases.v1";
@@ -237,6 +238,9 @@ function simpanDraftTestCase(taskId, text) {
 
 let testcaseTaskId = null; // task yang panel Test cases-nya terbuka
 let testcaseHasil = null;  // { taskId, text, parsed, pilih: [bool] } — parse terakhir
+// Dry run terakhir: { taskId, sig, loading, error, rinci, data }. sig = isi case
+// terpilih saat dikirim; hasil hanya tampil selama pilihan/isi masih sama.
+let testcaseDry = null;
 
 function keyTestCase(t) { return (String(t.text || "").match(JIRA_RE) || [null])[0]; }
 
@@ -274,7 +278,7 @@ function renderTestCasePanel(t) {
   panel.append(head);
   panel.append(el("p", "testcase-hint",
     "Tempel test case hasil AI: bagian Title / Precondition / Test Step(s) / Expected Result, antar-case dipisah ---, " +
-    "atau JSON " + TESTCASE_FORMAT + ". Masih pratinjau lokal — belum ada yang dikirim ke Jira/QAlity."));
+    "atau JSON " + TESTCASE_FORMAT + ". Parse hanya di perangkat ini; Dry run mengecek ke Jira/QAlity tanpa membuat apa pun."));
 
   const hasil = testcaseHasil && testcaseHasil.taskId === t.id ? testcaseHasil : null;
   const ta = document.createElement("textarea");
@@ -306,6 +310,7 @@ function renderTestCasePanel(t) {
     if (ta.value.trim() && !confirm("Kosongkan teks dan pratinjau test case untuk " + key + "?")) return;
     simpanDraftTestCase(t.id, "");
     if (hasil) testcaseHasil = null;
+    if (testcaseDry && testcaseDry.taskId === t.id) testcaseDry = null;
     renderLaluFokus(ta.id);
   };
   const closeBtn = el("button", "btn-line", "Close");
@@ -358,8 +363,171 @@ function pratinjauTestCase(t, hasil) {
 
   const siap = v.ok && !parsed.errors.length;
   wrap.append(el("p", "testcase-status" + (siap ? " ok" : ""), siap
-    ? "Format valid — " + dipilih.length + " case siap. Dry run dan Push ke QAlity belum tersedia di versi ini."
+    ? "Format valid — " + dipilih.length + " case siap. Klik Dry run untuk cek project, duplikat, dan isi persis yang akan dibuat."
     : "Perbaiki yang bertanda Error atau hapus centang case-nya. Warning boleh diabaikan."));
+  if (siap) wrap.append(dryRunTestCase(t, dipilih));
+  return wrap;
+}
+
+/* ---------- dry run (Worker, read-only) ---------- */
+
+const kirimanTestCase = (cases) => cases.map((c) => ({ title: c.title, preconditions: c.preconditions, steps: c.steps, expected: c.expected }));
+const sigTestCase = (key, cases) => JSON.stringify([key, kirimanTestCase(cases)]);
+
+function dryRunTestCase(t, dipilih) {
+  const key = keyTestCase(t);
+  const sig = sigTestCase(key, dipilih);
+  const d = testcaseDry && testcaseDry.taskId === t.id && testcaseDry.sig === sig ? testcaseDry : null;
+  const box = el("div", "testcase-dryrun");
+  const bar = el("div", "testcase-actions");
+  const btn = el("button", "btn-solid", d && d.loading ? "Checking…" : d && d.data ? "Dry run again" : "Dry run");
+  btn.type = "button"; btn.id = "tc-dry-" + t.id;
+  btn.title = "Cek ke Jira & QAlity tanpa membuat apa pun";
+  btn.disabled = !jiraProxy() || !!(d && d.loading);
+  btn.onclick = () => jalankanDryRun(t, key, dipilih, sig);
+  bar.append(btn);
+  box.append(bar);
+  if (!jiraProxy()) box.append(el("p", "testcase-hint", "Dry run butuh sign in (Settings → Account) dan token QAlity."));
+  if (d && d.error) box.append(daftarIsuTestCase([d.error, ...(d.rinci || [])], "err"));
+  if (d && d.data) box.append(rencanaTestCase(d.data));
+  return box;
+}
+
+async function jalankanDryRun(t, key, cases, sig) {
+  const masihSama = () => testcaseDry && testcaseDry.taskId === t.id && testcaseDry.sig === sig;
+  testcaseDry = { taskId: t.id, sig, loading: true, error: "", rinci: [], data: null };
+  renderLaluFokus("tc-dry-" + t.id);
+  let hasil;
+  try {
+    const r = await fetch(jiraProxy() + "/testcases/preview", {
+      method: "POST", headers: { "Content-Type": "application/json", ...headerAkses() },
+      body: JSON.stringify({ issueKey: key, cases: kirimanTestCase(cases) }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d && Array.isArray(d.plan)) hasil = { data: d };
+    else {
+      const rinci = [...(Array.isArray(d.errors) ? d.errors : [])];
+      (Array.isArray(d.cases) ? d.cases : []).forEach((c, i) => {
+        for (const e of (c && Array.isArray(c.errors) ? c.errors : [])) rinci.push("“" + ((cases[i] && cases[i].title) || "#" + (i + 1)) + "”: " + e);
+      });
+      hasil = { error: "Dry run gagal: " + (d.error || "HTTP " + r.status), rinci };
+    }
+  } catch (e) {
+    hasil = { error: "Dry run gagal: " + ((e && e.message) || "koneksi"), rinci: [] };
+  }
+  if (!masihSama()) return; // pilihan/isi berubah selama request — hasil lama dibuang
+  testcaseDry = { taskId: t.id, sig, loading: false, error: hasil.error || "", rinci: hasil.rinci || [], data: hasil.data || null };
+  if (testcaseTaskId === t.id) renderLaluFokus("tc-dry-" + t.id);
+}
+
+function rencanaTestCase(d) {
+  const wrap = el("div", "testcase-plan");
+  wrap.setAttribute("role", "status");
+  const n = d.counts || { create: 0, skip: 0 };
+  const proj = d.project || {};
+  wrap.append(el("p", "testcase-status ok",
+    "Dry run OK — " + n.create + " test case akan dibuat di project " + (proj.key || "?") +
+    " dan di-link “" + (d.linkType || "QAlity Test") + "” ke " + d.issueKey +
+    (n.skip ? "; " + n.skip + " dilewati karena sudah ada." : ".")));
+  const ol = el("ol", "testcase-list");
+  for (const p of d.plan) {
+    const buat = p.action === "create";
+    const li = el("li", "testcase-card" + (buat ? "" : " excluded"));
+    const head = el("div", "testcase-plan-head");
+    head.append(el("span", "testcase-badge" + (buat ? " create" : ""), buat ? "Create" : "Skip"),
+      el("strong", "testcase-title", p.title || ""));
+    li.append(head);
+    if (p.reason) li.append(el("p", "testcase-hint", p.reason));
+    if (buat && p.testCase && Array.isArray(p.testCase.testSteps)) li.append(barisStepQality(p.testCase.testSteps));
+    ol.append(li);
+  }
+  wrap.append(ol);
+  if (Array.isArray(d.existing) && d.existing.length) {
+    wrap.append(el("p", "testcase-hint", "Sudah ter-link ke " + d.issueKey + ": " + d.existing.map((x) => x.key).join(", ") + "."));
+  }
+  wrap.append(el("p", "testcase-hint", "Dry run tidak membuat apa pun di Jira/QAlity. Push ke QAlity belum tersedia di versi ini."));
+  return wrap;
+}
+
+// Baris QAlity persis seperti yang akan dibuat: Step / Test data / Expected.
+function barisStepQality(rows) {
+  const ol = el("ol", "testcase-steps");
+  rows.forEach((r, i) => {
+    const li = el("li", "testcase-step");
+    li.append(el("span", "testcase-no mono", "Step " + (i + 1)));
+    const f = (label, val) => {
+      const x = el("div", "testcase-field");
+      x.append(el("span", "testcase-label", label), val ? el("span", "testcase-pre", val) : el("span", "testcase-empty", "—"));
+      return x;
+    };
+    li.append(f("Step", r.step), f("Test data", r.data), f("Expected", r.result));
+    ol.append(li);
+  });
+  return ol;
+}
+
+/* ---------- token QAlity (Settings → Account) ---------- */
+
+// Dipanggil renderSignedIn (jira.js). Token disimpan di server per akun dan
+// tidak pernah dikirim balik — browser hanya tahu tersimpan/tidak + kedaluwarsa.
+function qalitySettingsForm() {
+  const wrap = el("div", "qality-settings");
+  wrap.append(el("div", "cap-label", "QAlity token"));
+  const ada = !!(profil && profil.qality_tersimpan);
+  const exp = (profil && profil.qality_expires_at) || "";
+  let status = !profil ? "Memeriksa…"
+    : ada ? "✓ Tersimpan di server" + (exp ? " — berlaku sampai " + fmtDayName(exp) : "") + "."
+    : "Belum diisi — dibutuhkan untuk Dry run test case.";
+  let kelas = "cap-hint";
+  if (ada && exp) {
+    const sisa = Math.round((Date.parse(exp) - Date.parse(localDateStr(new Date()))) / 86400000);
+    if (sisa < 0) { status = "⚠ Token QAlity sudah kedaluwarsa (" + fmtDayName(exp) + ") — buat token baru."; kelas += " qality-warn"; }
+    else if (sisa <= 14) { status = "⚠ Token QAlity kedaluwarsa " + (sisa ? "dalam " + sisa + " hari" : "hari ini") + " (" + fmtDayName(exp) + ")."; kelas += " qality-warn"; }
+  }
+  wrap.append(el("div", kelas, status));
+
+  const form = el("div", "routine-form");
+  const tokenIn = document.createElement("input");
+  tokenIn.type = "password"; tokenIn.autocomplete = "off";
+  tokenIn.placeholder = ada ? "QAlity API token (isi untuk ganti)" : "QAlity API token";
+  tokenIn.setAttribute("aria-label", "QAlity API token");
+  const expIn = document.createElement("input");
+  expIn.type = "date"; expIn.value = exp;
+  expIn.title = "Tanggal kedaluwarsa token (opsional) — untuk pengingat 14 hari sebelumnya";
+  expIn.setAttribute("aria-label", "Tanggal kedaluwarsa token QAlity");
+  const kirim = async (btn, body, pesan) => {
+    btn.disabled = true;
+    try {
+      const r = await fetch(jiraProxy() + "/me/qality", {
+        method: "POST", headers: { "Content-Type": "application/json", ...headerAkses() }, body: JSON.stringify(body),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+      tokenIn.value = "";
+      alert(pesan);
+      tarikProfil(true);
+    } catch (e) {
+      alert("Gagal menyimpan token QAlity: " + ((e && e.message) || "koneksi"));
+    }
+    btn.disabled = false;
+  };
+  const simpan = el("button", "btn-solid", ada ? "Update" : "Save QAlity token");
+  simpan.onclick = () => {
+    if (!tokenIn.value.trim()) { alert("Isi token QAlity dulu."); return; }
+    kirim(simpan, { token: tokenIn.value, expiresAt: expIn.value }, "Token QAlity tersimpan di server.");
+  };
+  form.append(tokenIn, expIn, simpan);
+  if (ada) {
+    const hapus = el("button", "btn-line", "Remove");
+    hapus.onclick = () => {
+      if (!confirm("Hapus token QAlity dari server? Dry run tidak bisa dipakai sampai token diisi lagi.")) return;
+      kirim(hapus, { token: "" }, "Token QAlity dihapus.");
+    };
+    form.append(hapus);
+  }
+  wrap.append(form);
+  wrap.append(el("div", "cap-hint",
+    "Buat token di Jira → sidebar QAlity → Other → QAlity API Tokens (maks 1 tahun). Disimpan di server per akun dan tidak pernah ditampilkan lagi."));
   return wrap;
 }
 
