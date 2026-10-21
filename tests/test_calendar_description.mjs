@@ -27,8 +27,8 @@ globalThis.fetch = async (url) => {
 try {
   const res = await worker.fetch(new Request(
     "https://worker.test/calendar?from=2026-08-21&to=2026-08-21&tz=Asia/Jakarta&ics=https://calendar.google.com/calendar/ical/test%40group.calendar.google.com/private-x/basic.ics",
-    { headers: { Origin: "https://zackyantoleo.github.io" } },
-  ), {});
+    { headers: { Origin: "https://zackyantoleo.github.io", "X-Catet-Key": "synthetic-code" } },
+  ), { CATET_DB: { async exec() {}, prepare() { return { bind() { return this; }, async first() { return { id: "synthetic-user", cal_ics_url: null }; } }; } } });
   assert.equal(res.status, 200, await res.clone().text());
   const body = await res.json();
   assert.ok(Array.isArray(body.events), "events array");

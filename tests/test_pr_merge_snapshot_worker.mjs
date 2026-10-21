@@ -15,7 +15,6 @@ const accessHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256
 const otherAccessHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(OTHER_ACCESS_KEY))))
   .map((byte) => byte.toString(16).padStart(2, "0")).join("");
 const env = {
-  REQUIRE_AUTH: "1",
   PRIORITY_SERVICE_TOKEN: "service-secret",
   CATET_DB: {
     prepare(sql) {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';import {readFile} from 'node:fs/promises';import vm from 'node:vm';
 const source=(await readFile(new URL('../worker/worker.js',import.meta.url),'utf8')).replace('../assets/js/work-pattern-report-contract.js',new URL('../assets/js/work-pattern-report-contract.js',import.meta.url).href);const worker=(await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'))).default;
-let stored=null;const env={CATET_KV:{get:async()=>stored,put:async(k,v)=>stored=v}};
-const req=body=>new Request('https://worker.test/state',{method:'PUT',headers:{Origin:'https://zackyantoleo.github.io','Content-Type':'application/json'},body:JSON.stringify(body)});
+let stored=null;const env={CATET_DB:{async exec(){},prepare(sql){return{bind(...p){this.p=p;return this;},async first(){return sql.includes('FROM users')?{id:'synthetic-user'}:null;},async run(){if(sql.includes('INTO states'))stored=this.p[1];return{success:true};}};}}};
+const req=body=>new Request('https://worker.test/state',{method:'PUT',headers:{Origin:'https://zackyantoleo.github.io','Content-Type':'application/json','X-Catet-Key':'synthetic-code'},body:JSON.stringify(body)});
 const good={updatedAt:'2026-10-09T02:00:00Z',stores:{tasks:[{id:'t',text:'Synthetic',extra:true}],worklog:[],routines:[],routineday:{},jira:{items:[]},sprints:{list:[],aktif:null},weekly:{weeks:{}}}};
 assert.equal((await worker.fetch(req(good),env)).status,200);const before=stored;
 for(const bad of [null,[],{tasks:'bad'},{tasks:[null]},{tasks:[{id:'t',text:4}]},{tasks:[{id:'t',text:null}]},{routines:[{id:'r',text:'Synthetic'}]},{routines:[{id:'r',text:'Synthetic',days:[8]}]},{worklog:[{id:'l',text:'Synthetic'}]},{worklog:[{id:'l',text:'Synthetic',date:'2026-02-30',ts:'2026-10-09T02:00:00Z'}]},{jira:{items:'bad'}},{sprints:{list:{}}},{routineday:{doneIds:'bad'}},{weekly:{weeks:[]}}]){

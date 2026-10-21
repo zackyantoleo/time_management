@@ -5,15 +5,10 @@
 // API token yang tersimpan sebagai secret di Cloudflare (tidak pernah sampai
 // ke browser atau repo).
 //
-// Secrets yang wajib di-set (lihat worker/README.md):
-//   JIRA_SITE      mis. https://erafone.atlassian.net
-//   JIRA_EMAIL     email akun Atlassian pemilik API token
-//   JIRA_API_TOKEN dari id.atlassian.com/manage-profile/security/api-tokens
-//
-// Kompatibilitas lama membolehkan user "default" tanpa kode akses. Allowlist
-// Origin membatasi browser lewat CORS, tetapi bukan autentikasi klien
-// non-browser. Set REQUIRE_AUTH=1 hanya setelah semua perangkat punya kode
-// akses; lihat worker/README.md untuk migrasi dan risiko lockout.
+// Setiap endpoint data wajib kode akses valid (header X-Catet-Key → user di
+// D1). Kredensial Jira/QAlity/kalender disimpan per user; tidak ada user
+// "default" anonim dan tidak ada secret Jira global. Allowlist Origin hanya
+// batas CORS browser, bukan autentikasi. Lihat worker/README.md.
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -764,34 +759,18 @@ async function tangani(request, env) {
       return json({ name, code }); // kode hanya ditampilkan sekali ini
     }
 
-    // Identitas: kode akses → user. Saat REQUIRE_AUTH=1, semua endpoint data
-    // wajib kode valid; tanpa mode itu, tanpa kode = user "default" (mode lama).
+    // Identitas: kode akses → user. Semua endpoint data wajib kode valid,
+    // tanpa pengecualian dan tanpa bergantung variabel Worker. Tidak ada user
+    // "default" anonim: kode kosong/salah tidak pernah memakai secret global.
+    // Service token tidak menggantikan kode — X-Catet-Key tetap memilih user.
     const user = await userDariKode(env, request);
-    const priorityServiceOk = url0.pathname === "/priority-snapshot" &&
-      !!env.PRIORITY_SERVICE_TOKEN &&
-      request.headers.get("Authorization") === "Bearer " + env.PRIORITY_SERVICE_TOKEN;
-    const prMergeServiceOk = url0.pathname === "/pr-merge-snapshot" &&
-      !!env.PRIORITY_SERVICE_TOKEN &&
-      request.headers.get("Authorization") === "Bearer " + env.PRIORITY_SERVICE_TOKEN;
+    if (!user) {
+      return json({ error: "Kode akses tidak valid atau belum diisi — Sign in di Settings → Account." }, 401);
+    }
+    const uid = user.id;
     const weeklyWrappedServiceOk = url0.pathname === "/weekly-wrapped" &&
       !!env.WEEKLY_WRAPPED_SERVICE_TOKEN &&
       request.headers.get("Authorization") === "Bearer " + env.WEEKLY_WRAPPED_SERVICE_TOKEN;
-    // Service-token access only authorizes the writer; X-Catet-Key still selects
-    // the destination user. Without a valid user, writing to legacy "default"
-    // would silently make the snapshot invisible to authenticated CATET clients.
-    if ((prMergeServiceOk || weeklyWrappedServiceOk) && !user) {
-      return json({ error: "Kode akses CATET tujuan tidak valid." }, 401);
-    }
-    if (env.REQUIRE_AUTH === "1" && !user && !priorityServiceOk && !prMergeServiceOk && !weeklyWrappedServiceOk) {
-      return json({ error: "Kode akses tidak valid atau belum diisi — masukkan kode dari admin (tab Jira → Access)." }, 401);
-    }
-    const uid = user ? user.id : "default";
-
-    // Schema v2 selalu membutuhkan user terautentikasi. Berbeda dari /state
-    // legacy, endpoint ini tidak pernah jatuh ke row "default" anonim.
-    if (url0.pathname.startsWith("/v2/") && !user) {
-      return json({ error: "Schema v2 membutuhkan kode akses valid." }, 401);
-    }
 
     // GET/PUT /v2/state/:kind — satu dokumen per domain dengan revision CAS.
     // Writer basi ditolak 409 agar satu perangkat tidak diam-diam menimpa yang lain.
@@ -992,7 +971,6 @@ async function tangani(request, env) {
         return json(row ? JSON.parse(row.blob) : { date: null, items: [] });
       }
       if (request.method === "PUT") {
-        if (!user && !priorityServiceOk) return json({ error: "Priority snapshot write membutuhkan kode akses atau service token." }, 401);
         let body;
         try { body = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
         const dateObj = body && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? new Date(body.date + "T00:00:00Z") : null;
@@ -1026,7 +1004,6 @@ async function tangani(request, env) {
         return json(row ? JSON.parse(row.blob) : { generatedAt: null, items: [] });
       }
       if (request.method === "PUT") {
-        if (!user && !prMergeServiceOk) return json({ error: "PR merge snapshot write membutuhkan kode akses atau service token." }, 401);
         let body;
         try { body = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
         const validKey = (value) => typeof value === "string" && /^[A-Z][A-Z0-9]{1,9}-\d+$/.test(value);
@@ -1142,12 +1119,12 @@ async function tangani(request, env) {
 
     // GET /calendar?from=&to=&tz=&ics= — acara kalender dalam rentang tanggal.
     if (request.method === "GET" && url0.pathname === "/calendar") {
-      // Mode pribadi kirim URL lewat ?ics= (disimpan di perangkat); user ber-kode
-      // pakai yang tersimpan di server. Keduanya tetap divalidasi gcalUrlOk.
+      // URL tersimpan di server (per akun) diutamakan; URL yang disimpan di
+      // perangkat dikirim lewat ?ics=. Keduanya tetap divalidasi gcalUrlOk.
       const icsParam = url0.searchParams.get("ics");
       const icsParamOk = icsParam ? gcalUrlOk(icsParam) : null;
       if (icsParam && !icsParamOk) return json({ error: "URL iCal tidak valid (harus calendar.google.com/.../basic.ics)." }, 400);
-      const icsUrl = (user && user.cal_ics_url) || icsParamOk || env.CAL_ICS_URL;
+      const icsUrl = user.cal_ics_url || icsParamOk;
       if (!icsUrl) return json({ error: "Kalender belum diisi (tab Jira → Access → Google Calendar)." }, 400);
       const from = url0.searchParams.get("from") || "";
       const to = url0.searchParams.get("to") || "";
@@ -1165,19 +1142,16 @@ async function tangani(request, env) {
       return json({ from, to, events });
     }
 
-    // Kredensial Jira: user ber-kode WAJIB punya kredensial sendiri (fallback
-    // ke secrets global akan membocorkan tiket/worklog pemilik); secrets
-    // global hanya untuk mode pribadi tanpa kode.
-    const pakaiUser = !!(user && user.jira_site && user.jira_email && user.jira_token);
-    const jiraSiap = user ? pakaiUser : !!(env.JIRA_SITE && env.JIRA_EMAIL && env.JIRA_API_TOKEN);
+    // Kredensial Jira selalu milik user sendiri (D1). Secret JIRA_* global
+    // tidak pernah dipakai: fallback ke sana membocorkan tiket/worklog pemilik.
+    const jiraSiap = !!(user.jira_site && user.jira_email && user.jira_token);
     const url = new URL(request.url);
     if (!jiraSiap && url.pathname !== "/state") {
       return json({ error: "Kredensial Jira belum diisi — tab Jira → Access → Jira credentials." }, 400);
     }
-    const site = (pakaiUser ? user.jira_site : (env.JIRA_SITE || "")).trim().replace(/\/+$/, "");
+    const site = (user.jira_site || "").trim().replace(/\/+$/, "");
     const authHeaders = {
-      Authorization: "Basic " + btoa(
-        (pakaiUser ? user.jira_email : env.JIRA_EMAIL) + ":" + (pakaiUser ? user.jira_token : env.JIRA_API_TOKEN)),
+      Authorization: "Basic " + btoa(user.jira_email + ":" + user.jira_token),
       Accept: "application/json",
     };
 
@@ -2069,29 +2043,15 @@ async function tangani(request, env) {
     }
 
     // GET/PUT /state — sinkronisasi data antar perangkat. Satu blob JSON per
-    // pengguna, last-write-wins di klien. Penyimpanan: D1 (kuota tulis besar,
-    // siap multi-user); KV lama tetap didukung dan datanya dimigrasi otomatis
-    // saat akses pertama.
+    // pengguna di D1, last-write-wins di klien. (KV lama hanya menyimpan blob
+    // user "default" tanpa kode; jalur itu sudah ditutup.)
     if (url.pathname === "/state") {
-      if (!env.CATET_DB && !env.CATET_KV) {
+      if (!env.CATET_DB) {
         return json({ error: "Storage belum dikonfigurasi — buat D1 (wrangler d1 create catet-db), isi database_id di wrangler.toml, deploy ulang. Lihat worker/README.md." }, 500);
       }
       if (request.method === "GET") {
-        if (env.CATET_DB) {
-          let row = await d1q(env, "SELECT blob FROM states WHERE user_id = ?1", [uid], "first");
-          if (!row && env.CATET_KV && uid === "default") {
-            const raw = await env.CATET_KV.get("state"); // migrasi sekali dari KV
-            if (raw) {
-              await d1q(env,
-                "INSERT INTO states (user_id, blob, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(user_id) DO UPDATE SET blob = ?2, updated_at = ?3",
-                [uid, raw, new Date().toISOString()], "run");
-              row = { blob: raw };
-            }
-          }
-          return json(row ? JSON.parse(row.blob) : { updatedAt: null, stores: null });
-        }
-        const raw = await env.CATET_KV.get("state");
-        return json(raw ? JSON.parse(raw) : { updatedAt: null, stores: null });
+        const row = await d1q(env, "SELECT blob FROM states WHERE user_id = ?1", [uid], "first");
+        return json(row ? JSON.parse(row.blob) : { updatedAt: null, stores: null });
       }
       if (request.method === "PUT") {
         let body;
@@ -2101,13 +2061,9 @@ async function tangani(request, env) {
         }
         const raw = JSON.stringify({ updatedAt: body.updatedAt, stores: body.stores });
         if (new TextEncoder().encode(raw).byteLength > 512 * 1024) return json({ error: "Data terlalu besar (maks 512 KB)." }, 413);
-        if (env.CATET_DB) {
-          await d1q(env,
-            "INSERT INTO states (user_id, blob, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(user_id) DO UPDATE SET blob = ?2, updated_at = ?3",
-            [uid, raw, body.updatedAt], "run");
-        } else {
-          await env.CATET_KV.put("state", raw);
-        }
+        await d1q(env,
+          "INSERT INTO states (user_id, blob, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(user_id) DO UPDATE SET blob = ?2, updated_at = ?3",
+          [uid, raw, body.updatedAt], "run");
         return json({ ok: true, updatedAt: body.updatedAt });
       }
     }

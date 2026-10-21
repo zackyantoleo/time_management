@@ -11,7 +11,6 @@ const users = {
 const hash = async text => Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))).toString('hex');
 const usersByHash = new Map(await Promise.all(Object.entries(users).map(async ([code, user]) => [await hash(code), user])));
 const env = {
-  REQUIRE_AUTH: '1',
   CATET_DB: {
     async exec() {},
     prepare(sql) {

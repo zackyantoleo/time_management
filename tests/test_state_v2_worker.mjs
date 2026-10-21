@@ -74,7 +74,6 @@ function statement(sql) {
   };
 }
 const env = {
-  REQUIRE_AUTH: "1",
   CATET_DB: { prepare: statement, async exec(sql) { migrations.push(sql); schemaReady = true; } },
 };
 const headers = { Origin: origin, "X-Catet-Key": "valid-code", "Content-Type": "application/json" };

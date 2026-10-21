@@ -80,13 +80,13 @@ globalThis.fetch = async (url, init = {}) => {
 };
 
 const env = {
-  JIRA_SITE: "https://jira.test",
-  JIRA_EMAIL: "qa@example.test",
-  JIRA_API_TOKEN: "secret",
+  CATET_DB: { async exec() {}, prepare() { return { bind() { return this; }, async first() {
+    return { id: "synthetic-user", jira_site: "https://jira.test", jira_email: "qa@example.test", jira_token: "secret" };
+  } }; } },
 };
 const req = (body) => new Request("https://worker.test/pairing-link", {
   method: "POST",
-  headers: { Origin: "https://zackyantoleo.github.io", "Content-Type": "application/json" },
+  headers: { Origin: "https://zackyantoleo.github.io", "Content-Type": "application/json", "X-Catet-Key": "synthetic-code" },
   body: JSON.stringify(body),
 });
 
