@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 
 const source = (await readFile(new URL("../worker/worker.js", import.meta.url), "utf8")).replace("../assets/js/work-pattern-report-contract.js", new URL("../assets/js/work-pattern-report-contract.js", import.meta.url).href);
 const { default: worker } = await import("data:text/javascript;base64," + Buffer.from(source).toString("base64"));
@@ -7,17 +8,21 @@ const { default: worker } = await import("data:text/javascript;base64," + Buffer
 let stateWrites = 0;
 let snapshotWrites = 0;
 let storedSnapshot = null;
+let snapshotOwner = null;
 let migrations = [];
+const code = "synthetic-code";
+const codeHash = createHash("sha256").update(code).digest("hex");
+const userRow = { id: "synthetic-user", name: "Synthetic" };
 function statement(sql) {
   return {
     bind(...params) { this.params = params; return this; },
     async first() {
-      if (sql.includes("SELECT id, name")) return null;
+      if (sql.includes("SELECT id, name")) return this.params[0] === codeHash ? userRow : null;
       if (sql.includes("SELECT blob FROM priority_snapshots")) return storedSnapshot ? { blob: JSON.stringify(storedSnapshot) } : null;
       return null;
     },
     async run() {
-      if (sql.includes("priority_snapshots")) { snapshotWrites++; storedSnapshot = JSON.parse(this.params[1]); }
+      if (sql.includes("priority_snapshots")) { snapshotWrites++; snapshotOwner = this.params[0]; storedSnapshot = JSON.parse(this.params[1]); }
       if (sql.includes("states")) stateWrites++;
       return { success: true };
     },
@@ -30,47 +35,44 @@ const env = {
 };
 const origin = "https://zackyantoleo.github.io";
 const snapshot = { date: "2026-08-20", generatedAt: "2026-08-20T01:00:00Z", active: 2, today: 1, items: [{ taskId: "a", text: "Task A", score: 8, rank: 1 }] };
-function put(token) {
+function put(token, key = code, body = snapshot) {
   return new Request("https://worker.test/priority-snapshot", {
     method: "PUT",
-    headers: { Origin: origin, "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) },
-    body: JSON.stringify(snapshot),
+    headers: { Origin: origin, "Content-Type": "application/json",
+      ...(token ? { Authorization: "Bearer " + token } : {}), ...(key ? { "X-Catet-Key": key } : {}) },
+    body: JSON.stringify(body),
   });
 }
-const denied = await worker.fetch(put(""), env);
+const denied = await worker.fetch(put("", ""), env);
 assert.equal(denied.status, 401);
-const accepted = await worker.fetch(put("service-secret"), { ...env, REQUIRE_AUTH: "1" });
+const serviceOnly = await worker.fetch(put("service-secret", ""), env);
+assert.equal(serviceOnly.status, 401, "service token without access code never writes a legacy default row");
+const wrongKey = await worker.fetch(put("service-secret", "wrong-code"), env);
+assert.equal(wrongKey.status, 401, "wrong access code is rejected, not treated as anonymous");
+assert.equal(snapshotWrites, 0);
+const accepted = await worker.fetch(put("service-secret"), env);
 assert.equal(accepted.status, 200);
 assert.equal(snapshotWrites, 1);
+assert.equal(snapshotOwner, "synthetic-user", "snapshot lands on the access-code user");
 assert.equal(stateWrites, 0, "priority endpoint must never mutate states");
-const bad = await worker.fetch(new Request("https://worker.test/priority-snapshot", {
-  method: "PUT",
-  headers: { Origin: origin, "Content-Type": "application/json", Authorization: "Bearer service-secret" },
-  body: JSON.stringify({ ...snapshot, date: "not-a-date" }),
-}), env);
+const bad = await worker.fetch(put("service-secret", code, { ...snapshot, date: "not-a-date" }), env);
 assert.equal(bad.status, 400);
-const impossibleDate = await worker.fetch(new Request("https://worker.test/priority-snapshot", {
-  method: "PUT",
-  headers: { Origin: origin, "Content-Type": "application/json", Authorization: "Bearer service-secret" },
-  body: JSON.stringify({ ...snapshot, date: "2026-02-31" }),
-}), env);
+const impossibleDate = await worker.fetch(put("service-secret", code, { ...snapshot, date: "2026-02-31" }), env);
 assert.equal(impossibleDate.status, 400);
 assert.equal(snapshotWrites, 1, "invalid snapshot must not be written");
-const fetched = await worker.fetch(new Request("https://worker.test/priority-snapshot", { headers: { Origin: origin } }), env);
+const fetched = await worker.fetch(new Request("https://worker.test/priority-snapshot", { headers: { Origin: origin, "X-Catet-Key": code } }), env);
 assert.deepEqual(await fetched.json(), snapshot);
-const deniedGet = await worker.fetch(
-  new Request("https://worker.test/priority-snapshot", { headers: { Origin: origin } }),
-  { ...env, REQUIRE_AUTH: "1" },
-);
+const deniedGet = await worker.fetch(new Request("https://worker.test/priority-snapshot", { headers: { Origin: origin } }), env);
 assert.equal(deniedGet.status, 401);
 const serviceGet = await worker.fetch(
   new Request("https://worker.test/priority-snapshot", { headers: { Origin: origin, Authorization: "Bearer service-secret" } }),
-  { ...env, REQUIRE_AUTH: "1" },
+  env,
 );
-assert.equal(serviceGet.status, 200);
+assert.equal(serviceGet.status, 401, "service token alone cannot read a snapshot");
 let firstPriorityRead = true;
 const migrationEnv = { CATET_DB: {
   prepare(sql) { return { bind() { return this; }, async first() {
+    if (sql.includes("SELECT id, name")) return userRow;
     if (sql.includes("priority_snapshots") && firstPriorityRead) {
       firstPriorityRead = false;
       throw new Error("no such table: priority_snapshots");
@@ -79,9 +81,9 @@ const migrationEnv = { CATET_DB: {
   } }; },
   async exec(sql) { migrations.push(sql); },
 } };
-const migrated = await worker.fetch(new Request("https://worker.test/priority-snapshot", { headers: { Origin: origin } }), migrationEnv);
+const migrated = await worker.fetch(new Request("https://worker.test/priority-snapshot", { headers: { Origin: origin, "X-Catet-Key": code } }), migrationEnv);
 assert.equal(migrated.status, 200);
 assert(migrations.some((sql) => sql.includes("CREATE TABLE IF NOT EXISTS priority_snapshots")));
-console.log(JSON.stringify({ denied: denied.status, accepted: accepted.status, invalid: bad.status,
+console.log(JSON.stringify({ denied: denied.status, serviceOnly: serviceOnly.status, accepted: accepted.status, invalid: bad.status,
   deniedGet: deniedGet.status, serviceGet: serviceGet.status, snapshotWrites, stateWrites, migrationApplied: true }));
 // Worker imported in memory; no temporary module to remove.

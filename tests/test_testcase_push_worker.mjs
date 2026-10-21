@@ -30,7 +30,7 @@ const CATET_DB = {
   },
 };
 const sha = async (text) => Buffer.from(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))).toString("hex");
-const envOff = { REQUIRE_AUTH: "1", CATET_DB };
+const envOff = { CATET_DB };
 const env = { ...envOff, TESTCASE_PUSH_ENABLED: "on" };
 
 // ---------- Jira + QAlity palsu ----------

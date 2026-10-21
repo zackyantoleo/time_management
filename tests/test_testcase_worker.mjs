@@ -24,7 +24,6 @@ const usersByHash = new Map(await Promise.all(Object.entries(users).map(async ([
 const creds = new Map();   // user_id → { token, expires_at, updated_at }
 const pushes = [];         // baris testcase_pushes
 const env = {
-  REQUIRE_AUTH: "1",
   ADMIN_KEY: "synthetic-admin",
   CATET_DB: {
     async exec() {},

@@ -23,10 +23,9 @@ function args() {
   }
   return out;
 }
-async function jsonRequest(url, options = {}) {
-  const headers = { "User-Agent": "Catet-Daily-Priority/2.0", Origin: "https://zackyantoleo.github.io", ...(options.headers || {}) };
-  const key = (process.env.CATET_ACCESS_KEY || "").trim();
-  if (key) headers["X-Catet-Key"] = key;
+async function jsonRequest(url, key, options = {}) {
+  const headers = { "User-Agent": "Catet-Daily-Priority/2.0", Origin: "https://zackyantoleo.github.io",
+    "X-Catet-Key": key, ...(options.headers || {}) };
   const response = await fetch(url, { ...options, headers });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${body.error || "request failed"}`);
@@ -35,7 +34,10 @@ async function jsonRequest(url, options = {}) {
 (async () => {
   const config = args();
   const base = config.worker.replace(/\/+$/, "");
-  const state = await jsonRequest(base + "/state");
+  // Worker menolak semua request tanpa kode akses valid (juga untuk baca).
+  const key = (process.env.CATET_ACCESS_KEY || "").trim();
+  if (!key) throw new Error("CATET_ACCESS_KEY wajib (kode akses CATET pemilik snapshot)");
+  const state = await jsonRequest(base + "/state", key);
   if (!state.stores) throw new Error("Worker state kosong");
   const snapshot = engine.snapshot({
     tasks: state.stores.tasks || [],
@@ -45,16 +47,9 @@ async function jsonRequest(url, options = {}) {
     timezone: "Asia/Jakarta",
   });
   if (!config.dryRun) {
-    const serviceToken = (process.env.CATET_PRIORITY_SERVICE_TOKEN || "").trim();
-    if (!serviceToken && !process.env.CATET_ACCESS_KEY) {
-      throw new Error("CATET_PRIORITY_SERVICE_TOKEN atau CATET_ACCESS_KEY wajib untuk write");
-    }
-    await jsonRequest(base + "/priority-snapshot", {
+    await jsonRequest(base + "/priority-snapshot", key, {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        ...(serviceToken ? { Authorization: "Bearer " + serviceToken } : {}),
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(snapshot),
     });
   }

@@ -12,7 +12,7 @@ async function main() {
   const source = fs.readFileSync(path.join(root, 'worker/worker.js'), 'utf8').replace('../assets/js/work-pattern-report-contract.js', pathToFileURL(path.join(root, 'assets/js/work-pattern-report-contract.js')).href);
   const { default: worker } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
   let row, writes = 0, race;
-  const env = { REQUIRE_AUTH: '1', WEEKLY_WRAPPED_SERVICE_TOKEN: 'synthetic-service', CATET_DB: {
+  const env = { WEEKLY_WRAPPED_SERVICE_TOKEN: 'synthetic-service', CATET_DB: {
     prepare(sql) { return { bind(...args) { return {
       async first() {
         if (sql.includes('FROM users WHERE token_hash')) return args[0] === crypto.createHash('sha256').update('synthetic-access').digest('hex') ? { id: 'synthetic-user' } : null;

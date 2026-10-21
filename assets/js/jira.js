@@ -1056,7 +1056,7 @@ function renderSignedOut(editor) {
   form.append(kodeIn, simpan);
   editor.append(form);
   editor.append(el("div", "cap-hint",
-    "Sekali sign in, kredensial Jira & kalender ikut dari server — di perangkat lain cukup kode ini, tak perlu isi ulang. Kosongkan kalau Worker-mu mode pribadi."));
+    "Sekali sign in, kredensial Jira & kalender ikut dari server — di perangkat lain cukup kode ini, tak perlu isi ulang."));
 
   const daf = document.createElement("details");
   daf.className = "routine-manage"; daf.style.marginTop = "8px";

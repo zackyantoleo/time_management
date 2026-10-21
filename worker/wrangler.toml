@@ -13,8 +13,9 @@ binding = "CATET_DB"
 database_name = "catet-db"
 database_id = "1992b51e-1972-482f-9ccb-7d6d9dc83d3e"
 
-# KV lama — masih dipakai sebagai fallback & sumber migrasi. Setelah D1 aktif
-# dan data terlihat normal, blok ini boleh dihapus.
+# KV lama — tidak dibaca kode lagi (hanya berisi blob user "default" tanpa kode
+# yang sudah ditutup). Binding dibiarkan agar data lama tetap terjangkau;
+# blok ini boleh dihapus.
  [[kv_namespaces]]
  binding = "CATET_KV"
  id = "fed6a17c52f34a6ebb79c60ac742648c"

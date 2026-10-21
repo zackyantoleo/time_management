@@ -22,13 +22,15 @@ pengguna sudah memilih satu kandidat lalu menekan **Upload ke Jira**. Worker aka
 6. membaca tiket QA kembali dan baru melaporkan sukses setelah link **dan**
    chip description terverifikasi.
 
-**Keamanan singkat:** API token Jira disimpan sebagai secret Cloudflare atau
-kredensial akun di D1, bukan di frontend/repo. Aplikasi memakai access code
-per pengguna. Allowlist **Origin hanya lapisan CORS browser**, bukan login:
-klien non-browser dapat mengirim header Origin sendiri. Legacy `default`
-tanpa kode masih ada bila `REQUIRE_AUTH` belum aktif. Verifikasi konfigurasi
-live sebelum menyimpulkan endpoint publik aman; migrasikan perangkat dan
-siapkan rollback sebelum mengaktifkan `REQUIRE_AUTH = "1"`.
+**Keamanan singkat:** setiap endpoint data **wajib kode akses valid**
+(header `X-Catet-Key`); kode kosong atau salah selalu `401`, tanpa memanggil
+Jira dan tanpa menyentuh storage. Kredensial Jira, QAlity, dan kalender
+disimpan per akun di D1, bukan di frontend/repo — tidak ada user `default`
+anonim dan tidak ada secret Jira global. Allowlist **Origin hanya lapisan CORS
+browser**, bukan login: klien non-browser dapat mengirim header Origin sendiri.
+Pengecualian hanya `/admin/users` (butuh `ADMIN_KEY`) dan `POST /signup`
+(butuh `SIGNUP_SECRET`). Sejak perubahan ini variabel `REQUIRE_AUTH` tidak
+dipakai lagi — keamanan tidak bergantung pada variabel Worker.
 
 Origin tambahan diatur melalui `ALLOWED_ORIGINS`. API token tetap membawa
 izin akun Jira pemiliknya; pastikan kebijakan kantor mengizinkan integrasi
@@ -54,21 +56,17 @@ Dari folder `worker/` di repo ini:
 ```bash
 cd worker
 
-# kunci rahasia untuk Catet — buat string acak, simpan, nanti dipakai di aplikasi
-openssl rand -hex 16
+wrangler secret put ADMIN_KEY   # string acak (openssl rand -hex 16), pegangan admin saja
 
-wrangler secret put JIRA_SITE       # isi: https://erafone.atlassian.net
-wrangler secret put JIRA_EMAIL      # isi: email Atlassian kamu
-wrangler secret put JIRA_API_TOKEN  # isi: token dari langkah 1
-
-wrangler deploy
+wrangler deploy --keep-vars
 ```
 Catat URL yang tercetak, bentuknya:
 `https://catet-jira-proxy.<subdomain-kamu>.workers.dev`
 
 > **Tanpa terminal?** Bisa juga lewat dashboard: Workers & Pages → Create →
 > paste isi `worker.js` → Deploy, lalu tab **Settings → Variables and
-> Secrets** untuk mengisi ketiga secret di atas.
+> Secrets** untuk mengisi `ADMIN_KEY`. Worker butuh D1 (lihat bagian
+> sinkronisasi) karena kode akses disimpan di sana.
 
 > **Penting — alamat proxy bawaan.** Aplikasi (`assets/js/jira.js`, konstanta
 > `DEFAULT_PROXY`) menunjuk ke satu URL Worker bawaan. Kalau URL Worker-mu
@@ -78,7 +76,8 @@ Catat URL yang tercetak, bentuknya:
 
 ### 4. Hubungkan akun
 Alamat proxy default sudah tertanam. Buat kode akses melalui admin/self-service
-seperti bagian multi-user, lalu sign in di Settings pada tiap perangkat.
+seperti bagian multi-user, sign in di Settings pada tiap perangkat, lalu isi
+**Jira credentials** (site, email, API token dari langkah 1) sekali di akun itu.
 Tiket assigned diperbarui tiap 5 menit selama Catet terbuka; tombol **→ Jira**
 mengirim worklog hanya setelah aksi pengguna.
 
@@ -90,15 +89,10 @@ gratis 100rb/hari — cukup untuk banyak pengguna).
 
 Snapshot prioritas harian scheduler disimpan lewat endpoint terpisah
 `GET/PUT /priority-snapshot`, bukan di blob `/state`. Dengan begitu cron tidak
-pernah menimpa edit task browser. `PUT` wajib membawa kode akses pengguna atau
-`Authorization: Bearer <PRIORITY_SERVICE_TOKEN>`; token disimpan sebagai secret
-Worker dan file mode 0600 di host scheduler, bukan di repo/browser.
-
-> Tanpa `REQUIRE_AUTH = "1"`, endpoint data user `default` tetap kompatibel
-> dengan instalasi lama dan dapat diakses tanpa kode. Allowlist `Origin` hanya
-> batas CORS browser, bukan autentikasi terhadap klien non-browser. Jangan
-> aktifkan `REQUIRE_AUTH` sebelum semua perangkat memiliki kode akses dan
-> rollback sudah disiapkan.
+pernah menimpa edit task browser. Baca dan tulis wajib membawa kode akses
+pemilik snapshot (`CATET_ACCESS_KEY` di host scheduler, file mode 0600).
+`PRIORITY_SERVICE_TOKEN` tidak diperiksa lagi; pemanggil lama yang masih
+mengirim header `Authorization` tetap jalan.
 
 ```bash
 cd worker
@@ -112,10 +106,10 @@ blok `[[d1_databases]]` dan tempel id-nya, lalu:
 wrangler deploy
 ```
 
-Tabel dasar dibuat otomatis saat pertama dipakai. Instalasi lama yang memakai
-KV tidak perlu langkah ekstra: data di KV dimigrasi otomatis ke D1 saat
-akses pertama, dan setelah itu blok `[[kv_namespaces]]` di `wrangler.toml`
-boleh dihapus. (Tanpa D1, Worker tetap jalan memakai KV seperti dulu.)
+Tabel dasar dibuat otomatis saat pertama dipakai. D1 wajib: tanpa D1 kode
+akses tidak bisa dicek, jadi semua endpoint data menjawab `401`. KV lama
+hanya pernah menyimpan blob user `default` tanpa kode; Worker tidak membacanya
+lagi dan blok `[[kv_namespaces]]` di `wrangler.toml` boleh dihapus.
 
 ### Schema v2 persistence
 
@@ -129,8 +123,7 @@ wrangler d1 migrations apply catet-db --remote
 wrangler deploy
 ```
 
-Endpoint baru selalu membutuhkan access code valid, walaupun fallback anonim
-legacy belum dimatikan:
+Endpoint baru (seperti semua endpoint data) membutuhkan access code valid:
 
 - `GET/PUT /v2/state/:kind` — dokumen `tasks`, `routines`, `sprints`, atau
   `jira_overrides`; setiap PUT membawa `revision`, stale writer mendapat `409`.
@@ -152,16 +145,10 @@ perangkat dalam hitungan detik yang sama.
 Satu Worker + satu D1 bisa dipakai ±20 orang; data tiap orang terpisah per
 kode akses.
 
-1. Set kunci admin dan wajibkan kode:
+1. Set kunci admin (kode akses selalu wajib, tidak perlu variabel tambahan):
    ```bash
    wrangler secret put ADMIN_KEY      # string acak, pegangan admin saja
    ```
-   Di `wrangler.toml` tambahkan:
-   ```toml
-   [vars]
-   REQUIRE_AUTH = "1"
-   ```
-   lalu `wrangler deploy`.
 2. Buat kode per orang (kode hanya ditampilkan sekali — langsung kirim ke
    orangnya):
    ```bash
@@ -199,7 +186,8 @@ Endpoint `POST /signup` di-origin-gate (hanya dari app) + butuh passphrase itu.
    masing-masing (buat di id.atlassian.com → Security → API tokens).
    Tiket yang tampil dan worklog yang terkirim jadi atas nama tiap orang.
    Jira antar orang boleh beda instance; hanya Jira Cloud yang didukung.
-   Secrets `JIRA_*` global jadi fallback untuk mode pribadi tanpa kode.
+   Tanpa kredensial sendiri, rute Jira menjawab `400` — tidak pernah memakai
+   kredensial orang lain atau secret global.
 
 ## Endpoint (untuk referensi)
 
@@ -218,8 +206,8 @@ Endpoint `POST /signup` di-origin-gate (hanya dari app) + butuh passphrase itu.
 | POST | `/testcases/push` | `{issueKey, cases, previewHash}` → import QAlity + link `QAlity Test` + baca balik; status per case. **Hanya bila `TESTCASE_PUSH_ENABLED=on`**, selain itu 404 |
 | POST | `/testcases/relink` | `{issueKey, testKey}` → link ulang case `created_unlinked`/`link_unverified`; flag sama dengan push |
 
-Endpoint biasa memeriksa Origin, tetapi autentikasi data membutuhkan access
-code dan konfigurasi `REQUIRE_AUTH`. Origin bukan pengganti autentikasi.
+Semua endpoint di atas memeriksa Origin **dan** wajib access code valid
+(`401` bila kosong/salah). Origin bukan pengganti autentikasi.
 
 ## Import test case QAlity
 
@@ -240,7 +228,8 @@ wrangler deploy --keep-vars --var TESTCASE_PUSH_ENABLED:on    # nyalakan
 wrangler deploy --keep-vars --var TESTCASE_PUSH_ENABLED:off   # rollback cepat
 ```
 
-(`--keep-vars` menjaga variabel yang diatur di dashboard, mis. `REQUIRE_AUTH`.)
+(`--keep-vars` menjaga variabel yang tidak ada di `wrangler.toml`, mis.
+`TESTCASE_PUSH_ENABLED`; tanpa flag itu, deploy menghapusnya.)
 Alur push: `previewHash` wajib sama dengan dry run (409 bila beda) → klaim
 atomik per case di `testcase_pushes` (status `pending`; klik ganda/dua tab
 tidak membuat kembar) → satu `POST /api/testCases/import` → link `QAlity Test`
@@ -275,6 +264,20 @@ Deploy Worker dahulu, frontend kemudian; rollback frontend aman, rollback
 Worker lama menghilangkan perlindungan retry. Migrasi v2 state dan aktivasi auth
 bukan bagian rollout ini.
 
+## Kode akses wajib — migrasi & rollback
+
+Versi Worker sebelum perubahan ini memperlakukan request tanpa kode (atau
+kode salah) sebagai user `default` dengan secret `JIRA_*` global. Sebelum
+deploy: pastikan tiap perangkat menampilkan nama akun di Settings → Account
+(bukan error), dan script host mengirim `CATET_ACCESS_KEY` yang valid. Deploy
+dengan `wrangler deploy --keep-vars`; rollback cepat:
+`wrangler rollback <version-id-sebelumnya>`. Data tidak diubah, jadi rollback
+bersih. Secret lama yang tidak dipakai kode lagi (`CATET_KEY`, `JIRA_SITE`,
+`JIRA_EMAIL`, `JIRA_API_TOKEN`, `PRIORITY_SERVICE_TOKEN`) boleh dihapus
+dengan `wrangler secret delete <NAMA>` setelah versi baru stabil; menghapusnya
+membuat rollback ke versi lama kehilangan fallback anonim (itu memang tujuannya).
+
 ## Mencabut akses
-- Hapus API token di https://id.atlassian.com/manage-profile/security/api-tokens → proxy langsung mati.
+- Hapus API token di https://id.atlassian.com/manage-profile/security/api-tokens → akses Jira akun itu langsung mati.
+- Hapus user (beserta datanya) lewat `DELETE /admin/users/<id>` → kodenya langsung ditolak.
 - Atau hapus Worker-nya di dashboard Cloudflare.

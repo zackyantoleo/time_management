@@ -58,11 +58,11 @@ globalThis.fetch = async (url, init = {}) => {
 
 try {
   const response = await worker.fetch(new Request("https://worker.test/tickets", {
-    headers: { Origin: "https://zackyantoleo.github.io" },
+    headers: { Origin: "https://zackyantoleo.github.io", "X-Catet-Key": "synthetic-code" },
   }), {
-    JIRA_SITE: "https://jira.test",
-    JIRA_EMAIL: "qa@example.test",
-    JIRA_API_TOKEN: "secret",
+    CATET_DB: { async exec() {}, prepare() { return { bind() { return this; }, async first() {
+      return { id: "synthetic-user", jira_site: "https://jira.test", jira_email: "qa@example.test", jira_token: "secret" };
+    } }; } },
   });
   assert.equal(response.status, 200);
   const body = await response.json();

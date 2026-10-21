@@ -21,7 +21,6 @@ function key(userId, reportId) { return `${userId}:${reportId}`; }
 const report = JSON.parse(await readFile(new URL("../assets/data/weekly-wrapped.sample.json", import.meta.url), "utf8"));
 
 const env = {
-  REQUIRE_AUTH: "1",
   WEEKLY_WRAPPED_SERVICE_TOKEN: "wrapped-secret",
   CATET_DB: {
     prepare(sql) {

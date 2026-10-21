@@ -20,7 +20,7 @@ let stage = 'init';
       let row;
       const accessKey = 'synthetic-access';
       const accessHash = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(accessKey))).toString('hex');
-      const env = { REQUIRE_AUTH: '1', WEEKLY_WRAPPED_SERVICE_TOKEN: 'synthetic-service', CATET_DB: {
+      const env = { WEEKLY_WRAPPED_SERVICE_TOKEN: 'synthetic-service', CATET_DB: {
         prepare(sql) { return { bind(...args) { return {
           async first() {
             if (sql.includes('FROM users WHERE token_hash')) return args[0] === accessHash ? { id: 'synthetic-user' } : null;
