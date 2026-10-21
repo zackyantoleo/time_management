@@ -630,9 +630,9 @@ async function qalityGet(path, token) {
 }
 
 // Tiket tujuan + test case QAlity yang sudah ter-link (tipe link apa pun).
-// Hanya project/issuetype/issuelinks — description tiket tidak dibaca.
+// Hanya project/issuetype/issuelinks/summary — description tiket tidak dibaca.
 async function bacaTiketTestCase(site, authHeaders, key) {
-  const r = await fetch(site + "/rest/api/3/issue/" + encodeURIComponent(key) + "?fields=project,issuetype,issuelinks",
+  const r = await fetch(site + "/rest/api/3/issue/" + encodeURIComponent(key) + "?fields=project,issuetype,issuelinks,summary",
     { headers: authHeaders });
   if (r.status === 404) return { error: "Tiket " + key + " tidak ditemukan atau tidak bisa dibaca dengan akun Jira-mu.", status: 404 };
   if (!r.ok) return { error: "Jira menolak membaca " + key + " (HTTP " + r.status + ").", status: 502 };
@@ -651,6 +651,7 @@ async function bacaTiketTestCase(site, authHeaders, key) {
     projectKey: (f.project && f.project.key) || "",
     projectId: f.project && f.project.id != null ? String(f.project.id) : "",
     issueType: (f.issuetype && f.issuetype.name) || "",
+    summary: typeof f.summary === "string" ? f.summary : "",
     existing: [...existing.values()],
   };
 }
@@ -1331,7 +1332,7 @@ async function tangani(request, env) {
         if (!KEY_1.test(issueKey)) return json({ error: "Parameter issue tidak valid (contoh: CD-1234)." }, 400);
         const t = await bacaTiketTestCase(site, authHeaders, issueKey);
         if (t.error) return json({ error: t.error }, t.status);
-        return json({ issueKey: t.key, projectKey: t.projectKey, existing: t.existing, history: await riwayat(t.key) });
+        return json({ issueKey: t.key, issueSummary: t.summary, projectKey: t.projectKey, existing: t.existing, history: await riwayat(t.key) });
       }
       // Dry run dan push memakai persiapan yang sama: body, validasi hard,
       // token, tiket + settings QAlity, project aktif (opsi A).
@@ -1405,6 +1406,7 @@ async function tangani(request, env) {
         const create = plan.filter((p) => p.action === "create").length;
         return json({
           issueKey: t.key,
+          issueSummary: t.summary, // K2: judul asli untuk dibandingkan dengan task_name dari AI
           project: { key: t.projectKey, id: projectId },
           linkType: TC_LINK_TYPE,
           existing: t.existing,

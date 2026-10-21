@@ -251,6 +251,21 @@ const json21 = JSON.stringify({ format: 'catet.testcases.v1', cases: Array.from(
       await page.locator('#tc-panel-tc1').getByRole('button', { name: 'Parse', exact: true }).click();
       assert.match(await page.locator('#tc-panel-tc1 .testcase-issues.err').textContent(), /JSON tidak valid/);
 
+      // Tempelan banyak tiket di panel per task: hanya kelompok tiket task ini; tiket lain → info / error.
+      const bundleCase = (n) => ({ id: 'TC-' + n, scenario_type: 'positive', title: 'Verify Bundle Case ' + n, precondition: 'Bundle precondition.', test_steps: ['Open bundle page ' + n + '.'], expected_result: ['Bundle page opens.'] });
+      await page.locator('#tc-panel-tc1 textarea').fill(JSON.stringify([
+        { task_id: 'qa-123', task_name: 'Synthetic ticket', test_cases: [bundleCase(1), bundleCase(2)] },
+        { task_id: 'QA-555', task_name: 'Other synthetic ticket', test_cases: [bundleCase(3)] }]));
+      await page.locator('#tc-panel-tc1').getByRole('button', { name: 'Parse', exact: true }).click();
+      assert.equal(await page.locator('#tc-panel-tc1 .testcase-bundle-info').textContent(),
+        'Tempelan berisi 2 tiket; panel ini memakai QA-123 (2 case). Tiket lain: QA-555 — pakai Jira → Test cases.');
+      assert.deepEqual(await page.locator('#tc-panel-tc1 .testcase-card .testcase-title').allTextContents(), ['Verify Bundle Case 1', 'Verify Bundle Case 2']);
+      assert.match(await page.locator('#tc-panel-tc1 .testcase-status.ok').textContent(), /2 case siap/);
+      await page.locator('#tc-panel-tc1 textarea').fill(JSON.stringify([{ task_id: 'QA-555', test_cases: [bundleCase(3)] }]));
+      await page.locator('#tc-panel-tc1').getByRole('button', { name: 'Parse', exact: true }).click();
+      assert.equal(await page.locator('#tc-panel-tc1 .testcase-card').count(), 0);
+      assert.equal(await page.locator('#tc-panel-tc1 .testcase-issues.err').textContent(), 'ErrorTempelan tidak berisi QA-123. Tiket di tempelan: QA-555.');
+
       // Kartu fokus: panel terbuka di dalam kartu (satu panel sekaligus); HP 360/390 px muat.
       await page.locator('#focus-card').getByRole('button', { name: 'Test cases' }).click();
       assert.equal(await page.locator('.testcase-panel').count(), 1);

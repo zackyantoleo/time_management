@@ -181,6 +181,8 @@ try {
   calls = [];
   const p1 = await push([multi, single]);
   assert.equal(p1.status, 200, JSON.stringify(p1.body));
+  assert.deepEqual(Object.keys(p1.body).sort(), ["counts", "history", "issueKey", "linkType", "project", "results", "unmappedKeys"],
+    "kontrak respons push tidak berubah (issueSummary hanya di preview/GET)");
   assert.equal(imports.length, 1);
   assert.deepEqual(imports[0], {
     projectId: "10452",
@@ -235,6 +237,7 @@ try {
   fake.linkFail.clear();
   const r5 = await relink(k5);
   assert.equal(r5.status, 200);
+  assert.deepEqual(Object.keys(r5.body).sort(), ["error", "history", "issueKey", "status", "testKey"], "kontrak respons relink tidak berubah");
   assert.equal(r5.body.status, "created_linked");
   assert(linkedBothWays(k5));
   assert.equal(row("Verify link failure").status, "created_linked");

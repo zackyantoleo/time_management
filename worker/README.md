@@ -201,8 +201,8 @@ Endpoint `POST /signup` di-origin-gate (hanya dari app) + butuh passphrase itu.
 | POST | `/transition` | `{key, target:"inprogress"\|"done"}` → geser status tiket (tak pernah mundur) — In Progress saat difokuskan, Done saat diselesaikan |
 | GET/PUT | `/state` | Simpan/ambil state Catet untuk sinkron antar perangkat (butuh KV) |
 | POST | `/me/qality` | `{token, expiresAt?}` simpan token QAlity Plus milik akun (`""` = hapus); token tidak pernah dikembalikan |
-| GET | `/testcases?issue=KEY` | Test case QAlity yang sudah ter-link ke tiket + riwayat push dari D1, read-only |
-| POST | `/testcases/preview` | Dry run import test case: validasi, project aktif di QAlity, duplikat, rencana per case + `previewHash`; read-only |
+| GET | `/testcases?issue=KEY` | Test case QAlity yang sudah ter-link ke tiket + riwayat push dari D1 + `issueSummary` (judul tiket), read-only |
+| POST | `/testcases/preview` | Dry run import test case: validasi, project aktif di QAlity, duplikat, rencana per case + `previewHash` + `issueSummary`; read-only |
 | POST | `/testcases/push` | `{issueKey, cases, previewHash}` → import QAlity + link `QAlity Test` + baca balik; status per case. **Hanya bila `TESTCASE_PUSH_ENABLED=on`**, selain itu 404 |
 | POST | `/testcases/relink` | `{issueKey, testKey}` → link ulang case `created_unlinked`/`link_unverified`; flag sama dengan push |
 
@@ -214,10 +214,14 @@ Semua endpoint di atas memeriksa Origin **dan** wajib access code valid
 Butuh access code (token QAlity disimpan per akun di tabel D1
 `qality_credentials`, dibuat otomatis lewat auto-schema; file
 `migrations/0003_testcase_import.sql` berisi tabel yang sama). Dry run hanya
-GET ke Jira (`project,issuetype,issuelinks` tiket, tanpa description) dan
+GET ke Jira (`project,issuetype,issuelinks,summary` tiket, tanpa description) dan
 `GET /api/qalitySettings` QAlity — tidak ada write. Project yang tidak
 terdaftar aktif di pengaturan QAlity ditolak. Body error QAlity/Jira tidak
-diteruskan ke browser.
+diteruskan ke browser. `issueSummary` (judul tiket) dipakai mode banyak tiket
+di app untuk membandingkan dengan `task_name` dari AI; app tetap jalan dengan
+Worker lama tanpa field ini ("Judul Jira belum tersedia"). Mode banyak tiket
+memanggil `preview`/`push` satu tiket per request, berurutan — rute Worker
+tidak berubah.
 
 **Push (feature flag).** `push`/`relink` mengembalikan 404 kecuali variabel
 Worker `TESTCASE_PUSH_ENABLED` = `on`. Nyalakan/matikan tanpa redeploy Pages:

@@ -55,13 +55,14 @@ const env = {
 const link = (type, side, key, summary, issuetype, status = "To Do") =>
   ({ type: { name: type }, [side]: { key, fields: { summary, status: { name: status }, issuetype: { name: issuetype } } } });
 const issues = {
-  "CD-1234": { project: { key: "CD", id: "10452" }, issuetype: { name: "Task" }, issuelinks: [
+  "CD-1234": { project: { key: "CD", id: "10452" }, issuetype: { name: "Task" }, summary: "Synthetic <b>story</b> title", issuelinks: [
     link("QAlity Test", "inwardIssue", "CD-5962", "Verify Existing Case", "QAlity Test"),
     link("Blocks", "outwardIssue", "CD-1000", "Synthetic dev story", "Story", "Done"),
   ] },
   "CD-5962": { project: { key: "CD", id: "10452" }, issuetype: { name: "QAlity Test" }, issuelinks: [] },
   "PROD-77": { project: { key: "PROD", id: "10001" }, issuetype: { name: "Task" }, issuelinks: [] },
   "MIS-1": { project: { key: "MIS", id: "1" }, issuetype: { name: "Task" }, issuelinks: [] },
+  "AB-9": { project: { key: "AB", id: "10100" }, issuetype: { name: "Story" }, issuelinks: [] },
 };
 const settings = {
   AB: { projectId: "10100", isQalityEnabled: true, isPluginEnabled: true },
@@ -137,6 +138,7 @@ try {
   const ok = await preview([multi, dupLinked, single]);
   assert.equal(ok.status, 200, JSON.stringify(ok.body));
   assert.equal(ok.body.issueKey, "CD-1234");
+  assert.equal(ok.body.issueSummary, "Synthetic <b>story</b> title", "K2: judul Jira asli ikut dikembalikan apa adanya");
   assert.deepEqual(ok.body.project, { key: "CD", id: "10452" });
   assert.equal(ok.body.linkType, "QAlity Test");
   assert.deepEqual(ok.body.counts, { create: 2, skip: 1 });
@@ -163,7 +165,7 @@ try {
   // Read-only: dua GET saja (tiket + settings), tanpa description, token di header QAlity.
   assert.deepEqual(calls.map((c) => c.method + " " + c.host + c.path).sort(),
     ["GET apps-qalityplus.soldevelo.com/api/qalitySettings", "GET jira.test/rest/api/3/issue/CD-1234"]);
-  assert.equal(new URLSearchParams(calls.find((c) => c.host === "jira.test").search).get("fields"), "project,issuetype,issuelinks");
+  assert.equal(new URLSearchParams(calls.find((c) => c.host === "jira.test").search).get("fields"), "project,issuetype,issuelinks,summary", "hanya 4 field, tanpa description");
   assert.equal(calls.find((c) => c.host !== "jira.test").auth, "Bearer " + TOKEN);
 
   // previewHash stabil terhadap spasi/urutan kunci, berubah bila isi berubah.
@@ -187,6 +189,11 @@ try {
   const hist = await call("/testcases?issue=cd-1234");
   assert.equal(hist.status, 200);
   assert.deepEqual(hist.body.existing.map((x) => x.key), ["CD-5962"]);
+  assert.equal(hist.body.issueSummary, "Synthetic <b>story</b> title");
+  assert.equal((await preview([single], "PROD-77")).body.issueSummary, undefined, "error tidak membawa judul");
+  const tanpaJudul = await preview([single], "AB-9");
+  assert.equal(tanpaJudul.status, 200);
+  assert.equal(tanpaJudul.body.issueSummary, "", "tiket tanpa summary → string kosong, bukan undefined");
   assert.deepEqual(hist.body.history.map((r) => r.test_key), ["CD-7000", null]);
   assert.equal((await call("/testcases?issue=nope")).status, 400);
 
