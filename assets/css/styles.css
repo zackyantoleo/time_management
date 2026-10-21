@@ -754,8 +754,8 @@
 
   /* ---- Test cases QAlity: tempel → Parse → pratinjau (testcases.js) ---- */
   li.task.testcase-open { flex-wrap: wrap; }
+  .testcase-panel, .testcase-bulk { --tc-warn: color-mix(in srgb, var(--p-tinggi) 72%, var(--ink)); }
   .testcase-panel {
-    --tc-warn: color-mix(in srgb, var(--p-tinggi) 72%, var(--ink));
     flex: 0 0 100%; min-width: 0; margin-top: 10px; padding-top: 10px;
     border-top: 1px dashed var(--line);
     display: flex; flex-direction: column; gap: 8px;
@@ -834,9 +834,30 @@
   .testcase-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; font-size: 12.5px; }
   .testcase-row .testcase-title { font-size: 12.5px; }
   .testcase-row .testcase-hint { flex: 0 0 100%; }
+  /* Banyak tiket (tab Jira → Test cases): satu kelompok per tiket + hasil Push all. */
+  .testcase-bulk { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  ol.testcase-groups { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  .testcase-group {
+    border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px;
+    background: var(--surface); padding: 10px; min-width: 0;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .testcase-group.has-error { border-left-color: var(--p-urgent); }
+  .testcase-group.excluded { border-left-color: var(--line); }
+  .testcase-group.excluded > :not(.testcase-group-head) { opacity: .6; }
+  .testcase-group-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; cursor: pointer; }
+  .testcase-group-head input { flex: none; margin: 0; width: 16px; height: 16px; accent-color: var(--accent); }
+  .testcase-group-name { flex: 1; min-width: 0; font-weight: 600; font-size: 13.5px; overflow-wrap: anywhere; }
+  .testcase-group-name.empty { color: var(--ink-faint); font-style: italic; font-weight: 500; }
+  .testcase-jira-title { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .testcase-jira-title strong { color: var(--ink); }
+  .testcase-push-ticket { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .testcase-push-ticket + .testcase-push-ticket { padding-top: 8px; border-top: 1px dashed var(--line); }
+  .testcase-badge.not-tried { border-style: dashed; color: var(--ink-faint); }
+  .testcase-progress { font-weight: 600; }
   @media (max-width: 760px) {
-    .testcase-card-head { min-height: 44px; }
-    .testcase-card-head input { width: 20px; height: 20px; }
+    .testcase-card-head, .testcase-group-head { min-height: 44px; }
+    .testcase-card-head input, .testcase-group-head input { width: 20px; height: 20px; }
   }
   @media (max-width: 560px) {
     .testcase-field { grid-template-columns: minmax(0, 1fr); }

@@ -7,7 +7,8 @@
 const JIRA_KEY_STORE = "catet.jira.v1";
 const READY_NOTIFICATIONS_KEY = "catet.readyNotifications.v1";
 const JIRA_RE = /\b([A-Z][A-Z0-9]{1,9}-\d+)\b/g;
-let jiraWorklogFilter = false;
+// Mode tab Jira: "inbox" | "missing" (Missing worklog) | "testcases" (import banyak tiket).
+let jiraFilterMode = "inbox";
 // Derived, account-scoped results stay in memory, not synced task state.
 let missingWorklog = { data: null, loading: false, error: "" };
 let jira = (() => {
@@ -59,13 +60,15 @@ normalisasiJira(jira);
 // perangkat (tab aktif, reminder, dsb.) sengaja tidak ikut dihapus.
 function kosongkanDataLokalTanpaAkses() {
   missingWorklog = { data: null, loading: false, error: "" };
-  jiraWorklogFilter = false;
+  jiraFilterMode = "inbox";
+  if (typeof resetTestCaseBulk === "function") resetTestCaseBulk();
   const proxy = jira.proxy || ""; // Worker custom tetap diperlukan untuk signup/sign in.
   for (const key of [
     "catet.tasks.v1", "catet.worklog.v1", "catet.routines.v1",
     "catet.routineday.v1", "catet.sprints.v1", "catet.dirty.v1",
     "catet.dirtyAt.v1", "catet.syncAt.v1", "catet.synced.v1",
     READY_NOTIFICATIONS_KEY, "catet.weekly.v1", "catet.weekly.corrections.demo.v1",
+    "catet.testcaseBulkDraft.v1",
   ]) localStorage.removeItem(key);
 
   tasks = [];
@@ -986,7 +989,8 @@ async function tarikProfil(paksa) {
 // Terapkan kode akses (sign in / ganti akun): pull state, tarik profil & tiket.
 async function pakaiKode(kode) {
   missingWorklog = { data: null, loading: false, error: "" };
-  jiraWorklogFilter = false;
+  jiraFilterMode = "inbox";
+  if (typeof resetTestCaseBulk === "function") resetTestCaseBulk();
   jira.key = (kode || "").trim();
   saveJira(true); // kredensial perangkat, bukan perubahan data
   setSyncStatus(""); profil = null;
@@ -1546,15 +1550,17 @@ function renderJiraInbox() {
   wrap.innerHTML = "";
   const filters = el("div", "cap-group log-filter");
   filters.setAttribute("role", "group"); filters.setAttribute("aria-label", "Filter tiket Jira");
-  for (const [missing, label] of [[false, "Inbox"], [true, "Missing worklog"]]) {
+  for (const [mode, label, id] of [["inbox", "Inbox", "jira-filter-inbox"], ["missing", "Missing worklog", "jira-filter-missing-worklog"],
+    ["testcases", "Test cases", "jira-filter-testcases"]]) {
     const chip = el("button", "chip time", label);
-    chip.id = missing ? "jira-filter-missing-worklog" : "jira-filter-inbox";
-    chip.setAttribute("aria-pressed", String(jiraWorklogFilter === missing));
-    chip.onclick = () => { jiraWorklogFilter = missing; render(); if (missing) refreshMissingWorklog(); };
+    chip.id = id;
+    chip.setAttribute("aria-pressed", String(jiraFilterMode === mode));
+    chip.onclick = () => { jiraFilterMode = mode; render(); if (mode === "missing") refreshMissingWorklog(); };
     filters.append(chip);
   }
   wrap.append(filters);
-  if (jiraWorklogFilter) { renderMissingWorklog(wrap); return; }
+  if (jiraFilterMode === "missing") { renderMissingWorklog(wrap); return; }
+  if (jiraFilterMode === "testcases") { renderTestCaseBulk(wrap); return; }
   wrap.append(renderSprintBar());
   if (rapikanInbox()) saveJira(true); // penyembuhan mesin — tanpa klaim dirty
   const q = searchQuery.trim().toLowerCase();

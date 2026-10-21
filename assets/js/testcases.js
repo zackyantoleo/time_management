@@ -3,14 +3,20 @@
 // Parse lokal; Dry run minta Worker mengecek tiket, project QAlity, dan duplikat
 // (read-only). Push (setelah dry run + konfirmasi) membuat test case di QAlity
 // dan me-link-nya ke tiket; Worker hanya menerimanya bila flag push menyala.
+// Tab Jira → Test cases: satu tempelan JSON berisi beberapa tiket, dipecah per
+// tiket lalu Dry run/Push satu tiket per request, berurutan.
 // Token QAlity diatur di Settings.
 "use strict";
 
 const TESTCASE_FORMAT = "catet.testcases.v1";
 const TESTCASE_MAX_BATCH = 20;   // batas subrequest Worker saat push (plan §6)
+const TESTCASE_MAX_TIKET = 10;   // tiket per Dry run all / Push all
 const TESTCASE_TITLE_MAX = 255;  // batas Summary issue Jira
 // Draft tempelan per task — sengaja TIDAK ikut /state maupun backup.
 const TESTCASE_DRAFT_KEY = "catet.testcaseDrafts.v1";
+// Draft tempelan banyak tiket { text, updatedAt } — juga lokal saja.
+const TESTCASE_BULK_DRAFT_KEY = "catet.testcaseBulkDraft.v1";
+const TC_KEY = /^[A-Z][A-Z0-9]{1,9}-\d+$/; // sama dengan Worker
 
 /* ---------- parse ---------- */
 
@@ -39,13 +45,18 @@ function rapikanJudulTestCase(s) {
   return t;
 }
 
+const rapikanBarisTestCase = (text) => String(text == null ? "" : text).replace(/\r\n?/g, "\n");
+// Seluruh tempelan dibungkus satu blok kode (```json / ```markdown) dari AI.
+function bukaPagarTestCase(isi) {
+  const pagar = isi.trim().match(/^(```|~~~)[\w-]*[ \t]*\n([\s\S]*?)\n[ \t]*\1[ \t]*$/);
+  return pagar ? pagar[2] : isi;
+}
+
 function parseTestCases(text) {
   const out = { format: TESTCASE_FORMAT, source: null, cases: [], errors: [] };
-  let isi = String(text == null ? "" : text).replace(/\r\n?/g, "\n");
+  let isi = rapikanBarisTestCase(text);
   if (!isi.trim()) { out.errors.push("Belum ada teks — tempel test case dulu."); return out; }
-  // Seluruh tempelan dibungkus satu blok kode (```json / ```markdown) dari AI.
-  const pagar = isi.trim().match(/^(```|~~~)[\w-]*[ \t]*\n([\s\S]*?)\n[ \t]*\1[ \t]*$/);
-  if (pagar) isi = pagar[2];
+  isi = bukaPagarTestCase(isi);
   const awal = isi.trim();
   let data;
   if (awal.startsWith("{")) {
@@ -71,23 +82,105 @@ function parseTestCasesJson(data, out) {
     out.errors.push("Format JSON tidak dikenal: “" + String(data.format) + "” (harus " + TESTCASE_FORMAT + ").");
     return;
   }
-  const dikenal = ["title", "preconditions", "steps", "expected"];
-  data.cases.forEach((c, i) => {
-    const no = "Case #" + (i + 1);
-    const kasus = { title: "", preconditions: [], steps: [], expected: [], ignored: [] };
-    out.cases.push(kasus); // tetap didorong supaya nomor case sejajar dengan input
-    if (!c || typeof c !== "object" || Array.isArray(c)) { out.errors.push(no + " bukan objek { title, preconditions, steps, expected }."); return; }
-    if (typeof c.title === "string") kasus.title = rapikanJudulTestCase(c.title);
-    else if (c.title != null) out.errors.push(no + ": “title” harus berupa teks.");
-    for (const f of ["preconditions", "steps", "expected"]) {
-      const v = c[f];
-      if (v == null) continue;
-      if (typeof v === "string") kasus[f] = v.trim() ? [v.trim()] : [];
-      else if (Array.isArray(v) && v.every((x) => typeof x === "string")) kasus[f] = v.map((x) => x.trim()).filter(Boolean);
-      else out.errors.push(no + ": “" + f + "” harus berupa teks atau daftar teks.");
+  // Case rusak tetap didorong supaya nomor case sejajar dengan input.
+  data.cases.forEach((c, i) => out.cases.push(kasusJsonTestCase(c, "Case #" + (i + 1), TC_FIELD_V1, [], out.errors)));
+}
+
+// Field JSON → bentuk internal. catet.testcases.v1 memakai nama internal;
+// JSON banyak tiket dari AI memakai nama lain + alias. id & scenario_type
+// diabaikan tanpa warning (K3); field lain dilaporkan lewat `ignored`.
+const TC_FIELD_V1 = { title: ["title"], preconditions: ["preconditions"], steps: ["steps"], expected: ["expected"] };
+const TC_FIELD_TIKET = { title: ["title"], preconditions: ["precondition", "preconditions"], steps: ["test_steps", "steps"], expected: ["expected_result", "expected"] };
+const TC_DIAM_TIKET = ["id", "scenario_type"];
+
+function kasusJsonTestCase(c, no, peta, diam, errors) {
+  const kasus = { title: "", preconditions: [], steps: [], expected: [], ignored: [] };
+  if (!c || typeof c !== "object" || Array.isArray(c)) { errors.push(no + " bukan objek { title, preconditions, steps, expected }."); return kasus; }
+  for (const [f, sumber] of Object.entries(peta)) {
+    const ada = sumber.filter((k) => c[k] != null);
+    if (ada.length > 1) { errors.push(no + ": “" + ada.join("” dan “") + "” dua-duanya diisi — pakai salah satu."); continue; }
+    if (!ada.length) continue;
+    const k = ada[0], v = c[k];
+    if (f === "title") {
+      if (typeof v === "string") kasus.title = rapikanJudulTestCase(v);
+      else errors.push(no + ": “" + k + "” harus berupa teks.");
+    } else if (typeof v === "string") kasus[f] = v.trim() ? [v.trim()] : [];
+    else if (Array.isArray(v) && v.every((x) => typeof x === "string")) kasus[f] = v.map((x) => x.trim()).filter(Boolean);
+    else errors.push(no + ": “" + k + "” harus berupa teks atau daftar teks.");
+  }
+  const dikenal = [...Object.values(peta).flat(), ...diam];
+  kasus.ignored = Object.keys(c).filter((k) => !dikenal.includes(k));
+  return kasus;
+}
+
+/* ---------- tempelan banyak tiket ---------- */
+
+const TC_BUKAN_BUNDLE = "Tempelan tidak berisi task_id. Mode ini butuh JSON daftar tiket " +
+  "[{ \"task_id\": \"ABC-123\", \"test_cases\": [...] }]; format markdown / " + TESTCASE_FORMAT +
+  " (satu tiket) dipakai lewat tombol 🧪 di task tiketnya.";
+const objekTiketTestCase = (x) => !!x && typeof x === "object" && !Array.isArray(x) && ("task_id" in x || "test_cases" in x);
+
+// [{ task_id, task_name, endpoint, test_cases: [...] }] atau satu objek tiket →
+// satu kelompok per tiket. Error kelompok hanya memblokir tiket itu; `errors`
+// (JSON rusak, bukan format banyak tiket) memblokir semuanya.
+function parseTestCaseBundle(text) {
+  const out = { bundle: false, groups: [], errors: [] };
+  const awal = bukaPagarTestCase(rapikanBarisTestCase(text)).trim();
+  if (!awal) { out.errors.push("Belum ada teks — tempel test case dulu."); return out; }
+  if (!/^[[{]/.test(awal)) { out.errors.push(TC_BUKAN_BUNDLE); return out; }
+  let data;
+  try { data = JSON.parse(awal); } catch (e) {
+    // "[Positive] …" = markdown, bukan JSON patah — kecuali jelas berisi field tiket.
+    out.errors.push(awal.startsWith("{") || /"(task_id|test_cases)"/.test(awal) ? "JSON tidak valid: " + e.message : TC_BUKAN_BUNDLE);
+    return out;
+  }
+  const daftar = Array.isArray(data) ? data : [data];
+  if (!daftar.some(objekTiketTestCase)) { out.errors.push(TC_BUKAN_BUNDLE); return out; }
+  out.bundle = true;
+  const teks = (v) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim() : "");
+  daftar.forEach((x, i) => {
+    const g = { key: "", taskName: "", endpoint: "", cases: [], errors: [] };
+    out.groups.push(g);
+    if (!objekTiketTestCase(x)) { g.errors.push("Item #" + (i + 1) + " bukan objek tiket { task_id, test_cases }."); return; }
+    g.taskName = teks(x.task_name);
+    g.endpoint = teks(x.endpoint);
+    const id = typeof x.task_id === "string" ? x.task_id.trim() : x.task_id;
+    if (id == null || id === "") g.errors.push("task_id kosong — isi key tiket Jira (contoh: ABC-123).");
+    else if (typeof id !== "string") g.errors.push("task_id harus berupa teks (contoh: ABC-123).");
+    else {
+      g.key = id.toUpperCase();
+      if (!TC_KEY.test(g.key)) g.errors.push("task_id “" + id + "” bukan key tiket Jira (contoh: ABC-123).");
     }
-    kasus.ignored = Object.keys(c).filter((k) => !dikenal.includes(k));
+    if (!Array.isArray(x.test_cases)) g.errors.push("test_cases harus berupa daftar case.");
+    else if (!x.test_cases.length) g.errors.push("test_cases kosong.");
+    else x.test_cases.forEach((c, j) => g.cases.push(kasusJsonTestCase(c, "Case #" + (j + 1), TC_FIELD_TIKET, TC_DIAM_TIKET, g.errors)));
   });
+  // Tiket ganda tidak digabung diam-diam: semua kemunculannya error.
+  const jumlah = new Map();
+  for (const g of out.groups) if (g.key) jumlah.set(g.key, (jumlah.get(g.key) || 0) + 1);
+  for (const g of out.groups) {
+    if (jumlah.get(g.key) > 1) g.errors.push(g.key + " muncul " + jumlah.get(g.key) + " kali di tempelan — gabungkan case-nya jadi satu tiket.");
+  }
+  return out;
+}
+
+// Panel 🧪 per task: tempelan banyak tiket → hanya kelompok tiket task ini;
+// format lama tetap lewat parseTestCases.
+function parseTestCasesUntukTiket(text, key) {
+  const b = parseTestCaseBundle(text);
+  if (!b.bundle) return parseTestCases(text);
+  const out = { format: TESTCASE_FORMAT, source: "bundle", cases: [], errors: [], info: "" };
+  const lain = [...new Set(b.groups.map((g) => g.key).filter((k) => k && k !== key))];
+  const g = b.groups.find((x) => x.key === key);
+  if (!g) {
+    out.errors.push("Tempelan tidak berisi " + key + ". Tiket di tempelan: " + (lain.join(", ") || "—") + ".");
+    return out;
+  }
+  out.cases = g.cases;
+  out.errors.push(...g.errors);
+  out.info = "Tempelan berisi " + b.groups.length + " tiket; panel ini memakai " + key + " (" + g.cases.length + " case)." +
+    (lain.length ? " Tiket lain: " + lain.join(", ") + " — pakai Jira → Test cases." : "");
+  return out;
 }
 
 function parseTestCasesMarkdown(isi, out) {
@@ -212,6 +305,52 @@ function validateTestCases(cases) {
   return res;
 }
 
+// Mode banyak tiket: validasi per tiket dari case yang dicentang (error parse +
+// batas 20 + validateTestCases) dan error tempelan (maks 10 tiket dicentang).
+// Tiket "siap" = dicentang dan bebas error.
+function cekBundleTestCase(parsed, pilihTiket, pilih) {
+  const groups = parsed.groups.map((g, i) => {
+    const dipilih = g.cases.filter((_, j) => pilih[i] && pilih[i][j]);
+    const v = validateTestCases(dipilih);
+    const errors = [...g.errors, ...(g.cases.length ? v.errors : [])];
+    return { dipilih, v, errors, siap: !!pilihTiket[i] && !errors.length && v.ok };
+  });
+  const errors = [...parsed.errors];
+  const n = pilihTiket.filter(Boolean).length;
+  if (n > TESTCASE_MAX_TIKET) errors.push(n + " tiket dicentang; maksimal " + TESTCASE_MAX_TIKET + " per Dry run/Push. Hapus centang sebagian.");
+  return { ok: !errors.length, errors, groups };
+}
+
+// Tiket yang ikut Push all: siap, Dry run-nya masih berlaku (sig = key + isi
+// case yang dicentang sekarang) dan ada case baru. Sisanya + alasan → konfirmasi.
+function rencanaPushBundle(parsed, pilihTiket, pilih, dry) {
+  const cek = cekBundleTestCase(parsed, pilihTiket, pilih);
+  const siap = [], kecuali = [];
+  if (!cek.ok) return { siap, kecuali, cek };
+  parsed.groups.forEach((g, i) => {
+    const c = cek.groups[i];
+    const key = g.key || "Tiket #" + (i + 1);
+    const d = dry[g.key];
+    let alasan = null;
+    if (!pilihTiket[i]) alasan = "tidak dicentang";
+    else if (!c.siap) alasan = "masih ada error";
+    else if (!d || d.loading || d.sig !== sigTestCase(g.key, c.dipilih)) alasan = "belum Dry run, atau isinya berubah sejak Dry run";
+    else if (d.error || !d.data) alasan = "Dry run gagal";
+    else if (!(d.data.counts && d.data.counts.create > 0)) alasan = "tidak ada case baru (semua Skip)";
+    if (alasan) kecuali.push({ key, alasan });
+    else siap.push({ key: g.key, cases: c.dipilih, d: d.data, n: d.data.counts.create });
+  });
+  return { siap, kecuali, cek };
+}
+
+// K2: task_name dari AI vs judul Jira, dibandingkan longgar (huruf kecil, tanda
+// baca diabaikan; sama atau salah satu memuat yang lain, mis. prefiks "[BE]").
+function judulMiripTestCase(a, b) {
+  const n = (s) => String(s || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const x = n(a), y = n(b);
+  return !!x && !!y && (x === y || x.includes(y) || y.includes(x));
+}
+
 /* ---------- draft per task ---------- */
 
 function bacaSemuaDraftTestCase() {
@@ -233,6 +372,19 @@ function simpanDraftTestCase(taskId, text) {
   try {
     if (Object.keys(semua).length) localStorage.setItem(TESTCASE_DRAFT_KEY, JSON.stringify(semua));
     else localStorage.removeItem(TESTCASE_DRAFT_KEY);
+  } catch {}
+}
+
+function bacaDraftBulkTestCase() {
+  try {
+    const v = JSON.parse(localStorage.getItem(TESTCASE_BULK_DRAFT_KEY));
+    return v && typeof v.text === "string" ? v.text : "";
+  } catch { return ""; }
+}
+function simpanDraftBulkTestCase(text) {
+  try {
+    if (String(text || "").trim()) localStorage.setItem(TESTCASE_BULK_DRAFT_KEY, JSON.stringify({ text: String(text), updatedAt: new Date().toISOString() }));
+    else localStorage.removeItem(TESTCASE_BULK_DRAFT_KEY);
   } catch {}
 }
 
@@ -311,7 +463,7 @@ function renderTestCasePanel(t) {
   const parseBtn = el("button", "btn-solid", "Parse");
   parseBtn.type = "button"; parseBtn.id = "tc-parse-" + t.id;
   parseBtn.onclick = () => {
-    const parsed = parseTestCases(ta.value);
+    const parsed = parseTestCasesUntukTiket(ta.value, key);
     simpanDraftTestCase(t.id, ta.value);
     testcaseHasil = { taskId: t.id, text: ta.value, parsed, pilih: parsed.cases.map(() => true) };
     renderLaluFokus(parseBtn.id);
@@ -353,6 +505,7 @@ function pratinjauTestCase(t, hasil) {
   const { parsed, pilih } = hasil;
   const wrap = el("div", "testcase-preview");
   wrap.setAttribute("aria-live", "polite");
+  if (parsed.info) wrap.append(el("p", "testcase-hint testcase-bundle-info", parsed.info));
   if (parsed.errors.length) wrap.append(daftarIsuTestCase(parsed.errors, "err"));
   if (!parsed.cases.length) return wrap;
 
@@ -408,28 +561,30 @@ function dryRunTestCase(t, dipilih) {
   return box;
 }
 
-async function jalankanDryRun(t, key, cases, sig) {
-  const masihSama = () => testcaseDry && testcaseDry.taskId === t.id && testcaseDry.sig === sig;
-  testcaseDry = { taskId: t.id, sig, loading: true, error: "", rinci: [], data: null };
-  renderLaluFokus("tc-dry-" + t.id);
-  let hasil;
+// Satu request Dry run untuk satu tiket → { data } atau { error, rinci }.
+async function previewTestCase(key, cases) {
   try {
     const r = await fetch(jiraProxy() + "/testcases/preview", {
       method: "POST", headers: { "Content-Type": "application/json", ...headerAkses() },
       body: JSON.stringify({ issueKey: key, cases: kirimanTestCase(cases) }),
     });
     const d = await r.json().catch(() => ({}));
-    if (r.ok && d && Array.isArray(d.plan)) hasil = { data: d };
-    else {
-      const rinci = [...(Array.isArray(d.errors) ? d.errors : [])];
-      (Array.isArray(d.cases) ? d.cases : []).forEach((c, i) => {
-        for (const e of (c && Array.isArray(c.errors) ? c.errors : [])) rinci.push("“" + ((cases[i] && cases[i].title) || "#" + (i + 1)) + "”: " + e);
-      });
-      hasil = { error: "Dry run gagal: " + (d.error || "HTTP " + r.status), rinci };
-    }
+    if (r.ok && d && Array.isArray(d.plan)) return { data: d };
+    const rinci = [...(Array.isArray(d.errors) ? d.errors : [])];
+    (Array.isArray(d.cases) ? d.cases : []).forEach((c, i) => {
+      for (const e of (c && Array.isArray(c.errors) ? c.errors : [])) rinci.push("“" + ((cases[i] && cases[i].title) || "#" + (i + 1)) + "”: " + e);
+    });
+    return { error: "Dry run gagal: " + (d.error || "HTTP " + r.status), rinci };
   } catch (e) {
-    hasil = { error: "Dry run gagal: " + ((e && e.message) || "koneksi"), rinci: [] };
+    return { error: "Dry run gagal: " + ((e && e.message) || "koneksi"), rinci: [] };
   }
+}
+
+async function jalankanDryRun(t, key, cases, sig) {
+  const masihSama = () => testcaseDry && testcaseDry.taskId === t.id && testcaseDry.sig === sig;
+  testcaseDry = { taskId: t.id, sig, loading: true, error: "", rinci: [], data: null };
+  renderLaluFokus("tc-dry-" + t.id);
+  const hasil = await previewTestCase(key, cases);
   if (!masihSama()) return; // pilihan/isi berubah selama request — hasil lama dibuang
   testcaseDry = { taskId: t.id, sig, loading: false, error: hasil.error || "", rinci: hasil.rinci || [], data: hasil.data || null };
   if (testcaseTaskId === t.id) renderLaluFokus("tc-dry-" + t.id);
@@ -482,6 +637,25 @@ const TC_STATUS = {
   pending: ["Pending", " warn"], failed: ["Failed", " err"], skipped_duplicate: ["Skipped", ""], skipped_busy: ["Busy", " warn"],
 };
 const TC_PERLU_LINK = ["created_unlinked", "link_unverified"];
+const TC_BERES = ["created_linked", "skipped_duplicate"];
+const pushBeresTestCase = (data) => data.results.every((x) => TC_BERES.includes(x.status));
+
+// Satu request Push untuk satu tiket → { data } atau { error }. `saran` =
+// langkah aman bila jaringan putus (hasil import tidak diketahui).
+async function pushTestCase(key, cases, previewHash, saran) {
+  try {
+    const r = await fetch(jiraProxy() + "/testcases/push", {
+      method: "POST", headers: { "Content-Type": "application/json", ...headerAkses() },
+      body: JSON.stringify({ issueKey: key, cases: kirimanTestCase(cases), previewHash }),
+    });
+    const b = await r.json().catch(() => ({}));
+    if (r.ok && b && Array.isArray(b.results)) return { data: b };
+    if (r.status === 404) return { error: "Push belum diaktifkan di Worker (flag TESTCASE_PUSH_ENABLED mati). Dry run tetap bisa dipakai." };
+    return { error: "Push gagal: " + (b.error || "HTTP " + r.status) };
+  } catch (e) {
+    return { error: "Push gagal: " + ((e && e.message) || "koneksi") + ". " + saran };
+  }
+}
 
 async function jalankanPushTestCase(t, d, cases) {
   const key = d.issueKey;
@@ -490,25 +664,12 @@ async function jalankanPushTestCase(t, d, cases) {
     (d.linkType || "QAlity Test") + "” ke " + key + "?\n\nIni menulis ke Jira/QAlity dan tidak dihapus otomatis.")) return;
   testcasePush = { taskId: t.id, loading: true, error: "", data: null };
   renderLaluFokus("tc-push-" + t.id);
-  let hasil;
-  try {
-    const r = await fetch(jiraProxy() + "/testcases/push", {
-      method: "POST", headers: { "Content-Type": "application/json", ...headerAkses() },
-      body: JSON.stringify({ issueKey: key, cases: kirimanTestCase(cases), previewHash: d.previewHash }),
-    });
-    const b = await r.json().catch(() => ({}));
-    if (r.ok && b && Array.isArray(b.results)) hasil = { data: b };
-    else if (r.status === 404) hasil = { error: "Push belum diaktifkan di Worker (flag TESTCASE_PUSH_ENABLED mati). Dry run tetap bisa dipakai." };
-    else hasil = { error: "Push gagal: " + (b.error || "HTTP " + r.status) };
-  } catch (e) {
-    hasil = { error: "Push gagal: " + ((e && e.message) || "koneksi") + ". Cek History sebelum mencoba lagi — bisa saja sebagian sudah terbuat." };
-  }
+  const hasil = await pushTestCase(key, cases, d.previewHash, "Cek History sebelum mencoba lagi — bisa saja sebagian sudah terbuat.");
   testcasePush = { taskId: t.id, loading: false, error: hasil.error || "", data: hasil.data || null };
   if (hasil.data) {
     // Rencana lama sudah dipakai; Dry run ulang akan menunjukkan sisanya.
     if (testcaseDry && testcaseDry.taskId === t.id) testcaseDry = null;
-    const beres = hasil.data.results.every((x) => x.status === "created_linked" || x.status === "skipped_duplicate");
-    if (beres) {
+    if (pushBeresTestCase(hasil.data)) {
       simpanDraftTestCase(t.id, "");
       if (testcaseHasil && testcaseHasil.taskId === t.id) testcaseHasil = null;
     }
@@ -542,7 +703,7 @@ function hasilPushTestCase(t, p) {
   const d = p.data;
   const n = d.counts || {};
   const bagian = Object.keys(TC_STATUS).filter((s) => n[s]).map((s) => n[s] + " " + TC_STATUS[s][0].toLowerCase());
-  const ok = d.results.every((x) => x.status === "created_linked" || x.status === "skipped_duplicate");
+  const ok = pushBeresTestCase(d);
   wrap.append(el("p", "testcase-status" + (ok ? " ok" : ""), "Push selesai — " + bagian.join(", ") + "." +
     (ok ? " Draft dibersihkan." : " Draft disimpan; yang Unlinked/Unverified bisa di-Retry link di History.")));
   const ul = el("ul", "testcase-rows");
@@ -583,19 +744,26 @@ function gantiRiwayatTestCase(t) {
   if (n) n.replaceWith(riwayatTestCase(t));
 }
 
-async function ulangLinkTestCase(t, key, testKey, btn) {
-  btn.disabled = true; btn.textContent = "Linking…";
+// POST /testcases/relink → { data: { status, error, … } } atau { error }.
+async function relinkTestCase(key, testKey) {
   try {
     const r = await fetch(jiraProxy() + "/testcases/relink", {
       method: "POST", headers: { "Content-Type": "application/json", ...headerAkses() },
       body: JSON.stringify({ issueKey: key, testKey }),
     });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
-    if (d.status !== "created_linked") alert("Link " + testKey + " belum terverifikasi: " + (d.error || d.status));
+    if (!r.ok || !d || typeof d.status !== "string") return { error: d.error || "HTTP " + r.status };
+    return { data: d };
   } catch (e) {
-    alert("Retry link gagal: " + ((e && e.message) || "koneksi"));
+    return { error: (e && e.message) || "koneksi" };
   }
+}
+
+async function ulangLinkTestCase(t, key, testKey, btn) {
+  btn.disabled = true; btn.textContent = "Linking…";
+  const h = await relinkTestCase(key, testKey);
+  if (h.error) alert("Retry link gagal: " + h.error);
+  else if (h.data.status !== "created_linked") alert("Link " + testKey + " belum terverifikasi: " + (h.data.error || h.data.status));
   await muatRiwayatTestCase(t);
 }
 
@@ -753,4 +921,322 @@ function kartuTestCase(t, c, i, pilih, isu) {
   if (isu && isu.errors.length) li.append(daftarIsuTestCase(isu.errors, "err"));
   if (isu && isu.warnings.length) li.append(daftarIsuTestCase(isu.warnings, "warn"));
   return li;
+}
+
+/* ---------- mode banyak tiket: tab Jira → Test cases ---------- */
+
+// { text, parsed, pilihTiket: [bool], pilih: [[bool]],
+//   dry: { key → { sig, loading, error, rinci, data } },
+//   push: { key → { loading, error, data, notTried } }, urutan: [key] (urutan hasil push),
+//   jalan: null | "dry" | "push", progres: "Checking 2/3 — …" }
+let testcaseBulk = null;
+function resetTestCaseBulk() { testcaseBulk = null; } // sign out / ganti akun
+
+function renderTestCaseBulk(wrap) {
+  const b = testcaseBulk;
+  const sec = el("section", "section s-jira testcase-bulk");
+  sec.id = "tcb";
+  const head = el("div", "section-head");
+  head.append(el("h2", null, "Test cases — multiple tickets"));
+  sec.append(head);
+  sec.append(el("p", "testcase-hint",
+    "Tempel JSON hasil AI berisi beberapa tiket: [{ task_id, task_name, endpoint, test_cases: [...] }]. Parse hanya di perangkat ini; " +
+    "Dry run all mengecek tiap tiket ke Jira/QAlity tanpa membuat apa pun; Push all baru menulis setelah dikonfirmasi, satu tiket per request, berurutan."));
+
+  const ta = document.createElement("textarea");
+  ta.className = "testcase-input";
+  ta.id = "tcb-input";
+  ta.rows = 10; ta.spellcheck = false;
+  ta.setAttribute("aria-label", "JSON test case banyak tiket");
+  ta.placeholder = '[\n  {\n    "task_id": "ABC-101",\n    "task_name": "…",\n    "test_cases": [\n' +
+    '      { "title": "Verify …", "precondition": "…", "test_steps": ["…"], "expected_result": ["…"] }\n    ]\n  }\n]';
+  ta.value = bacaDraftBulkTestCase();
+  const basi = el("p", "testcase-stale", "Teks berubah sejak Parse terakhir — klik Parse lagi supaya pratinjau sesuai.");
+  basi.setAttribute("role", "status");
+  const cekBasi = () => basi.classList.toggle("hidden", !(b && b.parsed) || ta.value === b.text);
+  ta.oninput = () => { simpanDraftBulkTestCase(ta.value); cekBasi(); };
+  cekBasi();
+  sec.append(ta, basi);
+
+  const sibuk = !!(b && b.jalan);
+  const aksi = el("div", "testcase-actions");
+  const parseBtn = el("button", "btn-solid", "Parse");
+  parseBtn.type = "button"; parseBtn.id = "tcb-parse"; parseBtn.disabled = sibuk;
+  parseBtn.onclick = () => {
+    const lama = testcaseBulk;
+    if (lama && lama.jalan) return;
+    const parsed = parseTestCaseBundle(ta.value);
+    simpanDraftBulkTestCase(ta.value);
+    const sama = !!lama && lama.text === ta.value;
+    testcaseBulk = {
+      text: ta.value, parsed,
+      pilihTiket: parsed.groups.map(() => true),
+      pilih: parsed.groups.map((g) => g.cases.map(() => true)),
+      // Dry run lama tetap dipakai selama sig-nya sama; hasil push hanya untuk tempelan yang sama.
+      dry: lama ? lama.dry : {}, push: sama ? lama.push : {}, urutan: sama ? lama.urutan : [],
+      jalan: null, progres: "",
+    };
+    renderLaluFokus(parseBtn.id);
+  };
+  const clearBtn = el("button", "btn-line", "Clear");
+  clearBtn.type = "button"; clearBtn.id = "tcb-clear"; clearBtn.disabled = sibuk;
+  clearBtn.onclick = () => {
+    if (testcaseBulk && testcaseBulk.jalan) return;
+    if (ta.value.trim() && !confirm("Kosongkan teks, pratinjau, dan hasil test case banyak tiket?")) return;
+    simpanDraftBulkTestCase("");
+    testcaseBulk = null;
+    renderLaluFokus(ta.id);
+  };
+  aksi.append(parseBtn, clearBtn);
+  sec.append(aksi);
+
+  if (b && b.urutan.length) sec.append(hasilPushBulkTestCase(b));
+  if (b && b.parsed) sec.append(pratinjauBulkTestCase(b));
+  wrap.append(sec);
+}
+
+function pratinjauBulkTestCase(b) {
+  const { parsed } = b;
+  const wrap = el("div", "testcase-preview");
+  wrap.setAttribute("aria-live", "polite");
+  const cek = cekBundleTestCase(parsed, b.pilihTiket, b.pilih);
+  if (cek.errors.length) wrap.append(daftarIsuTestCase(cek.errors, "err"));
+  if (!parsed.groups.length) return wrap;
+
+  const nPilih = b.pilihTiket.filter(Boolean).length;
+  const siapList = cek.groups.filter((c) => c.siap);
+  const nTahan = nPilih - siapList.length;
+  const ringkas = el("div", "testcase-summary");
+  ringkas.append(
+    el("span", "testcase-chip", parsed.groups.length + (parsed.groups.length === 1 ? " ticket" : " tickets")),
+    el("span", "testcase-chip", nPilih + " selected"),
+    el("span", "testcase-chip" + (nTahan ? " err" : ""), nTahan + " blocked"));
+  wrap.append(ringkas);
+
+  const ol = el("ol", "testcase-groups");
+  parsed.groups.forEach((g, i) => ol.append(kelompokBulkTestCase(b, g, i, cek.groups[i])));
+  wrap.append(ol);
+
+  const siap = cek.ok && siapList.length > 0;
+  const nCase = siapList.reduce((s, c) => s + c.dipilih.length, 0);
+  wrap.append(el("p", "testcase-status" + (siap ? " ok" : ""), !cek.ok
+    ? "Perbaiki error di atas dulu — semua tiket tertahan."
+    : siap ? siapList.length + " tiket siap (" + nCase + " case)." + (nTahan ? " " + nTahan + " tiket bertanda Error tidak ikut." : "") +
+      " Dry run all mengecek project, duplikat, dan judul Jira tiap tiket."
+    : "Belum ada tiket yang siap — perbaiki yang bertanda Error atau hapus centangnya."));
+  if (siap) {
+    const rencana = rencanaPushBundle(parsed, b.pilihTiket, b.pilih, b.dry);
+    const bar = el("div", "testcase-actions");
+    // aria-disabled (bukan disabled) selama berjalan supaya fokus keyboard tidak hilang.
+    const dry = el("button", "btn-solid", b.jalan === "dry" ? "Checking…" : "Dry run all");
+    dry.type = "button"; dry.id = "tcb-dry";
+    dry.title = "Cek tiap tiket ke Jira & QAlity tanpa membuat apa pun";
+    dry.disabled = !jiraProxy();
+    dry.setAttribute("aria-disabled", String(!!b.jalan));
+    dry.onclick = () => dryRunSemuaTestCase();
+    bar.append(dry);
+    if (rencana.siap.length || b.jalan === "push") {
+      const push = el("button", "btn-solid", b.jalan === "push" ? "Pushing…" : "Push all");
+      push.type = "button"; push.id = "tcb-push";
+      push.title = "Buat test case di QAlity lalu link ke tiketnya, satu tiket per request";
+      push.disabled = !jiraProxy();
+      push.setAttribute("aria-disabled", String(!!b.jalan));
+      push.onclick = () => pushSemuaTestCase();
+      bar.append(push);
+    }
+    wrap.append(bar);
+    if (rencana.siap.length && !b.jalan) {
+      wrap.append(el("p", "testcase-hint", "Siap push: " + rencana.siap.map((x) => x.key + " (" + x.n + " case)").join(", ") + "."));
+    }
+    if (!jiraProxy()) wrap.append(el("p", "testcase-hint", "Dry run butuh sign in (Settings → Account) dan token QAlity."));
+  }
+  if (b.jalan) {
+    const p = el("p", "testcase-hint testcase-progress", b.progres);
+    p.setAttribute("role", "status");
+    wrap.append(p);
+  }
+  return wrap;
+}
+
+function kelompokBulkTestCase(b, g, i, c) {
+  const aktif = !!b.pilihTiket[i];
+  const li = el("li", "testcase-group" + (!aktif ? " excluded" : c.siap ? "" : " has-error"));
+  li.id = "tcb-group-" + i;
+  const head = el("label", "testcase-group-head");
+  const cb = document.createElement("input");
+  cb.type = "checkbox"; cb.checked = aktif; cb.id = "tcb-tiket-" + i; cb.disabled = !!b.jalan;
+  cb.setAttribute("aria-label", "Ikutkan " + (g.key || "tiket #" + (i + 1)));
+  cb.onchange = () => { b.pilihTiket[i] = cb.checked; renderLaluFokus(cb.id); };
+  head.append(cb, el("span", "jira-key", g.key || "?"),
+    el("span", "testcase-group-name" + (g.taskName ? "" : " empty"), g.taskName || "(tanpa task_name)"));
+  if (!aktif) head.append(el("span", "testcase-badge", "Excluded"));
+  li.append(head);
+  if (g.endpoint) li.append(el("p", "testcase-hint mono", g.endpoint));
+
+  const pilih = b.pilih[i];
+  let j = 0;
+  const isu = g.cases.map((_, k) => (pilih[k] ? c.v.cases[j++] : null));
+  const nErr = c.errors.length + isu.filter((x) => x && x.errors.length).length;
+  const nWarn = isu.filter((x) => x && x.warnings.length).length;
+  const chips = el("div", "testcase-summary");
+  chips.append(
+    el("span", "testcase-chip", g.cases.length + (g.cases.length === 1 ? " case" : " cases")),
+    el("span", "testcase-chip", c.dipilih.length + " selected"),
+    el("span", "testcase-chip" + (nErr ? " err" : ""), nErr + (nErr === 1 ? " error" : " errors")),
+    el("span", "testcase-chip" + (nWarn ? " warn" : ""), nWarn + (nWarn === 1 ? " warning" : " warnings")));
+  li.append(chips);
+  if (c.errors.length) li.append(daftarIsuTestCase(c.errors, "err"));
+  if (g.cases.length) {
+    const ol = el("ol", "testcase-list");
+    g.cases.forEach((x, k) => ol.append(kartuTestCase({ id: "tcb" + i }, x, k, pilih, isu[k])));
+    if (b.jalan) ol.querySelectorAll("input").forEach((n) => { n.disabled = true; });
+    li.append(ol);
+  }
+  // Hasil Dry run hanya tampil selama isi + centang tiket ini masih sama.
+  const d = aktif && b.dry[g.key];
+  if (d && d.sig === sigTestCase(g.key, c.dipilih)) {
+    if (d.loading) li.append(el("p", "testcase-hint", "Checking…"));
+    if (d.error) li.append(daftarIsuTestCase([d.error, ...d.rinci], "err"));
+    if (d.data) li.append(judulJiraTestCase(d.data, g.taskName), rencanaTestCase(d.data, null, c.dipilih));
+  }
+  return li;
+}
+
+// K2: judul tiket asli dari Jira di samping task_name dari AI.
+function judulJiraTestCase(d, taskName) {
+  const box = el("div", "testcase-jira-title");
+  if (typeof d.issueSummary !== "string") {
+    box.append(el("p", "testcase-hint", "Judul Jira belum tersedia (Worker belum diperbarui)."));
+    return box;
+  }
+  const p = el("p", "testcase-hint");
+  p.append("Judul Jira: ", el("strong", null, d.issueSummary || "(kosong)"));
+  box.append(p);
+  if (taskName && !judulMiripTestCase(taskName, d.issueSummary)) {
+    box.append(daftarIsuTestCase(["Judul Jira beda dengan task_name dari AI (“" + taskName + "”) — pastikan task_id-nya benar."], "warn"));
+  }
+  return box;
+}
+
+// Dry run all: satu POST /testcases/preview per tiket siap, berurutan. Tiket
+// yang gagal hanya menahan dirinya sendiri.
+async function dryRunSemuaTestCase() {
+  const b = testcaseBulk;
+  if (!b || !b.parsed || b.jalan || !jiraProxy()) return;
+  const cek = cekBundleTestCase(b.parsed, b.pilihTiket, b.pilih);
+  if (!cek.ok) return;
+  const antre = b.parsed.groups.map((g, i) => ({ key: g.key, cases: cek.groups[i].dipilih })).filter((_, i) => cek.groups[i].siap);
+  if (!antre.length) return;
+  b.jalan = "dry";
+  for (const [n, x] of antre.entries()) {
+    const sig = sigTestCase(x.key, x.cases);
+    b.progres = "Checking " + (n + 1) + "/" + antre.length + " — " + x.key + "…";
+    b.dry[x.key] = { sig, loading: true, error: "", rinci: [], data: null };
+    render();
+    const h = await previewTestCase(x.key, x.cases);
+    if (testcaseBulk !== b) return; // Clear / ganti akun selama request
+    b.dry[x.key] = { sig, loading: false, error: h.error || "", rinci: h.rinci || [], data: h.data || null };
+  }
+  b.jalan = null; b.progres = "";
+  render();
+}
+
+// Push all: satu konfirmasi, lalu satu POST /testcases/push per tiket (dengan
+// previewHash miliknya), berurutan. Berhenti — sisanya Not tried — bila respons
+// bukan 200/jaringan putus, atau ada hasil failed/pending.
+async function pushSemuaTestCase() {
+  const b = testcaseBulk;
+  if (!b || !b.parsed || b.jalan || !jiraProxy()) return;
+  const { siap, kecuali } = rencanaPushBundle(b.parsed, b.pilihTiket, b.pilih, b.dry);
+  if (!siap.length) return;
+  const total = siap.reduce((s, x) => s + x.n, 0);
+  if (!confirm("Buat " + total + " test case di QAlity lalu link “QAlity Test” ke tiketnya?\n\n" +
+    siap.map((x) => x.key + ": " + x.n + " case (project " + ((x.d.project && x.d.project.key) || "?") + ")").join("\n") +
+    (kecuali.length ? "\n\nTidak ikut:\n" + kecuali.map((x) => x.key + ": " + x.alasan).join("\n") : "") +
+    "\n\nSatu tiket per request, berurutan; berhenti bila ada yang gagal. Ini menulis ke Jira/QAlity dan tidak dihapus otomatis.")) return;
+  b.jalan = "push";
+  let henti = null;
+  for (const [n, x] of siap.entries()) {
+    if (!b.urutan.includes(x.key)) b.urutan.push(x.key);
+    if (henti) {
+      b.push[x.key] = { notTried: true, error: "Tidak dicoba — Push all berhenti setelah " + henti + " gagal atau hasilnya belum pasti." };
+      continue;
+    }
+    b.progres = "Pushing " + (n + 1) + "/" + siap.length + " — " + x.key + "…";
+    b.push[x.key] = { loading: true };
+    render();
+    const h = await pushTestCase(x.key, x.cases, x.d.previewHash, "Dry run all lagi sebelum mencoba — bisa saja sebagian sudah terbuat.");
+    if (testcaseBulk !== b) return;
+    b.push[x.key] = { error: h.error || "", data: h.data || null };
+    if (h.data) delete b.dry[x.key]; // rencana sudah dipakai; Dry run ulang menunjukkan sisanya
+    if (!h.data || h.data.results.some((r) => r.status === "failed" || r.status === "pending")) henti = x.key;
+  }
+  b.jalan = null; b.progres = "";
+  // Draft dibersihkan hanya bila SEMUA tiket di tempelan beres.
+  if (b.parsed.groups.every((g) => b.push[g.key] && b.push[g.key].data && pushBeresTestCase(b.push[g.key].data))) {
+    simpanDraftBulkTestCase("");
+    b.text = ""; b.parsed = null; b.pilihTiket = []; b.pilih = [];
+  }
+  renderLaluFokus("tcb-pushres");
+}
+
+function hasilPushBulkTestCase(b) {
+  const wrap = el("div", "testcase-pushres");
+  wrap.id = "tcb-pushres";
+  wrap.tabIndex = -1;
+  wrap.setAttribute("role", "status");
+  const head = el("div", "testcase-plan-head");
+  head.append(el("strong", "testcase-title", "Push results"));
+  wrap.append(head);
+  const hasil = b.urutan.map((key) => [key, b.push[key] || {}]);
+  if (b.jalan !== "push") {
+    const beres = hasil.filter(([, p]) => p.data && pushBeresTestCase(p.data)).length;
+    const lewat = hasil.filter(([, p]) => p.notTried).length;
+    const masalah = hasil.length - beres - lewat;
+    wrap.append(el("p", "testcase-status" + (masalah || lewat ? "" : " ok"),
+      "Push selesai — " + beres + " tiket beres" + (masalah ? ", " + masalah + " bermasalah" : "") + (lewat ? ", " + lewat + " tidak dicoba" : "") + "." +
+      (b.parsed ? " Draft disimpan; perbaiki lalu Dry run all + Push all lagi untuk sisanya." : " Semua tiket beres — draft dibersihkan.")));
+  }
+  for (const [key, p] of hasil) {
+    const box = el("div", "testcase-push-ticket");
+    const st = p.data ? p.data.results.map((x) => x.status) : [];
+    const [label, kelas] = p.loading ? ["Pushing…", ""] : p.notTried ? ["Not tried", " not-tried"]
+      : p.error || st.includes("failed") ? ["Failed", " err"] : p.data && pushBeresTestCase(p.data) ? ["Done", " create"] : ["Check", " warn"];
+    const h = el("div", "testcase-plan-head");
+    h.append(tautanTiket(key), el("span", "testcase-badge" + kelas, label));
+    box.append(h);
+    if (p.error) box.append(p.notTried ? el("p", "testcase-hint", p.error) : daftarIsuTestCase([p.error], "err"));
+    if (p.data) {
+      const ul = el("ul", "testcase-rows");
+      for (const x of p.data.results) {
+        const li = barisStatusTestCase(x.status, x.title, x.testKey, x.error);
+        if (x.testKey && TC_PERLU_LINK.includes(x.status)) {
+          const btn = el("button", "btn-line", "Retry link");
+          btn.type = "button";
+          btn.disabled = !!b.jalan || !jiraProxy();
+          btn.title = "Link ulang " + x.testKey + " ke " + key + " lalu baca balik";
+          btn.onclick = () => ulangLinkBulkTestCase(b, key, x, btn);
+          li.insertBefore(btn, li.querySelector(".testcase-hint"));
+        }
+        ul.append(li);
+      }
+      box.append(ul);
+      if (Array.isArray(p.data.unmappedKeys) && p.data.unmappedKeys.length) {
+        box.append(el("p", "testcase-hint", "QAlity juga mengembalikan " + p.data.unmappedKeys.join(", ") +
+          " yang tidak cocok ke case mana pun — sudah di-link ke " + key + "; cek di Jira."));
+      }
+    }
+    wrap.append(box);
+  }
+  return wrap;
+}
+
+// Retry link di hasil Push all — tiketnya belum tentu ada sebagai task CATET,
+// jadi status baris diperbarui di sini, bukan lewat History panel per task.
+async function ulangLinkBulkTestCase(b, key, x, btn) {
+  btn.disabled = true; btn.textContent = "Linking…";
+  const h = await relinkTestCase(key, x.testKey);
+  if (h.data) { x.status = h.data.status; x.error = h.data.error || null; }
+  else x.error = "Retry link gagal: " + h.error;
+  if (testcaseBulk === b) renderLaluFokus("tcb-pushres");
 }

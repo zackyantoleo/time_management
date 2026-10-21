@@ -59,7 +59,10 @@ function updateBoardLayout() {
 
 function render() {
   const active = document.activeElement;
-  const jiraControl = active && /^jira-(filter-|worklog-)/.test(active.id) ? active.id : null;
+  // Kontrol tab Jira (termasuk mode Test cases) dicari ulang lewat id; posisi
+  // kursor textarea ikut dipulihkan supaya sinkron berkala tidak mengganggu ketikan.
+  const jiraControl = active && /^(jira-(filter-|worklog-)|tcb-|tc-pick-tcb)/.test(active.id) ? active.id : null;
+  const kursor = jiraControl && active.tagName === "TEXTAREA" ? [active.selectionStart, active.selectionEnd, active.scrollTop] : null;
   const owner = active && active.closest("[data-task-id], [data-log-id]");
   const focus = owner && { task: owner.dataset.taskId, log: owner.dataset.logId,
     index: [...owner.querySelectorAll("button, a, summary")].indexOf(active) };
@@ -69,6 +72,7 @@ function render() {
   if (jiraControl && !active.isConnected) {
     const control = document.getElementById(jiraControl);
     if (control) control.focus({ preventScroll: true });
+    if (control && kursor && control.tagName === "TEXTAREA") { control.setSelectionRange(kursor[0], kursor[1]); control.scrollTop = kursor[2]; }
   }
   if (focus && !active.isConnected) {
     const row = [...document.querySelectorAll("[data-task-id], [data-log-id]")]
