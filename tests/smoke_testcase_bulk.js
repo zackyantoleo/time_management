@@ -3,6 +3,7 @@
 // Parse per tiket → Dry run all (berurutan, satu tiket 400, satu judul beda) →
 // Push all (satu konfirmasi, previewHash per tiket, berhenti setelah failed,
 // sisanya Not tried) → Retry link → putaran kedua sukses membersihkan draft.
+// Template prompt AI (salin) + prefix judul tiket Jira di tiap title saat Dry run.
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -27,7 +28,8 @@ const ROUND1 = [
 const SAMPLE = '```json\n' + JSON.stringify(ROUND1, null, 2) + '\n```';
 const ROUND2 = JSON.stringify([ROUND1[2], ROUND1[3]], null, 2);
 const ELEVEN = JSON.stringify(Array.from({ length: 11 }, (_, i) => ({ task_id: 'ABC-' + (301 + i), test_cases: [kasus(1, 'Verify Example ' + i)] })));
-const SUMMARY = { 'ABC-201': '[BE] Example profile endpoint', 'ABC-203': 'Completely different synthetic title', 'ABC-204': 'Example Invoice Endpoint' };
+const SUMMARY = { 'ABC-201': '[BE] Example profile endpoint', 'XYZ-202': 'Example Inactive Project', 'ABC-203': 'Completely different synthetic title', 'ABC-204': 'Example Invoice Endpoint' };
+const pre = key => SUMMARY[key] + ' - ';
 
 (async () => {
   const server = spawn('python3', ['-m', 'http.server', String(PORT), '--bind', '127.0.0.1'], { cwd: root, stdio: 'ignore' });
@@ -38,6 +40,7 @@ const SUMMARY = { 'ABC-201': '[BE] Example profile endpoint', 'ABC-203': 'Comple
     browser = await chromium.launch({ headless: true, args: ['--allow-file-access-from-files'], ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}) });
     for (const mode of ['http', 'file']) {
       const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block' });
+      if (mode === 'http') await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'http://127.0.0.1:' + PORT });
       const page = await context.newPage();
       const errors = [], consoleErrors = [], workerCalls = [], blocked = [], stateBodies = [], previewBodies = [], pushBodies = [], relinkBodies = [];
       let hold = null, release = null, round = 1;
@@ -56,13 +59,19 @@ const SUMMARY = { 'ABC-201': '[BE] Example profile endpoint', 'ABC-203': 'Comple
         if (u.hostname !== 'synthetic.invalid') { blocked.push(u.hostname); return route.abort(); }
         workerCalls.push(req.method() + ' ' + u.pathname);
         if (u.pathname === '/state' && req.method() !== 'GET') stateBodies.push(req.postData() || '');
+        if (u.pathname === '/testcases' && req.method() === 'GET') {
+          const issueKey = u.searchParams.get('issue');
+          return route.fulfill({ json: { issueKey, issueSummary: SUMMARY[issueKey], projectKey: issueKey.split('-')[0], existing: [], history: [] } });
+        }
         if (u.pathname === '/testcases/preview') {
           const body = JSON.parse(req.postData() || '{}');
           previewBodies.push(body);
           if (hold && body.issueKey === hold) await new Promise(r => { release = r; });
           if (body.issueKey === 'XYZ-202') return route.fulfill({ status: 400, json: { error: 'Project XYZ belum aktif di QAlity untuk akunmu, jadi belum didukung. Project aktif: ABC.' } });
           return route.fulfill({ json: {
-            issueKey: body.issueKey, issueSummary: SUMMARY[body.issueKey], project: { key: 'ABC', id: '10999' }, linkType: 'QAlity Test', existing: [],
+            issueKey: body.issueKey, issueSummary: SUMMARY[body.issueKey], project: { key: 'ABC', id: '10999' }, linkType: 'QAlity Test',
+            // ABC-204: test case lama ber-judul tanpa prefix (dibuat sebelum ada prefix).
+            existing: body.issueKey === 'ABC-204' ? [{ key: 'ABC-990', summary: 'Verify Example Invoice A', status: 'To Do', linkType: 'QAlity Test' }] : [],
             counts: { create: body.cases.length, skip: 0 }, previewHash: body.issueKey.slice(-1).repeat(64),
             plan: body.cases.map((c, i) => ({ index: i, title: c.title, action: 'create', duplicateOf: null, reason: null,
               testCase: { name: c.title, properties: {}, testSteps: [{ step: c.steps[0], data: '', result: '1. ' + c.expected[0], position: 1 }] } })),
@@ -104,6 +113,23 @@ const SUMMARY = { 'ABC-201': '[BE] Example profile endpoint', 'ABC-203': 'Comple
 
       await open();
       assert.equal(await page.locator('#jira-filter-missing-worklog').count(), 1, 'chip lama tetap ada');
+      // Template prompt AI: terlipat, bisa dibuka, tetap terbuka saat render(), Copy prompt menyalin teks persis.
+      const prompt = sec.locator('#tcb-prompt');
+      assert.equal(await prompt.evaluate(n => n.open), false, 'prompt terlipat secara default');
+      await prompt.locator('summary', { hasText: 'AI prompt template' }).click();
+      const teksPrompt = await prompt.locator('.testcase-prompt-text').textContent();
+      assert.equal(teksPrompt, await page.evaluate(() => TESTCASE_PROMPT));
+      for (const re of [/"task_id": "ABC-123"/, /"expected_result"/, /Do NOT include the ticket title/, /## Tickets\n</]) assert.match(teksPrompt, re);
+      await page.evaluate(() => render());
+      assert.equal(await prompt.evaluate(n => n.open), true, 'tetap terbuka setelah render()');
+      await prompt.getByRole('button', { name: 'Copy prompt', exact: true }).click();
+      await prompt.getByRole('button', { name: 'Copied ✓', exact: true }).waitFor();
+      if (mode === 'http') assert.equal(await page.evaluate(() => navigator.clipboard.readText()), teksPrompt, 'clipboard = prompt persis');
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'prompt tidak melebar');
+      for (const theme of ['light', 'dark']) {
+        await page.evaluate(t => document.documentElement.dataset.theme = t, theme);
+        await prompt.screenshot({ path: path.join(out, `bulk-${mode}-prompt-${theme}.png`) });
+      }
       // Parse: kelompok per tiket, key di-uppercase, teks pengguna tetap teks.
       await sec.locator('#tcb-input').fill(SAMPLE);
       assert.equal((await draft()).text, SAMPLE, 'draft disimpan saat mengetik');
@@ -150,7 +176,14 @@ const SUMMARY = { 'ABC-201': '[BE] Example profile endpoint', 'ABC-203': 'Comple
       await sec.locator('.testcase-progress').waitFor({ state: 'detached' });
       assert.deepEqual(previewBodies.map(b => [b.issueKey, b.cases.length]), [['ABC-201', 2], ['XYZ-202', 1], ['ABC-203', 1], ['ABC-204', 2]]);
       assert.deepEqual(previewBodies[0].cases.map(c => Object.keys(c).sort()), [['expected', 'preconditions', 'steps', 'title'], ['expected', 'preconditions', 'steps', 'title']], 'id/scenario_type tidak dikirim');
-      assert.deepEqual(previewBodies[0].cases.map(c => c.title), ['Verify Example Profile Success', XSS]);
+      // Prefix = judul tiket dari Jira (GET /testcases), bukan task_name dari AI.
+      assert.deepEqual(previewBodies[0].cases.map(c => c.title), [pre('ABC-201') + 'Verify Example Profile Success', pre('ABC-201') + XSS]);
+      assert.deepEqual(previewBodies[2].cases.map(c => c.title), [pre('ABC-203') + 'Verify Example Order']);
+      assert.deepEqual(await group('ABC-201').locator('.testcase-plan .testcase-title').allTextContents(), [pre('ABC-201') + 'Verify Example Profile Success', pre('ABC-201') + XSS]);
+      assert.deepEqual(await group('ABC-201').locator('.testcase-card-head .testcase-title').allTextContents(), ['Verify Example Profile Success', XSS, 'Verify Example Profile Third'], 'pratinjau parse tetap tanpa prefix');
+      // Case yang mirip test case lama tanpa prefix → warning, tidak memblokir.
+      assert.match(await group('ABC-204').locator('.testcase-plan .testcase-card').nth(0).locator('.testcase-issues.warn').textContent(), /Sudah ada ABC-990 berjudul sama tanpa prefix/);
+      assert.equal(await group('ABC-204').locator('.testcase-plan .testcase-card').nth(1).locator('.testcase-issues.warn').count(), 0);
       assert.equal(await page.evaluate(() => document.activeElement.id), 'tcb-dry', 'fokus tetap di Dry run all');
       // Hasil per tiket: OK + judul Jira (prefiks [BE] tetap dianggap sama); 400 hanya menahan tiket itu; judul beda → warning.
       assert.match(await group('ABC-201').locator('.testcase-plan .testcase-status.ok').textContent(), /2 test case akan dibuat di project ABC/);
@@ -262,7 +295,7 @@ const SUMMARY = { 'ABC-201': '[BE] Example profile endpoint', 'ABC-203': 'Comple
       assert.equal(n(/^POST \/testcases\/preview$/), 6);
       assert.equal(n(/^POST \/testcases\/push$/), 4);
       assert.equal(n(/^POST \/testcases\/relink$/), 1);
-      assert.equal(n(/^GET \/testcases$/), 0, 'mode banyak tiket tidak memuat History per tiket');
+      assert.equal(n(/^GET \/testcases$/), 6, 'satu GET judul tiket (prefix) per Dry run tiket, tanpa History');
       assert.deepEqual(blocked, [], 'tidak ada request ke host lain (Jira/QAlity)');
       assert(!stateBodies.some(b => b.includes(MARKER)), 'draft tidak ikut /state');
       assert.deepEqual(errors, []);
@@ -270,7 +303,7 @@ const SUMMARY = { 'ABC-201': '[BE] Example profile endpoint', 'ABC-203': 'Comple
       const expected = /Failed to load resource: the server responded with a status of 400/;
       assert.equal(consoleErrors.filter(m => expected.test(m)).length, 1);
       assert.deepEqual(consoleErrors.filter(m => !expected.test(m)), []);
-      console.log(`PASS ${mode}: chip/parse/K3/XSS-safe/draft reload/uncheck/dry run all sequential+progress+400+title mismatch/stale sig/push all confirm+order+hash+stop rule+Not tried/retry link/11 tickets/round 2 clears draft/mobile/account reset, no console errors`);
+      console.log(`PASS ${mode}: prompt template copy/prefix judul tiket + warning judul lama/chip/parse/K3/XSS-safe/draft reload/uncheck/dry run all sequential+progress+400+title mismatch/stale sig/push all confirm+order+hash+stop rule+Not tried/retry link/11 tickets/round 2 clears draft/mobile/account reset, no console errors`);
       await context.close();
     }
     console.log('Screenshots: ' + out);

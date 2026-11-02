@@ -855,7 +855,24 @@
   .testcase-push-ticket + .testcase-push-ticket { padding-top: 8px; border-top: 1px dashed var(--line); }
   .testcase-badge.not-tried { border-style: dashed; color: var(--ink-faint); }
   .testcase-progress { font-weight: 600; }
+  /* Template prompt AI (dilipat) di atas kolom tempel banyak tiket. */
+  .testcase-prompt { border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); padding: 0 10px; min-width: 0; }
+  .testcase-prompt > summary {
+    cursor: pointer; list-style: none; user-select: none; padding: 8px 0;
+    font-size: 12.5px; font-weight: 600; color: var(--ink-muted);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .testcase-prompt > summary::-webkit-details-marker { display: none; }
+  .testcase-prompt > summary::before { content: "▸"; font-size: 10px; }
+  .testcase-prompt[open] > summary::before { content: "▾"; }
+  .testcase-prompt-body { display: flex; flex-direction: column; gap: 8px; padding-bottom: 10px; min-width: 0; }
+  .testcase-prompt-text {
+    margin: 0; max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+    font: 11.5px/1.5 ui-monospace, Menlo, monospace; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
+  }
   @media (max-width: 760px) {
+    .testcase-prompt > summary { min-height: 44px; }
     .testcase-card-head, .testcase-group-head { min-height: 44px; }
     .testcase-card-head input, .testcase-group-head input { width: 20px; height: 20px; }
   }
