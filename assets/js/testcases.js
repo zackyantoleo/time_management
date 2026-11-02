@@ -4,7 +4,8 @@
 // (read-only). Push (setelah dry run + konfirmasi) membuat test case di QAlity
 // dan me-link-nya ke tiket; Worker hanya menerimanya bila flag push menyala.
 // Tab Jira → Test cases: satu tempelan JSON berisi beberapa tiket, dipecah per
-// tiket lalu Dry run/Push satu tiket per request, berurutan.
+// tiket lalu Dry run/Push satu tiket per request, berurutan. Saat Dry run judul
+// tiap case diberi prefix judul tiket Jira ("<judul tiket> - <title>").
 // Token QAlity diatur di Settings.
 "use strict";
 
@@ -322,7 +323,8 @@ function cekBundleTestCase(parsed, pilihTiket, pilih) {
 }
 
 // Tiket yang ikut Push all: siap, Dry run-nya masih berlaku (sig = key + isi
-// case yang dicentang sekarang) dan ada case baru. Sisanya + alasan → konfirmasi.
+// case yang dicentang sekarang) dan ada case baru. Yang dipush = `kirim` dari
+// Dry run (sudah ber-prefix). Sisanya + alasan → konfirmasi.
 function rencanaPushBundle(parsed, pilihTiket, pilih, dry) {
   const cek = cekBundleTestCase(parsed, pilihTiket, pilih);
   const siap = [], kecuali = [];
@@ -335,10 +337,10 @@ function rencanaPushBundle(parsed, pilihTiket, pilih, dry) {
     if (!pilihTiket[i]) alasan = "tidak dicentang";
     else if (!c.siap) alasan = "masih ada error";
     else if (!d || d.loading || d.sig !== sigTestCase(g.key, c.dipilih)) alasan = "belum Dry run, atau isinya berubah sejak Dry run";
-    else if (d.error || !d.data) alasan = "Dry run gagal";
+    else if (d.error || !d.data || !Array.isArray(d.kirim)) alasan = "Dry run gagal";
     else if (!(d.data.counts && d.data.counts.create > 0)) alasan = "tidak ada case baru (semua Skip)";
     if (alasan) kecuali.push({ key, alasan });
-    else siap.push({ key: g.key, cases: c.dipilih, d: d.data, n: d.data.counts.create });
+    else siap.push({ key: g.key, cases: d.kirim, d: d.data, n: d.data.counts.create });
   });
   return { siap, kecuali, cek };
 }
@@ -392,8 +394,8 @@ function simpanDraftBulkTestCase(text) {
 
 let testcaseTaskId = null; // task yang panel Test cases-nya terbuka
 let testcaseHasil = null;  // { taskId, text, parsed, pilih: [bool] } — parse terakhir
-// Dry run terakhir: { taskId, sig, loading, error, rinci, data }. sig = isi case
-// terpilih saat dikirim; hasil hanya tampil selama pilihan/isi masih sama.
+// Dry run terakhir: { taskId, sig, loading, error, rinci, data, kirim }. sig = isi
+// case terpilih saat dikirim; hasil hanya tampil selama pilihan/isi masih sama.
 let testcaseDry = null;
 // Push terakhir: { taskId, loading, error, data } — tetap tampil walau draft
 // sudah dibersihkan setelah push sukses.
@@ -441,8 +443,8 @@ function renderTestCasePanel(t) {
   panel.append(head);
   panel.append(el("p", "testcase-hint",
     "Tempel test case hasil AI: bagian Title / Precondition / Test Step(s) / Expected Result, antar-case dipisah ---, " +
-    "atau JSON " + TESTCASE_FORMAT + ". Parse hanya di perangkat ini; Dry run mengecek ke Jira/QAlity tanpa membuat apa pun; " +
-    "Push baru menulis ke QAlity setelah dikonfirmasi."));
+    "atau JSON " + TESTCASE_FORMAT + ". Parse hanya di perangkat ini; Dry run mengecek ke Jira/QAlity tanpa membuat apa pun " +
+    "dan memberi prefix judul tiket Jira di depan tiap title (“<judul tiket> - <title>”); Push baru menulis ke QAlity setelah dikonfirmasi."));
 
   const hasil = testcaseHasil && testcaseHasil.taskId === t.id ? testcaseHasil : null;
   const ta = document.createElement("textarea");
@@ -540,7 +542,18 @@ function pratinjauTestCase(t, hasil) {
 /* ---------- dry run (Worker, read-only) ---------- */
 
 const kirimanTestCase = (cases) => cases.map((c) => ({ title: c.title, preconditions: c.preconditions, steps: c.steps, expected: c.expected }));
+// sig = pilihan pengguna SEBELUM prefix; isi yang dikirim disimpan terpisah (`kirim`).
 const sigTestCase = (key, cases) => JSON.stringify([key, kirimanTestCase(cases)]);
+
+// Judul case di QAlity = "<judul tiket Jira> - <title>" (permintaan Zack 2 Nov).
+// Title yang sudah diawali judul tiket + " - " tidak diberi prefix dua kali.
+const TC_PREFIX_PISAH = " - ";
+function beriPrefixTestCase(cases, judulTiket) {
+  const p = String(judulTiket || "").replace(/\s+/g, " ").trim();
+  if (!p) return cases;
+  const awal = kunciJudulTestCase(p) + TC_PREFIX_PISAH;
+  return cases.map((c) => (kunciJudulTestCase(c.title).startsWith(awal) ? c : { ...c, title: p + TC_PREFIX_PISAH + c.title }));
+}
 
 function dryRunTestCase(t, dipilih) {
   const key = keyTestCase(t);
@@ -557,22 +570,30 @@ function dryRunTestCase(t, dipilih) {
   box.append(bar);
   if (!jiraProxy()) box.append(el("p", "testcase-hint", "Dry run butuh sign in (Settings → Account) dan token QAlity."));
   if (d && d.error) box.append(daftarIsuTestCase([d.error, ...(d.rinci || [])], "err"));
-  if (d && d.data) box.append(rencanaTestCase(d.data, t, dipilih));
+  if (d && d.data) box.append(rencanaTestCase(d.data, t, dipilih, d.kirim));
   return box;
 }
 
-// Satu request Dry run untuk satu tiket → { data } atau { error, rinci }.
+// Dry run satu tiket → { data, kirim } atau { error, rinci }. Judul tiket dibaca
+// dulu (GET /testcases, read-only) untuk prefix; `kirim` = case persis yang
+// dikirim — Push wajib memakai isi yang sama (previewHash).
 async function previewTestCase(key, cases) {
   try {
+    const rt = await fetch(jiraProxy() + "/testcases?issue=" + encodeURIComponent(key), { headers: headerAkses() });
+    const tiket = await rt.json().catch(() => ({}));
+    if (!rt.ok || !tiket || typeof tiket.issueSummary !== "string") {
+      return { error: "Dry run gagal: judul tiket " + key + " untuk prefix tidak terbaca — " + ((tiket && tiket.error) || "HTTP " + rt.status), rinci: [] };
+    }
+    const kirim = beriPrefixTestCase(cases, tiket.issueSummary);
     const r = await fetch(jiraProxy() + "/testcases/preview", {
       method: "POST", headers: { "Content-Type": "application/json", ...headerAkses() },
-      body: JSON.stringify({ issueKey: key, cases: kirimanTestCase(cases) }),
+      body: JSON.stringify({ issueKey: key, cases: kirimanTestCase(kirim) }),
     });
     const d = await r.json().catch(() => ({}));
-    if (r.ok && d && Array.isArray(d.plan)) return { data: d };
+    if (r.ok && d && Array.isArray(d.plan)) return { data: d, kirim };
     const rinci = [...(Array.isArray(d.errors) ? d.errors : [])];
     (Array.isArray(d.cases) ? d.cases : []).forEach((c, i) => {
-      for (const e of (c && Array.isArray(c.errors) ? c.errors : [])) rinci.push("“" + ((cases[i] && cases[i].title) || "#" + (i + 1)) + "”: " + e);
+      for (const e of (c && Array.isArray(c.errors) ? c.errors : [])) rinci.push("“" + ((kirim[i] && kirim[i].title) || "#" + (i + 1)) + "”: " + e);
     });
     return { error: "Dry run gagal: " + (d.error || "HTTP " + r.status), rinci };
   } catch (e) {
@@ -586,11 +607,12 @@ async function jalankanDryRun(t, key, cases, sig) {
   renderLaluFokus("tc-dry-" + t.id);
   const hasil = await previewTestCase(key, cases);
   if (!masihSama()) return; // pilihan/isi berubah selama request — hasil lama dibuang
-  testcaseDry = { taskId: t.id, sig, loading: false, error: hasil.error || "", rinci: hasil.rinci || [], data: hasil.data || null };
+  testcaseDry = { taskId: t.id, sig, loading: false, error: hasil.error || "", rinci: hasil.rinci || [], data: hasil.data || null, kirim: hasil.kirim || null };
   if (testcaseTaskId === t.id) renderLaluFokus("tc-dry-" + t.id);
 }
 
-function rencanaTestCase(d, t, dipilih) {
+// `asli` = case pilihan sebelum prefix, `kirim` = sesudah prefix (isi Push).
+function rencanaTestCase(d, t, asli, kirim) {
   const wrap = el("div", "testcase-plan");
   wrap.setAttribute("role", "status");
   const n = d.counts || { create: 0, skip: 0 };
@@ -608,6 +630,8 @@ function rencanaTestCase(d, t, dipilih) {
       el("strong", "testcase-title", p.title || ""));
     li.append(head);
     if (p.reason) li.append(el("p", "testcase-hint", p.reason));
+    const lama = buat && judulLamaTestCase(d, asli[p.index], p.title);
+    if (lama) li.append(daftarIsuTestCase(["Sudah ada " + lama + " berjudul sama tanpa prefix judul tiket (dibuat sebelum ada prefix) — kalau isinya sama, hapus centang case ini supaya tidak kembar."], "warn"));
     if (buat && p.testCase && Array.isArray(p.testCase.testSteps)) li.append(barisStepQality(p.testCase.testSteps));
     ol.append(li);
   }
@@ -623,11 +647,20 @@ function rencanaTestCase(d, t, dipilih) {
     btn.type = "button"; btn.id = "tc-push-" + t.id;
     btn.title = "Buat test case di QAlity lalu link ke " + d.issueKey;
     btn.disabled = !jiraProxy() || !!(p && p.loading);
-    btn.onclick = () => jalankanPushTestCase(t, d, dipilih);
+    btn.onclick = () => jalankanPushTestCase(t, d, kirim);
     bar.append(btn);
     wrap.append(bar);
   }
   return wrap;
+}
+
+// Test case lama yang ter-link dengan judul TANPA prefix tidak dikenali Worker
+// sebagai duplikat (judulnya kini beda) → key-nya untuk diperingatkan, atau null.
+function judulLamaTestCase(d, asli, judulBaru) {
+  const k = kunciJudulTestCase(asli && asli.title);
+  if (!k || k === kunciJudulTestCase(judulBaru) || !Array.isArray(d.existing)) return null;
+  const x = d.existing.find((e) => kunciJudulTestCase(e.summary) === k);
+  return x ? x.key : null;
 }
 
 /* ---------- push (Worker menulis ke QAlity + Jira) ---------- */
@@ -926,7 +959,7 @@ function kartuTestCase(t, c, i, pilih, isu) {
 /* ---------- mode banyak tiket: tab Jira → Test cases ---------- */
 
 // { text, parsed, pilihTiket: [bool], pilih: [[bool]],
-//   dry: { key → { sig, loading, error, rinci, data } },
+//   dry: { key → { sig, loading, error, rinci, data, kirim } },
 //   push: { key → { loading, error, data, notTried } }, urutan: [key] (urutan hasil push),
 //   jalan: null | "dry" | "push", progres: "Checking 2/3 — …" }
 let testcaseBulk = null;
@@ -941,7 +974,9 @@ function renderTestCaseBulk(wrap) {
   sec.append(head);
   sec.append(el("p", "testcase-hint",
     "Tempel JSON hasil AI berisi beberapa tiket: [{ task_id, task_name, endpoint, test_cases: [...] }]. Parse hanya di perangkat ini; " +
-    "Dry run all mengecek tiap tiket ke Jira/QAlity tanpa membuat apa pun; Push all baru menulis setelah dikonfirmasi, satu tiket per request, berurutan."));
+    "Dry run all mengecek tiap tiket ke Jira/QAlity tanpa membuat apa pun dan memberi prefix judul tiket Jira di depan tiap title " +
+    "(“<judul tiket> - <title>”); Push all baru menulis setelah dikonfirmasi, satu tiket per request, berurutan."));
+  sec.append(promptTestCase());
 
   const ta = document.createElement("textarea");
   ta.className = "testcase-input";
@@ -993,6 +1028,80 @@ function renderTestCaseBulk(wrap) {
   if (b && b.urutan.length) sec.append(hasilPushBulkTestCase(b));
   if (b && b.parsed) sec.append(pratinjauBulkTestCase(b));
   wrap.append(sec);
+}
+
+// Prompt siap salin untuk AI lain: format JSON persis yang dibaca
+// parseTestCaseBundle + standar penulisan Zack (vault "QA Test Case Writing
+// Standards"). Title TANPA judul tiket — prefix ditambahkan saat Dry run.
+const TESTCASE_PROMPT = [
+  "You are a Senior QA Engineer specializing in API testing, microservices testing, integration testing, and test case design.",
+  "",
+  "Write test cases for the Jira tickets listed at the end of this message. Return them in the exact JSON format below so they can be imported into QAlity.",
+  "",
+  "## Output format (strict)",
+  "Reply with ONE ```json code block and nothing else. It holds one JSON array with one object per ticket:",
+  "",
+  "```json",
+  "[",
+  "  {",
+  "    \"task_id\": \"ABC-123\",",
+  "    \"task_name\": \"Exact Jira ticket title\",",
+  "    \"endpoint\": \"POST /example/path\",",
+  "    \"test_cases\": [",
+  "      {",
+  "        \"title\": \"Verify ...\",",
+  "        \"precondition\": [\"...\"],",
+  "        \"test_steps\": [\"...\"],",
+  "        \"expected_result\": [\"...\", \"...\"]",
+  "      }",
+  "    ]",
+  "  }",
+  "]",
+  "```",
+  "",
+  "Field rules:",
+  "- task_id: the Jira key exactly as given (e.g. CD-1234). One object per ticket; never repeat a task_id.",
+  "- task_name: the ticket title exactly as written in Jira.",
+  "- endpoint: HTTP method + path under test, or \"\" when not applicable.",
+  "- title: the scenario only, starting with \"Verify\" or \"Validate\", unique within the ticket, under 150 characters. Do NOT include the ticket title or key: the importer prepends \"<ticket title> - \" automatically.",
+  "- precondition: list of strings; [] when there is none. Conditions only, no actions.",
+  "- test_steps: list of strings; actions only.",
+  "- expected_result: list of strings without numbering (the importer numbers them).",
+  "- At most 20 test cases per ticket and 10 tickets per reply.",
+  "- Strings and lists of strings only (no nested objects, no extra fields). Valid JSON: double quotes, no comments, no trailing commas.",
+  "",
+  "## Writing standards",
+  "- Test steps = what the tester DOES. Expected results = what the system MUST return or do.",
+  "- Use the minimum number of steps; prefer ONE (e.g. \"Send POST request to /path with a valid token and a valid body.\"). Never put validation words (verify, check, validate, ensure) in a step.",
+  "- Expected result: prefer two points: 1) HTTP status code and request outcome; 2) response body, business logic, or database consistency. Add a third only when truly needed.",
+  "- Split materially different positive and negative scenarios into separate test cases.",
+  "- Requirement-based: never invent fields, status codes, error messages, or business rules the ticket does not state. When a requirement is missing or unclear, add a case titled \"GAP: <what is missing>\" instead of guessing (it is flagged for review and never imported).",
+  "- Clear, professional English.",
+  "",
+  "## Tickets",
+  "<For each ticket: Jira key, exact title, and description / acceptance criteria / API contract>",
+].join("\n");
+
+let testcasePromptBuka = false; // <details> prompt tetap terbuka walau render() membangun ulang DOM
+
+function promptTestCase() {
+  const box = el("details", "testcase-prompt");
+  box.id = "tcb-prompt";
+  box.open = testcasePromptBuka;
+  box.ontoggle = () => { testcasePromptBuka = box.open; };
+  box.append(el("summary", null, "AI prompt template"));
+  const isi = el("div", "testcase-prompt-body");
+  isi.append(el("p", "testcase-hint",
+    "Salin prompt ini ke AI lain (ChatGPT, Gemini, Claude, …), isi bagian Tickets di paling bawah dengan key, judul, dan " +
+    "deskripsi/AC tiap tiket, lalu tempel jawaban JSON-nya di kolom bawah. Title cukup skenarionya — prefix judul tiket ditambahkan otomatis saat Dry run."));
+  const bar = el("div", "testcase-actions");
+  const salin = el("button", "btn-line", "Copy prompt");
+  salin.type = "button"; salin.id = "tcb-prompt-copy";
+  salin.onclick = () => copyText(TESTCASE_PROMPT, salin);
+  bar.append(salin);
+  isi.append(bar, el("pre", "testcase-prompt-text", TESTCASE_PROMPT));
+  box.append(isi);
+  return box;
 }
 
 function pratinjauBulkTestCase(b) {
@@ -1097,7 +1206,7 @@ function kelompokBulkTestCase(b, g, i, c) {
   if (d && d.sig === sigTestCase(g.key, c.dipilih)) {
     if (d.loading) li.append(el("p", "testcase-hint", "Checking…"));
     if (d.error) li.append(daftarIsuTestCase([d.error, ...d.rinci], "err"));
-    if (d.data) li.append(judulJiraTestCase(d.data, g.taskName), rencanaTestCase(d.data, null, c.dipilih));
+    if (d.data) li.append(judulJiraTestCase(d.data, g.taskName), rencanaTestCase(d.data, null, c.dipilih, d.kirim));
   }
   return li;
 }
@@ -1135,7 +1244,7 @@ async function dryRunSemuaTestCase() {
     render();
     const h = await previewTestCase(x.key, x.cases);
     if (testcaseBulk !== b) return; // Clear / ganti akun selama request
-    b.dry[x.key] = { sig, loading: false, error: h.error || "", rinci: h.rinci || [], data: h.data || null };
+    b.dry[x.key] = { sig, loading: false, error: h.error || "", rinci: h.rinci || [], data: h.data || null, kirim: h.kirim || null };
   }
   b.jalan = null; b.progres = "";
   render();

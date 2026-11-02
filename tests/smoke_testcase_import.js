@@ -102,7 +102,7 @@ const json21 = JSON.stringify({ format: 'catet.testcases.v1', cases: Array.from(
         }
         if (u.pathname === '/testcases' && req.method() === 'GET') {
           const issueKey = u.searchParams.get('issue');
-          return route.fulfill({ json: { issueKey, projectKey: 'QA', history: issueKey === 'QA-123' ? history : [],
+          return route.fulfill({ json: { issueKey, issueSummary: issueKey === 'QA-123' ? 'Synthetic ticket' : 'Focused synthetic ticket', projectKey: 'QA', history: issueKey === 'QA-123' ? history : [],
             existing: issueKey === 'QA-123' ? [{ key: 'QA-900', summary: XSS, status: 'To Do', linkType: 'QAlity Test' }] : [] } });
         }
         if (u.pathname === '/testcases/push') {
@@ -189,7 +189,7 @@ const json21 = JSON.stringify({ format: 'catet.testcases.v1', cases: Array.from(
       assert.equal(previewBodies.length, 1);
       assert.equal(previewBodies[0].issueKey, 'QA-123');
       assert.deepEqual(previewBodies[0].cases.map(c => Object.keys(c).sort()), [['expected', 'preconditions', 'steps', 'title'], ['expected', 'preconditions', 'steps', 'title']], 'hanya 4 field yang dikirim');
-      assert.deepEqual(previewBodies[0].cases.map(c => c.title), ['Verify Get Customer Profile Successfully', 'Check profile <img src=x onerror="window.__xss=1">']);
+      assert.deepEqual(previewBodies[0].cases.map(c => c.title), ['Synthetic ticket - Verify Get Customer Profile Successfully', 'Synthetic ticket - Check profile <img src=x onerror="window.__xss=1">'], 'prefix judul tiket Jira');
       const plan = panel.locator('.testcase-plan');
       assert.match(await plan.locator('.testcase-status.ok').textContent(), /1 test case akan dibuat di project QA dan di-link “QAlity Test” ke QA-123; 1 dilewati/);
       assert.deepEqual(await plan.locator('.testcase-badge').allTextContents(), ['Create', 'Skip']);

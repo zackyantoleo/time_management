@@ -186,21 +186,24 @@ const sample = [tiket('ABC-101', 3), tiket('ABC-102', 5)];
 
 // Rencana Push all: hanya tiket dengan Dry run yang masih berlaku (sig = key +
 // isi case dicentang sekarang), sukses, dan ada case baru; previewHash milik
-// tiket itu sendiri; sisanya dikecualikan beserta alasannya.
+// tiket itu sendiri; yang dipush = `kirim` Dry run (sudah ber-prefix); sisanya
+// dikecualikan beserta alasannya.
 {
   const r = run(`parseTestCaseBundle(${JSON.stringify(JSON.stringify([tiket('ABC-101', 2), tiket('ABC-102', 2), tiket('ABC-103', 1), tiket('ABC-104', 1), tiket('ABC-105', 1)]))})`);
   const pt = r.groups.map(() => true), pc = r.groups.map(g => g.cases.map(() => true));
   const sig = (i) => run('sigTestCase')(r.groups[i].key, r.groups[i].cases.filter((_, j) => pc[i][j]));
   const ok = (key, create, hash) => ({ issueKey: key, project: { key: 'ABC' }, counts: { create, skip: 0 }, plan: [], previewHash: hash });
+  const kirim = (i) => run('beriPrefixTestCase')(r.groups[i].cases.filter((_, j) => pc[i][j]), 'Example Ticket ' + r.groups[i].key);
   const dry = {
-    'ABC-101': { sig: sig(0), loading: false, error: '', rinci: [], data: ok('ABC-101', 2, 'a'.repeat(64)) },
-    'ABC-102': { sig: sig(1), loading: false, error: 'Dry run gagal: Project ABC belum aktif', rinci: [], data: null },
-    'ABC-103': { sig: sig(2), loading: false, error: '', rinci: [], data: ok('ABC-103', 0, 'c'.repeat(64)) },
-    'ABC-104': { sig: sig(3), loading: false, error: '', rinci: [], data: ok('ABC-104', 1, 'd'.repeat(64)) },
+    'ABC-101': { sig: sig(0), loading: false, error: '', rinci: [], data: ok('ABC-101', 2, 'a'.repeat(64)), kirim: kirim(0) },
+    'ABC-102': { sig: sig(1), loading: false, error: 'Dry run gagal: Project ABC belum aktif', rinci: [], data: null, kirim: null },
+    'ABC-103': { sig: sig(2), loading: false, error: '', rinci: [], data: ok('ABC-103', 0, 'c'.repeat(64)), kirim: kirim(2) },
+    'ABC-104': { sig: sig(3), loading: false, error: '', rinci: [], data: ok('ABC-104', 1, 'd'.repeat(64)), kirim: kirim(3) },
   };
   const plan = () => plain(run('rencanaPushBundle')(r, pt, pc, dry));
   let p = plan();
   assert.deepEqual(p.siap.map(x => [x.key, x.n, x.d.previewHash, x.cases.length]), [['ABC-101', 2, 'a'.repeat(64), 2], ['ABC-104', 1, 'd'.repeat(64), 1]]);
+  assert.deepEqual(p.siap[0].cases.map(c => c.title), ['Example Ticket ABC-101 - Verify Example Case 1', 'Example Ticket ABC-101 - Verify Example Case 2'], 'push memakai judul ber-prefix dari Dry run');
   assert.deepEqual(p.kecuali, [
     { key: 'ABC-102', alasan: 'Dry run gagal' },
     { key: 'ABC-103', alasan: 'tidak ada case baru (semua Skip)' },
@@ -218,6 +221,51 @@ const sample = [tiket('ABC-101', 3), tiket('ABC-102', 5)];
   assert(p.kecuali.some(x => x.key === 'ABC-104' && x.alasan === 'tidak dicentang'));
   dry['ABC-101'].loading = true;
   assert.deepEqual(plan().siap, [], 'Dry run yang masih berjalan tidak bisa dipush');
+  dry['ABC-101'] = { ...dry['ABC-101'], loading: false, kirim: null };
+  assert.deepEqual(plan().kecuali.find(x => x.key === 'ABC-101'), { key: 'ABC-101', alasan: 'Dry run gagal' }, 'tanpa isi kirim = tidak bisa dipush');
+}
+
+// Prefix judul tiket: "<judul tiket> - <title>", tidak dobel, input tidak diubah.
+{
+  const prefix = (cases, judul) => plain(run('beriPrefixTestCase')(cases, judul));
+  const c = [{ title: 'Verify success', preconditions: ['P.'], steps: ['S.'], expected: ['E.'] },
+    { title: '[partner service]  create endpoint redeem -  Verify failed', preconditions: [], steps: ['S.'], expected: ['E.'] },
+    { title: 'Create endpoint redeem works', preconditions: [], steps: ['S.'], expected: ['E.'] }];
+  const p = prefix(c, '  [Partner Service] Create   endpoint redeem ');
+  assert.deepEqual(p.map(x => x.title), ['[Partner Service] Create endpoint redeem - Verify success',
+    '[partner service]  create endpoint redeem -  Verify failed',
+    '[Partner Service] Create endpoint redeem - Create endpoint redeem works']);
+  assert.deepEqual(p[0].steps, ['S.'], 'field lain tetap');
+  assert.equal(c[0].title, 'Verify success', 'case asli tidak diubah (sig tetap)');
+  assert.deepEqual(prefix(c, ''), plain(c), 'judul tiket kosong = tanpa prefix');
+  // Prefix tanpa pemisah " - " (judul tiket kebetulan sama dengan awal title) tetap ditambahkan.
+  assert.equal(prefix([{ title: 'Verify OTP success' }], 'Verify OTP')[0].title, 'Verify OTP - Verify OTP success');
+
+  // Test case lama ter-link berjudul TANPA prefix → peringatan kembar.
+  const lama = (existing, asli, baru) => run('judulLamaTestCase')({ existing }, asli, baru);
+  const ex = [{ key: 'CD-900', summary: 'Verify  success' }];
+  assert.equal(lama(ex, { title: 'verify success' }, 'Ticket - verify success'), 'CD-900');
+  assert.equal(lama(ex, { title: 'Verify failed' }, 'Ticket - Verify failed'), null);
+  assert.equal(lama(ex, { title: 'Verify success' }, 'Verify success'), null, 'tanpa prefix → Worker sudah menandai Skip');
+  assert.equal(lama(undefined, { title: 'Verify success' }, 'Ticket - Verify success'), null);
+}
+
+// Template prompt AI: contoh JSON di dalamnya terbaca parseTestCaseBundle tanpa
+// error, menyebut semua field yang dibaca, dan memberi tahu prefix otomatis.
+{
+  const prompt = run('TESTCASE_PROMPT');
+  const blok = prompt.match(/```json\n([\s\S]*?)\n```/);
+  assert(blok, 'prompt memuat blok ```json');
+  const r = bundle(blok[0]);
+  assert.equal(r.bundle, true);
+  assert.deepEqual(r.errors, []);
+  assert.deepEqual(r.groups.map(g => [g.key, g.taskName, g.endpoint, g.cases.length, g.errors]), [['ABC-123', 'Exact Jira ticket title', 'POST /example/path', 1, []]]);
+  assert.deepEqual(r.groups[0].cases[0], { title: 'Verify ...', preconditions: ['...'], steps: ['...'], expected: ['...', '...'], ignored: [] });
+  for (const f of ['task_id', 'task_name', 'endpoint', 'test_cases', 'title', 'precondition', 'test_steps', 'expected_result']) assert.match(prompt, new RegExp('"' + f + '"'));
+  assert.match(prompt, /20 test cases per ticket and 10 tickets/);
+  assert.match(prompt, /Do NOT include the ticket title/);
+  assert.match(prompt, /"GAP: <what is missing>"/);
+  assert.match(prompt, /## Tickets\n</);
 }
 
 // K2: task_name dari AI vs judul Jira — longgar terhadap huruf besar/tanda baca/prefiks.
@@ -246,7 +294,7 @@ const sample = [tiket('ABC-101', 3), tiket('ABC-102', 5)];
 }
 
 // Chip "Test cases" di tab Jira, mode tunggal pengganti boolean, reset saat ganti akun;
-// draft banyak tiket ikut dihapus saat sign out; SW v81.
+// draft banyak tiket ikut dihapus saat sign out; SW v82.
 {
   const jira = fs.readFileSync(path.join(root, 'assets/js/jira.js'), 'utf8');
   assert.match(jira, /\["testcases", "Test cases", "jira-filter-testcases"\]/);
@@ -255,7 +303,7 @@ const sample = [tiket('ABC-101', 3), tiket('ABC-102', 5)];
   assert.doesNotMatch(jira, /jiraWorklogFilter/);
   assert.equal((jira.match(/jiraFilterMode = "inbox";\n  if \(typeof resetTestCaseBulk === "function"\) resetTestCaseBulk\(\);/g) || []).length, 2);
   assert.match(jira, /"catet\.testcaseBulkDraft\.v1",\n  \]\) localStorage\.removeItem/);
-  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /const CACHE = "catet-v81";/);
+  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /const CACHE = "catet-v82";/);
 }
 
-console.log('PASS testcase bundle: daftar/objek, alias, K3, task_id, ganda, batas 10 tiket/20 case, format lama, panel per task, rencana Push all, judul Jira, draft, chip');
+console.log('PASS testcase bundle: daftar/objek, alias, K3, task_id, ganda, batas 10 tiket/20 case, format lama, panel per task, rencana Push all (isi ber-prefix), prefix judul tiket, peringatan judul lama, prompt AI, judul Jira, draft, chip');
