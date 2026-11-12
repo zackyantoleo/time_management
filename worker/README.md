@@ -205,6 +205,8 @@ Endpoint `POST /signup` di-origin-gate (hanya dari app) + butuh passphrase itu.
 | POST | `/testcases/preview` | Dry run import test case: validasi, project aktif di QAlity, duplikat, rencana per case + `previewHash` + `issueSummary`; read-only |
 | POST | `/testcases/push` | `{issueKey, cases, previewHash}` → import QAlity + link `QAlity Test` + baca balik; status per case. **Hanya bila `TESTCASE_PUSH_ENABLED=on`**, selain itu 404 |
 | POST | `/testcases/relink` | `{issueKey, testKey}` → link ulang case `created_unlinked`/`link_unverified`; flag sama dengan push |
+| POST | `/bugs/preview` | `{issueKey, gap}` → Dry run GAP → tiket Bug: validasi, tipe Bug di project, epic + assignee tiket, duplikat, isi Bug + `previewHash`; read-only |
+| POST | `/bugs/push` | `{issueKey, gap, previewHash}` → buat Bug + link `Relates` ke tiket + baca balik (atau link ulang Bug yang belum ter-link). **Hanya bila `BUG_PUSH_ENABLED=on`**, selain itu 404 |
 
 Semua endpoint di atas memeriksa Origin **dan** wajib access code valid
 (`401` bila kosong/salah). Origin bukan pengganti autentikasi.
@@ -248,6 +250,45 @@ bila Jira tidak bisa dicek, tetap `pending`. Test case yang sudah terbuat
 tidak pernah dihapus otomatis; daftarnya ada di `testcase_pushes`.
 Subrequest per push: 2 baca + 1 import + N link + 1 bulkfetch (≤ 24 untuk 20
 case; +1 pencarian bila ada `pending` basi).
+
+## GAP → tiket Bug
+
+Case berjudul `GAP: …` dari AI adalah temuan, bukan test case. App memisahnya
+saat Parse; setelah QA mengisi **Actual result** (hasil tes nyata), app
+mengirim satu GAP per request: `gap = { title, preconditions, steps, expected,
+actual, endpoint }`. Tidak butuh token QAlity, hanya kredensial Jira akun.
+
+Bug yang dibuat: project = project tiket sumber, tipe `Bug` (dicari lewat
+`GET /issue/createmeta/{project}/issuetypes`; bukan `Bug Prod`), summary
+`[Feedback] <temuan tanpa "GAP:">`, parent = epic tiket sumber (hanya bila
+parent-nya level epic), assignee = assignee tiket sumber, description ADF
+(tiket sumber, endpoint, Precondition, Steps to Reproduce, Expected Result,
+Actual Result), lalu link `Relates` (`inwardIssue` = Bug, `outwardIssue` =
+tiket) dan baca balik kedua sisi lewat bulkfetch.
+
+Dry run (`/bugs/preview`) hanya GET ke Jira. `previewHash` = field create
+persis; push menolak 409 bila GAP, Actual result, epic, atau assignee tiket
+berubah sejak Dry run. Idempotency per GAP (judul) per tiket di tabel D1
+`bug_pushes` (auto-schema; `migrations/0004_bug_pushes.sql` berisi tabel yang
+sama): Bug berjudul sama yang sudah ter-link ke tiket, atau GAP yang sama yang
+pernah dibuat dari CATET, dilewati (`skipped_duplicate`). Status:
+`created_linked`, `created_unlinked`/`link_unverified` (push berikutnya hanya
+link ulang, tanpa Bug baru), `failed` (Jira 4xx, aman diulang), `pending`
+(hasil create tidak pasti; setelah ±10 menit push berikutnya mencari dulu
+judulnya di Jira — project + tipe Bug + reporter = akun ini + rentang waktu),
+`skipped_busy`. Bug tidak pernah dihapus otomatis.
+
+**Push (feature flag).** `/bugs/push` mengembalikan 404 kecuali variabel
+Worker `BUG_PUSH_ENABLED` = `on`:
+
+```bash
+cd worker
+wrangler deploy --keep-vars --var BUG_PUSH_ENABLED:on    # nyalakan
+wrangler deploy --keep-vars --var BUG_PUSH_ENABLED:off   # rollback cepat
+```
+
+Subrequest per push: 2 baca (tiket + createmeta) + 1 create + 1 link + 1
+bulkfetch (+1 pencarian bila ada `pending` basi, +1 bulkfetch saat link ulang).
 
 ## Pengiriman worklog aman
 

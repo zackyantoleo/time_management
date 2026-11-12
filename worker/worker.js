@@ -108,6 +108,8 @@ const SKEMA = [
   // users: CREATE IF NOT EXISTS aman diulang di sini maupun lewat wrangler.
   "CREATE TABLE IF NOT EXISTS qality_credentials (user_id TEXT PRIMARY KEY, token TEXT NOT NULL, expires_at TEXT, updated_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS testcase_pushes (user_id TEXT NOT NULL, issue_key TEXT NOT NULL, case_hash TEXT NOT NULL, title TEXT NOT NULL, test_key TEXT, status TEXT NOT NULL CHECK (status IN ('pending','created_linked','created_unlinked','link_unverified','failed')), error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (user_id, issue_key, case_hash))",
+  // GAP → tiket Bug (migrasi 0004): satu baris per GAP (judul) per tiket sumber.
+  "CREATE TABLE IF NOT EXISTS bug_pushes (user_id TEXT NOT NULL, issue_key TEXT NOT NULL, gap_hash TEXT NOT NULL, summary TEXT NOT NULL, bug_key TEXT, status TEXT NOT NULL CHECK (status IN ('pending','created_linked','created_unlinked','link_unverified','failed')), error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (user_id, issue_key, gap_hash))",
 ];
 // Kolom yang ditambahkan setelah tabel pertama dibuat (instalasi lama).
 const MIGRASI = ["ALTER TABLE users ADD COLUMN cal_ics_url TEXT"];
@@ -687,6 +689,141 @@ async function buatLinkQality(site, authHeaders, testKey, ticketKey) {
     });
   } catch { return "Jira tidak bisa dihubungi saat membuat link."; }
   return r.ok ? null : "Jira menolak link (HTTP " + r.status + ").";
+}
+
+/* ---------- GAP → tiket Bug Jira (dry run, push di balik flag) ----------
+   Case "GAP: …" dari AI adalah temuan, bukan test case. Setelah QA mengisi
+   Actual result dari tes nyata, CATET membuat satu Bug per GAP di project
+   tiket sumber: parent = epic tiket sumber, assignee = assignee tiket sumber,
+   link "Relates" ke tiket sumber. Preview read-only; push hanya ada bila
+   env.BUG_PUSH_ENABLED === "on". Idempotency per GAP (judul) di D1 bug_pushes. */
+const BUG_LINK_TYPE = "Relates";
+const BUG_PREFIX = "[Feedback] ";
+const BUG_GAP = /^gap\s*:\s*/i;
+const BUG_ENDPOINT_MAX = 300;
+
+// Body klien { title, preconditions, steps, expected, actual, endpoint } →
+// GAP ter-normalisasi + error. Summary Bug = "[Feedback] <temuan tanpa GAP:>".
+function validasiGapBug(raw) {
+  const errors = [];
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { errors: ["Field gap harus berupa objek { title, preconditions, steps, expected, actual }."], norm: null };
+  }
+  const satu = (f) => {
+    if (raw[f] == null) return "";
+    if (typeof raw[f] !== "string") { errors.push("“" + f + "” harus berupa teks."); return ""; }
+    return raw[f];
+  };
+  const daftar = (f) => {
+    const v = raw[f];
+    if (v == null) return [];
+    if (!Array.isArray(v) || !v.every((x) => typeof x === "string")) { errors.push("“" + f + "” harus berupa daftar teks."); return []; }
+    return v.map((x) => x.trim()).filter(Boolean);
+  };
+  const title = satu("title").replace(/\s+/g, " ").trim();
+  const actual = satu("actual").replace(/\r\n?/g, "\n").trim();
+  const endpoint = satu("endpoint").replace(/\s+/g, " ").trim();
+  const pre = daftar("preconditions"), steps = daftar("steps"), expected = daftar("expected");
+  const temuan = title.replace(BUG_GAP, "").trim();
+  const summary = BUG_PREFIX + temuan;
+  if (!BUG_GAP.test(title)) errors.push("Title harus diawali “GAP:”.");
+  else if (!temuan) errors.push("Temuan setelah “GAP:” kosong.");
+  else if ([...summary].length > TC_TITLE_MAX) errors.push("Summary Bug lebih dari " + TC_TITLE_MAX + " karakter — persingkat judul GAP.");
+  if (!steps.length) errors.push("Tidak ada Test Step (langkah reproduksi).");
+  if (!expected.length) errors.push("Tidak ada Expected Result.");
+  if (!actual) errors.push("Actual result wajib diisi dari hasil tes nyata.");
+  if ([pre, steps, expected].some((l) => l.length > TC_BUTIR_MAX)) errors.push("Maksimal " + TC_BUTIR_MAX + " butir per bagian.");
+  if ([...pre, ...steps, ...expected, actual].some((t) => t.length > TC_TEKS_MAX)) errors.push("Ada teks lebih dari " + TC_TEKS_MAX + " karakter.");
+  if (endpoint.length > BUG_ENDPOINT_MAX) errors.push("Endpoint lebih dari " + BUG_ENDPOINT_MAX + " karakter.");
+  return { errors, norm: { title, summary, preconditions: pre, steps, expected, actual, endpoint } };
+}
+
+// Description Bug (ADF): tiket sumber, endpoint, lalu Precondition / Steps to
+// Reproduce / Expected Result / Actual Result. Baris baru → hardBreak.
+const adfBaris = (s) => String(s).split("\n").flatMap((l, i) => [...(i ? [{ type: "hardBreak" }] : []), ...(l ? [{ type: "text", text: l }] : [])]);
+const adfPara = (content) => ({ type: "paragraph", content });
+const adfJudul = (text) => ({ type: "heading", attrs: { level: 3 }, content: [{ type: "text", text }] });
+const adfDaftar = (type, items) => ({ type, content: items.map((x) => ({ type: "listItem", content: [adfPara(adfBaris(x))] })) });
+function deskripsiBug(site, issueKey, g) {
+  const isi = [adfPara([{ type: "text", text: "Source ticket: " }, { type: "inlineCard", attrs: { url: site + "/browse/" + issueKey } }])];
+  if (g.endpoint) isi.push(adfPara([{ type: "text", text: "Endpoint: " }, { type: "text", text: g.endpoint, marks: [{ type: "code" }] }]));
+  isi.push(adfJudul("Precondition"), g.preconditions.length ? adfDaftar("bulletList", g.preconditions) : adfPara([{ type: "text", text: "—" }]));
+  isi.push(adfJudul("Steps to Reproduce"), adfDaftar("orderedList", g.steps));
+  isi.push(adfJudul("Expected Result"), adfDaftar("orderedList", g.expected));
+  isi.push(adfJudul("Actual Result"), ...g.actual.split(/\n{2,}/).map((p) => adfPara(adfBaris(p.trim()))));
+  isi.push(adfPara([{ type: "text", text: "Created from CATET: GAP finding by AI, reproduced by QA.", marks: [{ type: "em" }] }]));
+  return { type: "doc", version: 1, content: isi };
+}
+
+// Tiket sumber: project, epic (parent level 1), assignee, dan Bug yang sudah
+// ter-link (tipe link apa pun) untuk cek duplikat. Description tidak dibaca.
+async function bacaTiketBug(site, authHeaders, key) {
+  const r = await fetch(site + "/rest/api/3/issue/" + encodeURIComponent(key) + "?fields=project,issuetype,issuelinks,summary,parent,assignee",
+    { headers: authHeaders });
+  if (r.status === 404) return { error: "Tiket " + key + " tidak ditemukan atau tidak bisa dibaca dengan akun Jira-mu.", status: 404 };
+  if (!r.ok) return { error: "Jira menolak membaca " + key + " (HTTP " + r.status + ").", status: 502 };
+  const issue = await r.json();
+  const f = issue.fields || {};
+  const p = f.parent, pf = (p && p.fields) || {}, pt = pf.issuetype || {};
+  const epic = p && p.key && (pt.hierarchyLevel === 1 || /^epic$/i.test(String(pt.name || "").trim()))
+    ? { key: p.key, summary: typeof pf.summary === "string" ? pf.summary : "" } : null;
+  const a = f.assignee;
+  const bugs = new Map();
+  for (const l of f.issuelinks || []) {
+    const lain = l.inwardIssue || l.outwardIssue;
+    const lf = (lain && lain.fields) || {};
+    if (!lain || !lain.key || bugs.has(lain.key) || !/^bug$/i.test(String((lf.issuetype && lf.issuetype.name) || "").trim())) continue;
+    bugs.set(lain.key, { key: lain.key, summary: lf.summary || "", status: (lf.status && lf.status.name) || null });
+  }
+  return {
+    key: issue.key || key,
+    projectKey: (f.project && f.project.key) || "",
+    projectId: f.project && f.project.id != null ? String(f.project.id) : "",
+    summary: typeof f.summary === "string" ? f.summary : "",
+    parent: epic,
+    assignee: a && a.accountId ? { accountId: String(a.accountId), displayName: a.displayName || "" } : null,
+    bugs: [...bugs.values()],
+  };
+}
+
+// Id tipe issue "Bug" yang boleh dibuat akun ini di project (bukan "Bug Prod").
+async function tipeBug(site, authHeaders, projectKey) {
+  let r;
+  try {
+    r = await fetch(site + "/rest/api/3/issue/createmeta/" + encodeURIComponent(projectKey) + "/issuetypes?maxResults=100", { headers: authHeaders });
+  } catch { return { error: "Jira tidak bisa dihubungi. Coba lagi sebentar.", status: 502 }; }
+  if (!r.ok) return { error: "Jira menolak membaca tipe issue project " + projectKey + " (HTTP " + r.status + ").", status: 502 };
+  const d = await r.json().catch(() => ({}));
+  const list = Array.isArray(d.issueTypes) ? d.issueTypes : Array.isArray(d.values) ? d.values : [];
+  const t = list.find((x) => x && !x.subtask && /^bug$/i.test(String(x.name || "").trim()));
+  return t ? { id: String(t.id), name: String(t.name) } : { error: "Project " + projectKey + " tidak punya tipe issue Bug yang bisa dibuat akunmu.", status: 400 };
+}
+
+// gap_hash = identitas GAP (judul) per tiket: Actual result boleh diedit tanpa
+// membuat Bug kedua. previewHash = field create persis yang dilihat di Dry run.
+const bugGapHash = (issueKey, title) => sha256hex(JSON.stringify(wrappedStable({ v: 1, issueKey, gap: kunciJudulTc(title) })));
+const bugPreviewHash = (issueKey, fields) => sha256hex(JSON.stringify(wrappedStable({ v: 1, issueKey, fields })));
+
+// "Relates" simetris: cukup ada link bertipe itu ke key lawan, arah mana pun.
+const bugLinkKe = (links, key) => (links || []).some((l) => l && l.type && l.type.name === BUG_LINK_TYPE &&
+  ((l.outwardIssue && l.outwardIssue.key === key) || (l.inwardIssue && l.inwardIssue.key === key)));
+async function buatLinkBug(site, authHeaders, bugKey, ticketKey) {
+  let r;
+  try {
+    r = await fetch(site + "/rest/api/3/issueLink", {
+      method: "POST",
+      headers: { ...authHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ type: { name: BUG_LINK_TYPE }, inwardIssue: { key: bugKey }, outwardIssue: { key: ticketKey } }),
+    });
+  } catch { return "Jira tidak bisa dihubungi saat membuat link."; }
+  return r.ok ? null : "Jira menolak link (HTTP " + r.status + ").";
+}
+
+// Pesan validasi Jira (errors per field + errorMessages), dipotong pendek.
+async function pesanJira(r) {
+  const d = await r.json().catch(() => ({}));
+  const bagian = [...Object.entries((d && d.errors) || {}).map(([k, v]) => k + ": " + v), ...((d && d.errorMessages) || [])];
+  return bagian.join("; ").slice(0, 300);
 }
 
 export default {
@@ -1621,6 +1758,155 @@ async function tangani(request, env) {
         return json({ issueKey, testKey, status, error, history: await riwayat(issueKey) });
       }
       return json({ error: "Rute test case tidak dikenal." }, 404);
+    }
+
+    // POST /bugs/preview · POST /bugs/push — GAP → tiket Bug. Preview read-only;
+    // push menulis ke Jira dan hanya ada bila flag BUG_PUSH_ENABLED on. Push untuk
+    // Bug yang sudah dibuat tapi link-nya belum terverifikasi = coba link lagi.
+    if (url.pathname === "/bugs/preview" || url.pathname === "/bugs/push") {
+      if (url.pathname === "/bugs/push" && env.BUG_PUSH_ENABLED !== "on") return json({ error: "Rute bug tidak dikenal." }, 404);
+      if (request.method !== "POST") return json({ error: "Rute bug tidak dikenal." }, 404);
+      if (!user) return json({ error: "Butuh kode akses (Settings → Account)." }, 401);
+      const KEY_1 = /^[A-Z][A-Z0-9]{1,9}-\d+$/;
+      const raw = await request.text();
+      if (raw.length > 64 * 1024) return json({ error: "Body terlalu besar (maks 64 KB)." }, 413);
+      let b; try { b = JSON.parse(raw); } catch { return json({ error: "Body harus JSON." }, 400); }
+      const issueKey = String((b && b.issueKey) || "").trim().toUpperCase();
+      if (!KEY_1.test(issueKey)) return json({ error: "issueKey tidak valid (contoh: CD-1234)." }, 400);
+      const v = validasiGapBug(b && b.gap);
+      if (v.errors.length) return json({ error: "GAP belum bisa dijadikan Bug — perbaiki dulu.", errors: v.errors }, 400);
+      const g = v.norm;
+      const t = await bacaTiketBug(site, authHeaders, issueKey);
+      if (t.error) return json({ error: t.error }, t.status);
+      const tipe = await tipeBug(site, authHeaders, t.projectKey);
+      if (tipe.error) return json({ error: tipe.error }, tipe.status);
+      const fields = { project: { id: t.projectId }, issuetype: { id: tipe.id }, summary: g.summary, description: deskripsiBug(site, t.key, g) };
+      if (t.parent) fields.parent = { key: t.parent.key };
+      if (t.assignee) fields.assignee = { accountId: t.assignee.accountId };
+      const previewHash = await bugPreviewHash(t.key, fields);
+      const gapHash = await bugGapHash(t.key, g.title);
+      const baris = () => d1q(env,
+        "SELECT summary, bug_key, status, error, created_at, updated_at FROM bug_pushes WHERE user_id = ?1 AND issue_key = ?2 AND gap_hash = ?3",
+        [user.id, t.key, gapHash], "first");
+      const basi = (r, sekarang) => !(Date.parse(r.updated_at) >= sekarang - TC_PENDING_BASI_MS);
+      // Duplikat: Bug berjudul sama yang sudah ter-link ke tiket, atau GAP yang
+      // sama pernah dibuat dari CATET. Jira sendiri tidak menolak judul kembar.
+      // Bug dari CATET yang link-nya belum terverifikasi didahulukan: walau
+      // link-nya ternyata sudah ada, baris D1 perlu dibaca balik jadi Linked.
+      const aksi = (r, sekarang) => {
+        if (r && r.bug_key && (r.status === "created_unlinked" || r.status === "link_unverified")) {
+          return { action: "relink", bugKey: r.bug_key, reason: r.bug_key + " sudah dibuat tapi link ke " + t.key + " belum terverifikasi — Create hanya mencoba link lagi, tanpa membuat Bug baru." };
+        }
+        const linked = t.bugs.find((x) => kunciJudulTc(x.summary) === kunciJudulTc(g.summary));
+        if (linked) return { action: "skip_duplicate", bugKey: linked.key, reason: "Bug berjudul sama sudah ter-link ke " + t.key + ": " + linked.key + (linked.status ? " (" + linked.status + ")" : "") + "." };
+        if (r && r.status === "created_linked" && r.bug_key) return { action: "skip_duplicate", bugKey: r.bug_key, reason: "Sudah pernah dibuat dari CATET: " + r.bug_key + "." };
+        if (r && r.status === "pending" && !basi(r, sekarang)) return { action: "skip_busy", bugKey: null, reason: "Pembuatan Bug untuk GAP ini belum selesai — tunggu ±10 menit lalu Dry run lagi." };
+        if (r && r.status === "pending") return { action: "create", bugKey: null, reason: "Pembuatan sebelumnya terputus; saat Create, Worker mencari dulu Bug berjudul ini di Jira supaya tidak kembar." };
+        return { action: "create", bugKey: null, reason: null };
+      };
+
+      if (url.pathname === "/bugs/preview") {
+        const a = aksi(await baris(), Date.now());
+        return json({
+          issueKey: t.key, issueSummary: t.summary,
+          project: { key: t.projectKey, id: t.projectId }, issueType: tipe.name, linkType: BUG_LINK_TYPE,
+          action: a.action, bugKey: a.bugKey, reason: a.reason,
+          bug: { summary: g.summary, parent: t.parent, assignee: t.assignee, endpoint: g.endpoint,
+            preconditions: g.preconditions, steps: g.steps, expected: g.expected, actual: g.actual },
+          previewHash,
+        });
+      }
+
+      // Push: yang dibuat harus persis yang sudah dilihat di dry run.
+      if (String((b && b.previewHash) || "") !== previewHash) {
+        return json({ error: "Isi Bug berubah sejak Dry run (GAP, Actual result, epic, atau assignee tiket) — jalankan Dry run lagi." }, 409);
+      }
+      const mulai = new Date().toISOString();
+      const r = await baris();
+      const a = aksi(r, Date.parse(mulai));
+      const balas = (status, bugKey, error) => json({ issueKey: t.key, summary: g.summary, status, bugKey: bugKey || null, error: error || null });
+      if (a.action === "skip_duplicate") return balas("skipped_duplicate", a.bugKey, null);
+      if (a.action === "skip_busy") return balas("skipped_busy", null, a.reason);
+      // Klaim atomik di D1: klik ganda / dua tab tidak membuat Bug kembar.
+      let dapat = false;
+      const lewat = !!r && r.status === "pending";
+      if (!r) {
+        dapat = jumlahPerubahan(await d1q(env,
+          "INSERT INTO bug_pushes (user_id, issue_key, gap_hash, summary, bug_key, status, error, created_at, updated_at) " +
+          "VALUES (?1, ?2, ?3, ?4, NULL, 'pending', NULL, ?5, ?5) ON CONFLICT DO NOTHING",
+          [user.id, t.key, gapHash, g.summary, mulai], "run")) === 1;
+      } else if (r.status === "failed") {
+        dapat = jumlahPerubahan(await d1q(env,
+          "UPDATE bug_pushes SET status = 'pending', error = NULL, summary = ?4, updated_at = ?5 " +
+          "WHERE user_id = ?1 AND issue_key = ?2 AND gap_hash = ?3 AND status = 'failed'",
+          [user.id, t.key, gapHash, g.summary, mulai], "run")) === 1;
+      } else {
+        // pending basi / relink: pegang baris lewat updated_at lamanya.
+        dapat = jumlahPerubahan(await d1q(env,
+          "UPDATE bug_pushes SET updated_at = ?5 WHERE user_id = ?1 AND issue_key = ?2 AND gap_hash = ?3 AND status = ?6 AND updated_at = ?4",
+          [user.id, t.key, gapHash, r.updated_at, mulai, r.status], "run")) === 1;
+      }
+      if (!dapat) return balas("skipped_busy", null, "GAP ini sedang diproses push lain — tunggu ±10 menit lalu Dry run lagi.");
+      const simpan = async (status, bugKey, error) => {
+        await d1q(env,
+          "UPDATE bug_pushes SET status = ?4, bug_key = ?5, error = ?6, summary = ?7, updated_at = ?8 WHERE user_id = ?1 AND issue_key = ?2 AND gap_hash = ?3",
+          [user.id, t.key, gapHash, status, bugKey || null, error || null, g.summary, new Date().toISOString()], "run");
+        return balas(status, bugKey, error);
+      };
+
+      let bugKey = a.action === "relink" ? a.bugKey : null;
+      // Pembuatan sebelumnya terputus: cari dulu judulnya di Jira. Ketemu →
+      // cukup di-link; tidak bisa dicek → tidak membuat apa pun.
+      if (!bugKey && lewat) {
+        let temu = null;
+        if (/^[A-Z][A-Z0-9_]{0,19}$/.test(t.projectKey)) {
+          const sejak = Date.parse(r.created_at) || Date.parse(mulai);
+          const menit = Math.ceil((Date.parse(mulai) - sejak) / 60000) + 5;
+          const jql = 'project = "' + t.projectKey + '" AND issuetype = "' + tipe.name.replace(/["\\]/g, "") + '" AND reporter = currentUser() AND created >= -' + menit + "m ORDER BY created DESC";
+          try {
+            const rs = await fetch(site + "/rest/api/3/search/jql?jql=" + encodeURIComponent(jql) + "&fields=summary&maxResults=100", { headers: authHeaders });
+            if (rs.ok) {
+              const d = await rs.json();
+              if (!d.nextPageToken) temu = (d.issues || []).find((i) => kunciJudulTc(i.fields && i.fields.summary) === kunciJudulTc(g.summary)) || false;
+            }
+          } catch { temu = null; }
+        }
+        if (temu === null) return simpan("pending", null, "Pembuatan sebelumnya terputus dan Jira belum bisa dicek — tidak ada yang dibuat; coba lagi nanti.");
+        if (temu) bugKey = temu.key;
+      }
+      if (!bugKey) {
+        let rc = null;
+        try {
+          rc = await fetch(site + "/rest/api/3/issue", {
+            method: "POST",
+            headers: { ...authHeaders, "Content-Type": "application/json" },
+            body: JSON.stringify({ fields }),
+          });
+        } catch { rc = null; }
+        if (rc && !rc.ok && rc.status < 500) {
+          // 4xx = Jira menolak seluruh request; aman dicoba lagi setelah diperbaiki.
+          const rinci = await pesanJira(rc);
+          return simpan("failed", null, "Jira menolak membuat Bug (HTTP " + rc.status + ")" + (rinci ? ": " + rinci : "") + " — tidak ada yang dibuat.");
+        }
+        const d = rc && rc.ok ? await rc.json().catch(() => null) : null;
+        if (!d || !KEY_1.test(String(d.key || ""))) {
+          // 5xx / jaringan / body aneh: bisa saja sudah terbuat. Tetap pending.
+          return simpan("pending", null, "Hasil pembuatan Bug tidak pasti" + (rc ? " (HTTP " + rc.status + ")" : "") +
+            " — jangan buat manual; Create lagi setelah ±10 menit mencari dulu judulnya di Jira.");
+        }
+        bugKey = d.key;
+      }
+
+      // Link ke tiket sumber, lalu baca balik kedua sisi.
+      const awal = a.action === "relink" ? await bacaIssues(site, authHeaders, [bugKey], ["issuelinks"]) : null;
+      const sudah = !!awal && !!awal.get(bugKey) && bugLinkKe(awal.get(bugKey).issuelinks, t.key);
+      const linkError = sudah ? null : await buatLinkBug(site, authHeaders, bugKey, t.key);
+      if (linkError) return simpan("created_unlinked", bugKey, linkError + " Klik Retry link.");
+      const cek = await bacaIssues(site, authHeaders, [t.key, bugKey], ["summary", "issuelinks"]);
+      const ok = !!cek && !!cek.get(bugKey) && !!cek.get(t.key) &&
+        bugLinkKe(cek.get(bugKey).issuelinks, t.key) && bugLinkKe(cek.get(t.key).issuelinks, bugKey);
+      return ok ? simpan("created_linked", bugKey, null)
+        : simpan("link_unverified", bugKey, "Link dikirim tapi belum terbaca balik di Jira — klik Retry link untuk cek ulang.");
     }
 
     // GET /tickets — tiket terbuka yang di-assign ke pemilik token, plus

@@ -68,7 +68,7 @@ function kosongkanDataLokalTanpaAkses() {
     "catet.routineday.v1", "catet.sprints.v1", "catet.dirty.v1",
     "catet.dirtyAt.v1", "catet.syncAt.v1", "catet.synced.v1",
     READY_NOTIFICATIONS_KEY, "catet.weekly.v1", "catet.weekly.corrections.demo.v1",
-    "catet.testcaseBulkDraft.v1",
+    "catet.testcaseBulkDraft.v1", "catet.bugDrafts.v1",
   ]) localStorage.removeItem(key);
 
   tasks = [];

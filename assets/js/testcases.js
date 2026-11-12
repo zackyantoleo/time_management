@@ -6,6 +6,9 @@
 // Tab Jira → Test cases: satu tempelan JSON berisi beberapa tiket, dipecah per
 // tiket lalu Dry run/Push satu tiket per request, berurutan. Saat Dry run judul
 // tiap case diberi prefix judul tiket Jira ("<judul tiket> - <title>").
+// Case berjudul "GAP: …" (temuan AI, bukan test case) dipisah saat Parse ke
+// bagian GAP findings: QA mengisi Actual result dari tes nyata → Dry run bug →
+// Create bug (tiket Bug Jira lewat Worker, link Relates ke tiket sumber).
 // Token QAlity diatur di Settings.
 "use strict";
 
@@ -17,7 +20,11 @@ const TESTCASE_TITLE_MAX = 255;  // batas Summary issue Jira
 const TESTCASE_DRAFT_KEY = "catet.testcaseDrafts.v1";
 // Draft tempelan banyak tiket { text, updatedAt } — juga lokal saja.
 const TESTCASE_BULK_DRAFT_KEY = "catet.testcaseBulkDraft.v1";
+// Actual result per GAP { "<KEY>|<judul>": { text, updatedAt } } — juga lokal saja.
+const BUG_DRAFT_KEY = "catet.bugDrafts.v1";
 const TC_KEY = /^[A-Z][A-Z0-9]{1,9}-\d+$/; // sama dengan Worker
+const TC_GAP = /^gap\s*:/i;                 // sama dengan Worker
+const gapTestCase = (c) => TC_GAP.test(String((c && c.title) || "").trim());
 
 /* ---------- parse ---------- */
 
@@ -54,7 +61,7 @@ function bukaPagarTestCase(isi) {
 }
 
 function parseTestCases(text) {
-  const out = { format: TESTCASE_FORMAT, source: null, cases: [], errors: [] };
+  const out = { format: TESTCASE_FORMAT, source: null, cases: [], gaps: [], errors: [] };
   let isi = rapikanBarisTestCase(text);
   if (!isi.trim()) { out.errors.push("Belum ada teks — tempel test case dulu."); return out; }
   isi = bukaPagarTestCase(isi);
@@ -71,7 +78,15 @@ function parseTestCases(text) {
   if (!out.cases.length && !out.errors.length) {
     out.errors.push("Tidak ada test case yang dikenali. Pastikan tiap case punya **Title:**, **Test Step(s):**, dan **Expected Result:**, dipisah ---.");
   }
+  pisahGapTestCase(out);
   return out;
+}
+
+// Case GAP keluar dari daftar test case (tidak memblokir Dry run/Push) dan
+// masuk `gaps` — kandidat tiket Bug.
+function pisahGapTestCase(x) {
+  x.gaps = x.cases.filter(gapTestCase);
+  x.cases = x.cases.filter((c) => !gapTestCase(c));
 }
 
 function parseTestCasesJson(data, out) {
@@ -140,7 +155,7 @@ function parseTestCaseBundle(text) {
   out.bundle = true;
   const teks = (v) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim() : "");
   daftar.forEach((x, i) => {
-    const g = { key: "", taskName: "", endpoint: "", cases: [], errors: [] };
+    const g = { key: "", taskName: "", endpoint: "", cases: [], gaps: [], errors: [] };
     out.groups.push(g);
     if (!objekTiketTestCase(x)) { g.errors.push("Item #" + (i + 1) + " bukan objek tiket { task_id, test_cases }."); return; }
     g.taskName = teks(x.task_name);
@@ -155,6 +170,7 @@ function parseTestCaseBundle(text) {
     if (!Array.isArray(x.test_cases)) g.errors.push("test_cases harus berupa daftar case.");
     else if (!x.test_cases.length) g.errors.push("test_cases kosong.");
     else x.test_cases.forEach((c, j) => g.cases.push(kasusJsonTestCase(c, "Case #" + (j + 1), TC_FIELD_TIKET, TC_DIAM_TIKET, g.errors)));
+    pisahGapTestCase(g);
   });
   // Tiket ganda tidak digabung diam-diam: semua kemunculannya error.
   const jumlah = new Map();
@@ -170,7 +186,7 @@ function parseTestCaseBundle(text) {
 function parseTestCasesUntukTiket(text, key) {
   const b = parseTestCaseBundle(text);
   if (!b.bundle) return parseTestCases(text);
-  const out = { format: TESTCASE_FORMAT, source: "bundle", cases: [], errors: [], info: "" };
+  const out = { format: TESTCASE_FORMAT, source: "bundle", cases: [], gaps: [], endpoint: "", errors: [], info: "" };
   const lain = [...new Set(b.groups.map((g) => g.key).filter((k) => k && k !== key))];
   const g = b.groups.find((x) => x.key === key);
   if (!g) {
@@ -178,8 +194,11 @@ function parseTestCasesUntukTiket(text, key) {
     return out;
   }
   out.cases = g.cases;
+  out.gaps = g.gaps;
+  out.endpoint = g.endpoint;
   out.errors.push(...g.errors);
-  out.info = "Tempelan berisi " + b.groups.length + " tiket; panel ini memakai " + key + " (" + g.cases.length + " case)." +
+  out.info = "Tempelan berisi " + b.groups.length + " tiket; panel ini memakai " + key + " (" + g.cases.length + " case" +
+    (g.gaps.length ? " + " + g.gaps.length + " GAP" : "") + ")." +
     (lain.length ? " Tiket lain: " + lain.join(", ") + " — pakai Jira → Test cases." : "");
   return out;
 }
@@ -308,16 +327,18 @@ function validateTestCases(cases) {
 
 // Mode banyak tiket: validasi per tiket dari case yang dicentang (error parse +
 // batas 20 + validateTestCases) dan error tempelan (maks 10 tiket dicentang).
-// Tiket "siap" = dicentang dan bebas error.
+// Tiket "siap" = dicentang dan bebas error. Tiket yang isinya hanya GAP
+// (`hanyaGap`) tidak ikut Dry run/Push test case, tapi juga tidak tertahan.
 function cekBundleTestCase(parsed, pilihTiket, pilih) {
   const groups = parsed.groups.map((g, i) => {
     const dipilih = g.cases.filter((_, j) => pilih[i] && pilih[i][j]);
     const v = validateTestCases(dipilih);
     const errors = [...g.errors, ...(g.cases.length ? v.errors : [])];
-    return { dipilih, v, errors, siap: !!pilihTiket[i] && !errors.length && v.ok };
+    const hanyaGap = !g.cases.length && !!(g.gaps && g.gaps.length) && !g.errors.length;
+    return { dipilih, v, errors, hanyaGap, siap: !!pilihTiket[i] && !errors.length && v.ok };
   });
   const errors = [...parsed.errors];
-  const n = pilihTiket.filter(Boolean).length;
+  const n = pilihTiket.filter((p, i) => p && !groups[i].hanyaGap).length;
   if (n > TESTCASE_MAX_TIKET) errors.push(n + " tiket dicentang; maksimal " + TESTCASE_MAX_TIKET + " per Dry run/Push. Hapus centang sebagian.");
   return { ok: !errors.length, errors, groups };
 }
@@ -335,6 +356,7 @@ function rencanaPushBundle(parsed, pilihTiket, pilih, dry) {
     const d = dry[g.key];
     let alasan = null;
     if (!pilihTiket[i]) alasan = "tidak dicentang";
+    else if (c.hanyaGap) alasan = "hanya berisi GAP (dibuat lewat Create bug)";
     else if (!c.siap) alasan = "masih ada error";
     else if (!d || d.loading || d.sig !== sigTestCase(g.key, c.dipilih)) alasan = "belum Dry run, atau isinya berubah sejak Dry run";
     else if (d.error || !d.data || !Array.isArray(d.kirim)) alasan = "Dry run gagal";
@@ -489,6 +511,7 @@ function renderTestCasePanel(t) {
   const push = testcasePush && testcasePush.taskId === t.id ? testcasePush : null;
   if (push && (push.error || push.data)) panel.append(hasilPushTestCase(t, push));
   if (hasil) panel.append(pratinjauTestCase(t, hasil));
+  if (hasil && hasil.parsed.gaps.length) panel.append(bagianGapTestCase(key, hasil.parsed.gaps, hasil.parsed.endpoint || "", "gap-" + t.id));
   panel.append(riwayatTestCase(t));
   return panel;
 }
@@ -702,7 +725,9 @@ async function jalankanPushTestCase(t, d, cases) {
   if (hasil.data) {
     // Rencana lama sudah dipakai; Dry run ulang akan menunjukkan sisanya.
     if (testcaseDry && testcaseDry.taskId === t.id) testcaseDry = null;
-    if (pushBeresTestCase(hasil.data)) {
+    // GAP findings tetap tampil (draft disimpan) sampai Clear.
+    const adaGap = !!(testcaseHasil && testcaseHasil.taskId === t.id && testcaseHasil.parsed.gaps.length);
+    if (pushBeresTestCase(hasil.data) && !adaGap) {
       simpanDraftTestCase(t.id, "");
       if (testcaseHasil && testcaseHasil.taskId === t.id) testcaseHasil = null;
     }
@@ -940,6 +965,14 @@ function kartuTestCase(t, c, i, pilih, isu) {
   if (!pilih[i]) head.append(el("span", "testcase-badge", "Excluded"));
   li.append(head);
 
+  li.append(...isiKartuTestCase(c));
+  if (isu && isu.errors.length) li.append(daftarIsuTestCase(isu.errors, "err"));
+  if (isu && isu.warnings.length) li.append(daftarIsuTestCase(isu.warnings, "warn"));
+  return li;
+}
+
+// Precondition / Steps / Expected satu case (dipakai kartu test case & GAP).
+function isiKartuTestCase(c) {
   const blok = (label, items, tag) => {
     const f = el("div", "testcase-field");
     f.append(el("span", "testcase-label", label));
@@ -950,10 +983,7 @@ function kartuTestCase(t, c, i, pilih, isu) {
     } else f.append(el("span", "testcase-empty", "—"));
     return f;
   };
-  li.append(blok("Precondition", c.preconditions, "ul"), blok("Steps", c.steps, "ol"), blok("Expected", c.expected, "ol"));
-  if (isu && isu.errors.length) li.append(daftarIsuTestCase(isu.errors, "err"));
-  if (isu && isu.warnings.length) li.append(daftarIsuTestCase(isu.warnings, "warn"));
-  return li;
+  return [blok("Precondition", c.preconditions, "ul"), blok("Steps", c.steps, "ol"), blok("Expected", c.expected, "ol")];
 }
 
 /* ---------- mode banyak tiket: tab Jira → Test cases ---------- */
@@ -963,7 +993,7 @@ function kartuTestCase(t, c, i, pilih, isu) {
 //   push: { key → { loading, error, data, notTried } }, urutan: [key] (urutan hasil push),
 //   jalan: null | "dry" | "push", progres: "Checking 2/3 — …" }
 let testcaseBulk = null;
-function resetTestCaseBulk() { testcaseBulk = null; } // sign out / ganti akun
+function resetTestCaseBulk() { testcaseBulk = null; bugGap.clear(); } // sign out / ganti akun
 
 function renderTestCaseBulk(wrap) {
   const b = testcaseBulk;
@@ -1075,7 +1105,7 @@ const TESTCASE_PROMPT = [
   "- Use the minimum number of steps; prefer ONE (e.g. \"Send POST request to /path with a valid token and a valid body.\"). Never put validation words (verify, check, validate, ensure) in a step.",
   "- Expected result: prefer two points: 1) HTTP status code and request outcome; 2) response body, business logic, or database consistency. Add a third only when truly needed.",
   "- Split materially different positive and negative scenarios into separate test cases.",
-  "- Requirement-based: never invent fields, status codes, error messages, or business rules the ticket does not state. When a requirement is missing or unclear, add a case titled \"GAP: <what is missing>\" instead of guessing (it is flagged for review and never imported).",
+  "- Requirement-based: never invent fields, status codes, error messages, or business rules the ticket does not state. When a requirement is missing or unclear, or the behaviour contradicts it, add a case titled \"GAP: <what is missing or wrong>\" instead of guessing, with the same fields: precondition, test_steps (how to reproduce), expected_result (what the requirement says should happen). GAP cases are never imported as test cases; CATET lists them as Bug drafts for QA to verify.",
   "- Clear, professional English.",
   "",
   "## Tickets",
@@ -1112,7 +1142,7 @@ function pratinjauBulkTestCase(b) {
   if (cek.errors.length) wrap.append(daftarIsuTestCase(cek.errors, "err"));
   if (!parsed.groups.length) return wrap;
 
-  const nPilih = b.pilihTiket.filter(Boolean).length;
+  const nPilih = b.pilihTiket.filter((p, i) => p && !cek.groups[i].hanyaGap).length;
   const siapList = cek.groups.filter((c) => c.siap);
   const nTahan = nPilih - siapList.length;
   const ringkas = el("div", "testcase-summary");
@@ -1132,6 +1162,7 @@ function pratinjauBulkTestCase(b) {
     ? "Perbaiki error di atas dulu — semua tiket tertahan."
     : siap ? siapList.length + " tiket siap (" + nCase + " case)." + (nTahan ? " " + nTahan + " tiket bertanda Error tidak ikut." : "") +
       " Dry run all mengecek project, duplikat, dan judul Jira tiap tiket."
+    : !nTahan && cek.groups.some((c) => c.hanyaGap) ? "Tidak ada test case untuk dipush — tempelan hanya berisi GAP. Buat Bug-nya lewat GAP findings di tiap tiket."
     : "Belum ada tiket yang siap — perbaiki yang bertanda Error atau hapus centangnya."));
   if (siap) {
     const rencana = rencanaPushBundle(parsed, b.pilihTiket, b.pilih, b.dry);
@@ -1169,7 +1200,7 @@ function pratinjauBulkTestCase(b) {
 
 function kelompokBulkTestCase(b, g, i, c) {
   const aktif = !!b.pilihTiket[i];
-  const li = el("li", "testcase-group" + (!aktif ? " excluded" : c.siap ? "" : " has-error"));
+  const li = el("li", "testcase-group" + (!aktif ? " excluded" : c.siap || c.hanyaGap ? "" : " has-error"));
   li.id = "tcb-group-" + i;
   const head = el("label", "testcase-group-head");
   const cb = document.createElement("input");
@@ -1208,6 +1239,7 @@ function kelompokBulkTestCase(b, g, i, c) {
     if (d.error) li.append(daftarIsuTestCase([d.error, ...d.rinci], "err"));
     if (d.data) li.append(judulJiraTestCase(d.data, g.taskName), rencanaTestCase(d.data, null, c.dipilih, d.kirim));
   }
+  if (g.gaps.length && TC_KEY.test(g.key)) li.append(bagianGapTestCase(g.key, g.gaps, g.endpoint, "gap-tcb" + i));
   return li;
 }
 
@@ -1281,8 +1313,9 @@ async function pushSemuaTestCase() {
     if (!h.data || h.data.results.some((r) => r.status === "failed" || r.status === "pending")) henti = x.key;
   }
   b.jalan = null; b.progres = "";
-  // Draft dibersihkan hanya bila SEMUA tiket di tempelan beres.
-  if (b.parsed.groups.every((g) => b.push[g.key] && b.push[g.key].data && pushBeresTestCase(b.push[g.key].data))) {
+  // Draft dibersihkan hanya bila SEMUA tiket di tempelan beres dan tidak ada
+  // GAP findings (yang masih perlu Create bug) — sisanya sampai Clear.
+  if (b.parsed.groups.every((g) => !g.gaps.length && b.push[g.key] && b.push[g.key].data && pushBeresTestCase(b.push[g.key].data))) {
     simpanDraftBulkTestCase("");
     b.text = ""; b.parsed = null; b.pilihTiket = []; b.pilih = [];
   }
@@ -1348,4 +1381,273 @@ async function ulangLinkBulkTestCase(b, key, x, btn) {
   if (h.data) { x.status = h.data.status; x.error = h.data.error || null; }
   else x.error = "Retry link gagal: " + h.error;
   if (testcaseBulk === b) renderLaluFokus("tcb-pushres");
+}
+
+/* ---------- GAP findings → tiket Bug (Worker /bugs/preview, /bugs/push) ---------- */
+
+// Per GAP (id = "<KEY>|<judul huruf kecil>"): { dry: { sig, loading, error, rinci, data },
+// push: { loading, error, data, actual, d } }. Hasil Dry run hanya tampil selama sig sama.
+const bugGap = new Map();
+const idGap = (key, c) => key + "|" + kunciJudulTestCase(c.title);
+const BUG_PREFIX = "[Feedback] ";
+const ringkasanBugGap = (c) => BUG_PREFIX + String(c.title || "").replace(/^gap\s*:\s*/i, "").replace(/\s+/g, " ").trim();
+const BUG_BERES = ["created_linked", "skipped_duplicate"];
+// Worker lama tanpa route ini / flag BUG_PUSH_ENABLED mati → 404 "… tidak dikenal".
+const BUG_RUTE_TIDAK_ADA = /(Rute|Endpoint)[^.]*tidak dikenal/;
+
+function bacaSemuaActualGap() {
+  try {
+    const v = JSON.parse(localStorage.getItem(BUG_DRAFT_KEY));
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  } catch { return {}; }
+}
+function bacaActualGap(id) {
+  const d = bacaSemuaActualGap()[id];
+  return d && typeof d.text === "string" ? d.text : "";
+}
+function simpanActualGap(id, text) {
+  const semua = bacaSemuaActualGap();
+  if (String(text || "").trim()) semua[id] = { text: String(text), updatedAt: new Date().toISOString() };
+  else delete semua[id];
+  try {
+    if (Object.keys(semua).length) localStorage.setItem(BUG_DRAFT_KEY, JSON.stringify(semua));
+    else localStorage.removeItem(BUG_DRAFT_KEY);
+  } catch {}
+}
+// Draft dihapus setelah Bug beres; teksnya tetap tampil dari hasil push.
+const actualGap = (id) => bacaActualGap(id) || ((bugGap.get(id) || {}).push || {}).actual || "";
+
+const kirimanGap = (c, actual, endpoint) => ({ title: c.title, preconditions: c.preconditions, steps: c.steps,
+  expected: c.expected, actual: String(actual || "").trim(), endpoint: endpoint || "" });
+const sigGap = (key, c, actual, endpoint) => JSON.stringify([key, kirimanGap(c, actual, endpoint)]);
+
+// Cek lokal sebelum Dry run bug; Worker memvalidasi ulang (otoritatif).
+// `siap` juga menuntut Actual result: Bug hanya dari temuan yang sudah dites.
+function validasiGapTestCase(c, actual) {
+  const errors = [];
+  const summary = ringkasanBugGap(c);
+  if (summary.length === BUG_PREFIX.length) errors.push("Temuan setelah “GAP:” kosong.");
+  else if ([...summary].length > TESTCASE_TITLE_MAX) errors.push("Summary Bug lebih dari " + TESTCASE_TITLE_MAX + " karakter — persingkat judul GAP.");
+  if (!c.steps.length) errors.push("Tidak ada Test Step (langkah reproduksi).");
+  if (!c.expected.length) errors.push("Tidak ada Expected Result.");
+  return { errors, siap: !errors.length && !!String(actual || "").trim() };
+}
+
+async function previewBugGap(key, gap) {
+  try {
+    const r = await fetch(jiraProxy() + "/bugs/preview", {
+      method: "POST", headers: { "Content-Type": "application/json", ...headerAkses() },
+      body: JSON.stringify({ issueKey: key, gap }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d && d.bug && typeof d.previewHash === "string") return { data: d };
+    if (r.status === 404 && BUG_RUTE_TIDAK_ADA.test(d.error || "")) {
+      return { error: "Worker belum punya fitur Bug — deploy Worker versi terbaru (worker/README.md).", rinci: [] };
+    }
+    return { error: "Dry run bug gagal: " + (d.error || "HTTP " + r.status), rinci: Array.isArray(d.errors) ? d.errors : [] };
+  } catch (e) {
+    return { error: "Dry run bug gagal: " + ((e && e.message) || "koneksi"), rinci: [] };
+  }
+}
+
+async function pushBugGap(key, gap, previewHash) {
+  try {
+    const r = await fetch(jiraProxy() + "/bugs/push", {
+      method: "POST", headers: { "Content-Type": "application/json", ...headerAkses() },
+      body: JSON.stringify({ issueKey: key, gap, previewHash }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d && typeof d.status === "string") return { data: d };
+    if (r.status === 404 && BUG_RUTE_TIDAK_ADA.test(d.error || "")) {
+      return { error: "Create bug belum diaktifkan di Worker (flag BUG_PUSH_ENABLED mati). Dry run bug tetap bisa dipakai." };
+    }
+    return { error: "Create bug gagal: " + (d.error || "HTTP " + r.status) };
+  } catch (e) {
+    return { error: "Create bug gagal: " + ((e && e.message) || "koneksi") + ". Dry run bug lagi sebelum mencoba — bisa saja Bug-nya sudah terbuat." };
+  }
+}
+
+async function jalankanDryRunGap(key, c, endpoint, domId) {
+  const id = idGap(key, c);
+  const actual = actualGap(id);
+  const sig = sigGap(key, c, actual, endpoint);
+  const st = bugGap.get(id) || {};
+  st.dry = { sig, loading: true, error: "", rinci: [], data: null };
+  bugGap.set(id, st);
+  renderLaluFokus(domId + "-dry");
+  const h = await previewBugGap(key, kirimanGap(c, actual, endpoint));
+  const kini = bugGap.get(id);
+  if (!kini || !kini.dry || kini.dry.sig !== sig) return; // reset / Dry run lain selama request
+  kini.dry = { sig, loading: false, error: h.error || "", rinci: h.rinci || [], data: h.data || null };
+  renderLaluFokus(domId + "-dry");
+}
+
+// d = hasil Dry run bug (previewHash + isi yang dikonfirmasi). Retry link
+// memakai d yang sama dengan action "relink" — tanpa konfirmasi, tanpa Bug baru.
+async function jalankanPushGap(key, c, endpoint, domId, d) {
+  const id = idGap(key, c);
+  if (d.action !== "relink") {
+    const b = d.bug;
+    if (!confirm("Buat Bug di Jira project " + ((d.project && d.project.key) || "?") + "?\n\n" +
+      "Summary: " + b.summary + "\nParent: " + (b.parent ? b.parent.key + " " + b.parent.summary : "—") +
+      "\nAssignee: " + (b.assignee ? (b.assignee.displayName || b.assignee.accountId) + " (akan menerima notifikasi Jira)" : "—") +
+      "\nLink: " + d.linkType + " ke " + d.issueKey + "\n\nIni menulis ke Jira dan tidak dihapus otomatis.")) return;
+  }
+  const actual = actualGap(id);
+  const st = bugGap.get(id) || {};
+  st.push = { loading: true, actual, d };
+  bugGap.set(id, st);
+  renderLaluFokus(domId + "-create");
+  const h = await pushBugGap(key, kirimanGap(c, actual, endpoint), d.previewHash);
+  const kini = bugGap.get(id);
+  if (!kini) return; // sign out / ganti akun selama request
+  kini.push = { loading: false, error: h.error || "", data: h.data || null, actual, d };
+  if (h.data) {
+    kini.dry = null; // rencana sudah dipakai; Dry run ulang menunjukkan keadaan terbaru
+    if (BUG_BERES.includes(h.data.status)) simpanActualGap(id, "");
+  }
+  renderLaluFokus(domId + "-res");
+}
+
+function bagianGapTestCase(key, gaps, endpoint, domId) {
+  const box = el("div", "testcase-gaps");
+  box.id = domId;
+  const head = el("div", "testcase-plan-head");
+  head.append(el("strong", "testcase-title", "GAP findings"), el("span", "testcase-chip warn", gaps.length + " GAP"));
+  box.append(head);
+  box.append(el("p", "testcase-hint",
+    "Temuan AI yang bukan test case — tidak ikut Dry run/Push ke QAlity. Tes dulu di staging; kalau memang salah, isi Actual result, " +
+    "lalu Dry run bug → Create bug: tiket Bug di project tiket ini, parent = epic tiket, assignee = assignee tiket, link Relates ke " + key + "."));
+  const ol = el("ol", "testcase-list");
+  gaps.forEach((c, i) => ol.append(kartuGapTestCase(key, c, endpoint, domId + "-" + i)));
+  box.append(ol);
+  if (!jiraProxy()) box.append(el("p", "testcase-hint", "Dry run bug butuh sign in (Settings → Account)."));
+  return box;
+}
+
+function kartuGapTestCase(key, c, endpoint, domId) {
+  const id = idGap(key, c);
+  const st = bugGap.get(id) || {};
+  const p = st.push;
+  const actualAwal = actualGap(id);
+  const d = st.dry && st.dry.sig === sigGap(key, c, actualAwal, endpoint) ? st.dry : null;
+  const li = el("li", "testcase-card gap-card");
+  const head = el("div", "testcase-card-head");
+  head.append(el("span", "testcase-badge warn", "GAP"), el("strong", "testcase-title", c.title));
+  li.append(head, ...isiKartuTestCase(c));
+  const v = validasiGapTestCase(c, actualAwal);
+  if (v.errors.length) li.append(daftarIsuTestCase(v.errors, "err"));
+
+  const f = el("div", "testcase-field");
+  const lab = el("label", "testcase-label", "Actual");
+  lab.htmlFor = domId + "-actual";
+  const ta = document.createElement("textarea");
+  ta.className = "testcase-input gap-actual";
+  ta.id = domId + "-actual";
+  ta.rows = 3;
+  ta.placeholder = "Hasil tes nyata di staging, mis. API returns 201 Created and stores the record.";
+  ta.setAttribute("aria-label", "Actual result untuk " + c.title);
+  ta.value = actualAwal;
+  f.append(lab, ta);
+  li.append(f);
+  const kosong = el("p", "testcase-hint" + (actualAwal.trim() ? " hidden" : ""),
+    "Isi Actual result dulu — Bug hanya dibuat dari temuan yang sudah terbukti saat dites.");
+  li.append(kosong);
+
+  const bar = el("div", "testcase-actions");
+  const dry = el("button", "btn-solid", d && d.loading ? "Checking…" : d && d.data ? "Dry run bug again" : "Dry run bug");
+  dry.type = "button"; dry.id = domId + "-dry";
+  dry.title = "Cek ke Jira tanpa membuat apa pun";
+  const atur = (teks) => { dry.disabled = !jiraProxy() || !!(d && d.loading) || !validasiGapTestCase(c, teks).siap; };
+  atur(actualAwal);
+  dry.onclick = () => jalankanDryRunGap(key, c, endpoint, domId);
+  bar.append(dry);
+  li.append(bar);
+
+  const basi = el("p", "testcase-stale hidden", "Actual result berubah sejak Dry run bug — Dry run lagi sebelum Create bug.");
+  basi.setAttribute("role", "status");
+  li.append(basi);
+  let plan = null;
+  if (d && d.error) li.append(daftarIsuTestCase([d.error, ...d.rinci], "err"));
+  if (d && d.data) { plan = rencanaBugGap(d.data, key, c, endpoint, domId, p); li.append(plan); }
+  if (p && !p.loading && (p.error || p.data)) li.append(hasilBugGap(p, key, c, endpoint, domId));
+
+  // Mengetik tidak me-render ulang (kursor tetap); rencana disembunyikan
+  // selama teksnya beda dengan yang di-dry-run.
+  ta.oninput = () => {
+    simpanActualGap(id, ta.value);
+    atur(ta.value);
+    kosong.classList.toggle("hidden", !!ta.value.trim());
+    const berubah = !!plan && sigGap(key, c, ta.value, endpoint) !== d.sig;
+    basi.classList.toggle("hidden", !berubah);
+    if (plan) plan.classList.toggle("hidden", berubah);
+  };
+  return li;
+}
+
+function rencanaBugGap(d, key, c, endpoint, domId, p) {
+  const wrap = el("div", "testcase-plan");
+  wrap.setAttribute("role", "status");
+  const b = d.bug;
+  const buat = d.action === "create";
+  wrap.append(el("p", "testcase-status" + (buat ? " ok" : ""), buat
+    ? "Dry run OK — Bug akan dibuat di project " + ((d.project && d.project.key) || "?") + "."
+    : d.reason || d.action));
+  if (buat && d.reason) wrap.append(el("p", "testcase-hint", d.reason));
+  const baris = (label, isi) => {
+    const f = el("div", "testcase-field");
+    f.append(el("span", "testcase-label", label), typeof isi === "string" ? el("span", "testcase-pre", isi) : isi);
+    return f;
+  };
+  const tiketDanJudul = (x) => { const s = el("span"); s.append(tautanTiket(x.key), " " + (x.summary || "")); return s; };
+  const link = el("span");
+  link.append(d.linkType + " → ", tautanTiket(d.issueKey));
+  wrap.append(
+    baris("Summary", b.summary),
+    baris("Type", d.issueType || "Bug"),
+    baris("Parent", b.parent ? tiketDanJudul(b.parent) : el("span", "testcase-empty", "— (tiket tidak punya epic)")),
+    baris("Assignee", b.assignee ? b.assignee.displayName || b.assignee.accountId : el("span", "testcase-empty", "— (tiket belum di-assign)")),
+    baris("Link", link));
+  if (b.endpoint) wrap.append(baris("Endpoint", b.endpoint));
+  wrap.append(el("p", "testcase-hint",
+    "Description Bug berisi Precondition, Steps to Reproduce, Expected Result, dan Actual Result di atas. Dry run bug tidak membuat apa pun di Jira."));
+  if (buat || d.action === "relink") {
+    const bar = el("div", "testcase-actions");
+    const btn = el("button", "btn-solid", p && p.loading ? (buat ? "Creating…" : "Linking…") : buat ? "Create bug" : "Retry link");
+    btn.type = "button"; btn.id = domId + "-create";
+    btn.title = buat ? "Buat tiket Bug di Jira lalu link ke " + key : "Link ulang " + d.bugKey + " ke " + key + " lalu baca balik";
+    btn.disabled = !jiraProxy() || !!(p && p.loading);
+    btn.onclick = () => jalankanPushGap(key, c, endpoint, domId, d);
+    bar.append(btn);
+    wrap.append(bar);
+  }
+  return wrap;
+}
+
+function hasilBugGap(p, key, c, endpoint, domId) {
+  const wrap = el("div", "testcase-pushres");
+  wrap.id = domId + "-res";
+  wrap.tabIndex = -1;
+  wrap.setAttribute("role", "status");
+  if (p.error) { wrap.append(daftarIsuTestCase([p.error], "err")); return wrap; }
+  const x = p.data;
+  const beres = BUG_BERES.includes(x.status);
+  wrap.append(el("p", "testcase-status" + (beres ? " ok" : ""),
+    x.status === "created_linked" ? "Bug dibuat dan ter-link ke " + key + "."
+    : x.status === "skipped_duplicate" ? "Tidak dibuat — Bug untuk GAP ini sudah ada."
+    : TC_PERLU_LINK.includes(x.status) ? "Bug dibuat, tapi link ke " + key + " belum terverifikasi."
+    : "Bug belum dibuat."));
+  const ul = el("ul", "testcase-rows");
+  const li = barisStatusTestCase(x.status, x.summary, x.bugKey, x.error);
+  if (x.bugKey && TC_PERLU_LINK.includes(x.status) && p.d) {
+    const btn = el("button", "btn-line", "Retry link");
+    btn.type = "button";
+    btn.disabled = !jiraProxy();
+    btn.title = "Link ulang " + x.bugKey + " ke " + key + " lalu baca balik";
+    btn.onclick = () => jalankanPushGap(key, c, endpoint, domId, { ...p.d, action: "relink" });
+    li.insertBefore(btn, li.querySelector(".testcase-hint"));
+  }
+  ul.append(li);
+  wrap.append(ul);
+  return wrap;
 }

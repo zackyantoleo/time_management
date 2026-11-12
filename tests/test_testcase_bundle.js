@@ -264,7 +264,9 @@ const sample = [tiket('ABC-101', 3), tiket('ABC-102', 5)];
   for (const f of ['task_id', 'task_name', 'endpoint', 'test_cases', 'title', 'precondition', 'test_steps', 'expected_result']) assert.match(prompt, new RegExp('"' + f + '"'));
   assert.match(prompt, /20 test cases per ticket and 10 tickets/);
   assert.match(prompt, /Do NOT include the ticket title/);
-  assert.match(prompt, /"GAP: <what is missing>"/);
+  assert.match(prompt, /"GAP: <what is missing or wrong>"/);
+  assert.match(prompt, /test_steps \(how to reproduce\)/);
+  assert.match(prompt, /CATET lists them as Bug drafts/);
   assert.match(prompt, /## Tickets\n</);
 }
 
@@ -294,7 +296,7 @@ const sample = [tiket('ABC-101', 3), tiket('ABC-102', 5)];
 }
 
 // Chip "Test cases" di tab Jira, mode tunggal pengganti boolean, reset saat ganti akun;
-// draft banyak tiket ikut dihapus saat sign out; SW v82.
+// draft banyak tiket + Actual result GAP ikut dihapus saat sign out; SW v83.
 {
   const jira = fs.readFileSync(path.join(root, 'assets/js/jira.js'), 'utf8');
   assert.match(jira, /\["testcases", "Test cases", "jira-filter-testcases"\]/);
@@ -302,8 +304,69 @@ const sample = [tiket('ABC-101', 3), tiket('ABC-102', 5)];
   assert.match(jira, /"jira-filter-missing-worklog"/);
   assert.doesNotMatch(jira, /jiraWorklogFilter/);
   assert.equal((jira.match(/jiraFilterMode = "inbox";\n  if \(typeof resetTestCaseBulk === "function"\) resetTestCaseBulk\(\);/g) || []).length, 2);
-  assert.match(jira, /"catet\.testcaseBulkDraft\.v1",\n  \]\) localStorage\.removeItem/);
-  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /const CACHE = "catet-v82";/);
+  assert.match(jira, /"catet\.testcaseBulkDraft\.v1", "catet\.bugDrafts\.v1",\n  \]\) localStorage\.removeItem/);
+  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /const CACHE = "catet-v83";/);
 }
 
-console.log('PASS testcase bundle: daftar/objek, alias, K3, task_id, ganda, batas 10 tiket/20 case, format lama, panel per task, rencana Push all (isi ber-prefix), prefix judul tiket, peringatan judul lama, prompt AI, judul Jira, draft, chip');
+// GAP: dipisah dari test case saat Parse (tidak memblokir tiket), tiket yang
+// hanya berisi GAP tidak tertahan dan tidak ikut Push all.
+{
+  const gapCase = (title, extra = {}) => kasus(9, { title, ...extra });
+  const text = JSON.stringify([
+    { ...tiket('ABC-101', 2), test_cases: [kasus(1), gapCase('GAP: Email domain lock is not enforced'), kasus(2)] },
+    { task_id: 'ABC-102', task_name: 'Only gaps', endpoint: 'GET /gap', test_cases: [gapCase('gap : Date range filter is ignored')] },
+  ]);
+  const r = bundle(text);
+  assert.deepEqual(r.groups.map(g => [g.key, g.cases.map(c => c.title), g.gaps.map(c => c.title), g.errors]), [
+    ['ABC-101', ['Verify Example Case 1', 'Verify Example Case 2'], ['GAP: Email domain lock is not enforced'], []],
+    ['ABC-102', [], ['gap : Date range filter is ignored'], []],
+  ]);
+  assert.deepEqual(r.groups[0].gaps[0], { title: 'GAP: Email domain lock is not enforced', preconditions: ['Example precondition 9.'],
+    steps: ['Send an example request 9.'], expected: ['Example response 9 is returned.'], ignored: [] });
+  const v = cek(r, ...all(r));
+  assert.equal(v.ok, true);
+  assert.deepEqual(v.groups.map(g => [g.siap, g.hanyaGap, g.errors]), [[true, false, []], [false, true, []]]);
+  const rencana = plain(run('rencanaPushBundle')(r, ...all(r), {}));
+  assert.deepEqual(rencana.kecuali.map(x => [x.key, x.alasan]), [['ABC-101', 'belum Dry run, atau isinya berubah sejak Dry run'],
+    ['ABC-102', 'hanya berisi GAP (dibuat lewat Create bug)']]);
+  // Tiket hanya-GAP tidak dihitung ke batas 10 tiket dicentang.
+  const banyak = bundle(JSON.stringify([...Array.from({ length: 10 }, (_, i) => tiket('ABC-' + (401 + i), 1)),
+    { task_id: 'ABC-499', test_cases: [gapCase('GAP: Something unclear')] }]));
+  assert.equal(cek(banyak, ...all(banyak)).ok, true);
+  // Panel per task: GAP + endpoint tiket ikut; info menyebut jumlah GAP.
+  const t = forTicket(text, 'ABC-101');
+  assert.deepEqual([t.cases.length, t.gaps.length, t.endpoint], [2, 1, 'GET /example/abc-101']);
+  assert.match(t.info, /panel ini memakai ABC-101 \(2 case \+ 1 GAP\)/);
+  assert.deepEqual(forTicket(text, 'ABC-102').errors, [], 'tiket hanya-GAP bukan error');
+}
+
+// GAP → Bug: summary, validasi lokal, isi kiriman, sig, draft Actual result.
+{
+  const store = new Map();
+  const d = load(store);
+  const g = { title: 'GAP:  Email domain   lock', preconditions: ['P.'], steps: ['Send POST.'], expected: ['Returns 400.'], ignored: ['x'] };
+  assert.equal(d.run('ringkasanBugGap')(g), '[Feedback] Email domain lock');
+  assert.deepEqual(plain(d.run('validasiGapTestCase')(g, '')), { errors: [], siap: false }, 'Actual kosong → belum siap');
+  assert.deepEqual(plain(d.run('validasiGapTestCase')(g, ' API returns 201. ')), { errors: [], siap: true });
+  assert.deepEqual(plain(d.run('validasiGapTestCase')({ ...g, title: 'GAP:', steps: [], expected: [] }, 'x')).errors,
+    ['Temuan setelah “GAP:” kosong.', 'Tidak ada Test Step (langkah reproduksi).', 'Tidak ada Expected Result.']);
+  assert.match(d.run('validasiGapTestCase')({ ...g, title: 'GAP: ' + 'x'.repeat(245) }, 'x').errors[0], /lebih dari 255/);
+  assert.deepEqual(plain(d.run('kirimanGap')(g, ' API returns 201. ', 'POST /x')), { title: 'GAP:  Email domain   lock', preconditions: ['P.'],
+    steps: ['Send POST.'], expected: ['Returns 400.'], actual: 'API returns 201.', endpoint: 'POST /x' }, 'ignored tidak dikirim');
+  assert.notEqual(d.run('sigGap')('ABC-1', g, 'a', ''), d.run('sigGap')('ABC-1', g, 'b', ''));
+  const id = d.run('idGap')('ABC-1', g);
+  assert.equal(id, 'ABC-1|gap: email domain lock');
+  d.run('simpanActualGap')(id, 'API returns 201.');
+  assert.equal(JSON.parse(store.get('catet.bugDrafts.v1'))[id].text, 'API returns 201.');
+  assert.equal(d.run('actualGap')(id), 'API returns 201.');
+  d.run('simpanActualGap')(id, '  ');
+  assert.equal(store.has('catet.bugDrafts.v1'), false, 'draft kosong dihapus');
+  store.set('catet.bugDrafts.v1', '{rusak');
+  assert.equal(d.run('bacaActualGap')(id), '', 'storage rusak tidak melempar');
+  d.run('bugGap').set(id, { push: { actual: 'From push' } });
+  assert.equal(d.run('actualGap')(id), 'From push', 'teks tetap tampil setelah draft dibersihkan');
+  d.run('resetTestCaseBulk')();
+  assert.equal(d.run('bugGap').size, 0, 'ganti akun → state GAP dibuang');
+}
+
+console.log('PASS testcase bundle: GAP findings, daftar/objek, alias, K3, task_id, ganda, batas 10 tiket/20 case, format lama, panel per task, rencana Push all (isi ber-prefix), prefix judul tiket, peringatan judul lama, prompt AI, judul Jira, draft, chip');

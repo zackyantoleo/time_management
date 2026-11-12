@@ -855,6 +855,12 @@
   .testcase-push-ticket + .testcase-push-ticket { padding-top: 8px; border-top: 1px dashed var(--line); }
   .testcase-badge.not-tried { border-style: dashed; color: var(--ink-faint); }
   .testcase-progress { font-weight: 600; }
+  /* GAP findings → tiket Bug: Actual result per GAP + Dry run bug / Create bug. */
+  .testcase-gaps {
+    display: flex; flex-direction: column; gap: 8px; min-width: 0; padding-top: 8px; border-top: 1px dashed var(--line);
+  }
+  .testcase-card.gap-card { border-left-color: var(--p-tinggi); }
+  .testcase-input.gap-actual { min-height: 64px; font: inherit; font-size: 12.5px; }
   /* Template prompt AI (dilipat) di atas kolom tempel banyak tiket. */
   .testcase-prompt { border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); padding: 0 10px; min-width: 0; }
   .testcase-prompt > summary {
