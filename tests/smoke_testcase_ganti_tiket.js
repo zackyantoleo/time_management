@@ -3,6 +3,8 @@
 // → Change ticket di mode banyak tiket (validasi, ganda, Escape, Enter, datalist
 // task) → task_id di teks + draft ikut diganti, centang tetap, Dry run memakai
 // tiket baru, Actual result GAP ikut pindah; panel 🧪 → "Use … for …".
+// Edit title case: validasi, Enter/Escape, teks + draft ikut, Dry run memakai title
+// baru (+ prefix), panel JSON bisa, markdown tanpa tombol.
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -98,11 +100,11 @@ const GAP = 'GAP: Example email is not masked';
         // Validasi: bukan key, key ganda, Escape membatalkan.
         await inp.fill('profile');
         await sec.locator('#tcb-key-ok-0').click();
-        assert.match(await sec.locator('#tcb-group-0 .testcase-ticket-edit .testcase-issues').innerText(), /bukan key tiket Jira/);
+        assert.match(await sec.locator('#tcb-group-0 .testcase-inline-edit .testcase-issues').innerText(), /bukan key tiket Jira/);
         assert.equal(await sec.locator('#tcb-key-0').inputValue(), 'profile', 'isian tidak hilang setelah error');
         await sec.locator('#tcb-key-0').fill('abc-303');
         await sec.locator('#tcb-key-0').press('Enter');
-        assert.match(await sec.locator('#tcb-group-0 .testcase-ticket-edit .testcase-issues').innerText(), /ABC-303 sudah ada di tempelan/);
+        assert.match(await sec.locator('#tcb-group-0 .testcase-inline-edit .testcase-issues').innerText(), /ABC-303 sudah ada di tempelan/);
         await sec.locator('#tcb-key-0').press('Escape');
         assert.equal(await sec.locator('#tcb-key-0').count(), 0);
         assert.equal(await sec.locator('#tcb-ubah-0').evaluate(n => n === document.activeElement), true, 'fokus kembali ke tombol');
@@ -113,7 +115,7 @@ const GAP = 'GAP: Example email is not masked';
         await sec.locator('#tcb-ubah-0').click();
         await sec.locator('#tcb-key-0').fill('ABC-302');
         await sec.locator('#tcb-key-ok-0').click();
-        assert.match(await sec.locator('#tcb-group-0 .testcase-ticket-edit .testcase-issues').innerText(), /klik Parse dulu/);
+        assert.match(await sec.locator('#tcb-group-0 .testcase-inline-edit .testcase-issues').innerText(), /klik Parse dulu/);
         await sec.locator('#tcb-key-0').press('Escape');
         await sec.locator('#tcb-input').fill(SAMPLE);
 
@@ -135,11 +137,36 @@ const GAP = 'GAP: Example email is not masked';
         const bugDrafts = await page.evaluate(() => JSON.parse(localStorage.getItem('catet.bugDrafts.v1')));
         assert.deepEqual(Object.keys(bugDrafts), [gapKey('ABC-302', GAP)]);
 
+        // Edit title: tombol di kartu, validasi, Enter simpan, Escape batal; teks + draft ikut.
+        await sec.locator('#tc-edit-tcb0-0').click();
+        assert.equal(await sec.locator('#tc-pick-tcb0-0').isChecked(), true, 'checkbox case tidak berubah');
+        const ti = sec.locator('#tc-title-tcb0-0');
+        assert.equal(await ti.evaluate(n => n === document.activeElement), true, 'fokus ke isian title');
+        assert.equal(await ti.inputValue(), 'Verify Example Profile');
+        await ti.fill('   ');
+        await sec.locator('#tc-title-ok-tcb0-0').click();
+        assert.match(await sec.locator('#tcb-group-0 .testcase-card .testcase-inline-edit .testcase-issues').innerText(), /tidak boleh kosong/);
+        await sec.locator('#tc-title-tcb0-0').fill('Verify Example Profile Renamed');
+        if (scheme === 'light' && mode === 'http') await sec.locator('#tcb-group-0 .testcase-card').first().screenshot({ path: path.join(out, 'title-edit-' + scheme + '.png') });
+        await sec.locator('#tc-title-tcb0-0').press('Enter');
+        assert.equal(await sec.locator('#tcb-group-0 .testcase-card .testcase-title').first().textContent(), 'Verify Example Profile Renamed');
+        assert.equal(await sec.locator('#tc-edit-tcb0-0').evaluate(n => n === document.activeElement), true, 'fokus kembali ke tombol');
+        const teks2 = await sec.locator('#tcb-input').inputValue();
+        assert.equal(JSON.parse(teks2)[0].test_cases[0].title, 'Verify Example Profile Renamed');
+        assert.equal(JSON.parse(teks2)[0].test_cases[2].title, GAP, 'GAP tidak tersentuh');
+        assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('catet.testcaseBulkDraft.v1')).text), teks2);
+        await sec.locator('#tc-edit-tcb0-1').click();
+        await sec.locator('#tc-title-tcb0-1').fill('Should not be saved');
+        await sec.locator('#tc-title-tcb0-1').press('Escape');
+        assert.equal(await sec.locator('#tcb-group-0 .testcase-card .testcase-title').nth(1).textContent(), 'Verify Example Profile Empty');
+        assert.equal(await sec.locator('#tc-pick-tcb0-1').isChecked(), false, 'case tak dicentang tetap tak dicentang');
+
         // Dry run all memakai tiket baru; prefix = judul tiket baru.
         await sec.locator('#tcb-dry').click();
         await sec.locator('#tcb-push').waitFor();
         assert.deepEqual(previewBodies.map(b => [b.issueKey, b.cases.length]), [['ABC-302', 1], ['ABC-303', 1]]);
-        assert.equal(previewBodies[0].cases[0].title, 'Testing Example Profile - Verify Example Profile');
+        assert.equal(previewBodies[0].cases[0].title, 'Testing Example Profile - Verify Example Profile Renamed', 'prefix + title hasil edit');
+        assert.equal(await sec.locator('#tcb-group-0 .testcase-list .testcase-head-btn').first().isDisabled(), false);
         assert.match(await sec.locator('#tcb-group-0 .testcase-jira-title').innerText(), /Testing Example Profile/);
         assert.equal(await sec.locator('#tcb-group-0 .testcase-jira-title .testcase-issues').count(), 0, 'judul "Testing …" masih mirip task_name');
         await sec.screenshot({ path: path.join(out, 'ticket-bulk-' + mode + '-' + scheme + '.png') });
@@ -166,6 +193,16 @@ const GAP = 'GAP: Example email is not masked';
           assert.equal(await panel.locator('#tc-dry-q2').count(), 1, 'Dry run muncul setelah pindah');
           assert.equal(JSON.parse(await panel.locator('#tc-input-q2').inputValue())[0].task_id, 'ABC-304');
           assert.match(await panel.locator('.testcase-bundle-info').textContent(), /memakai ABC-304 \(1 case\)/);
+          await panel.locator('#tc-edit-q2-0').click();
+          await panel.locator('#tc-title-q2-0').fill('Verify Example Order Renamed');
+          await panel.locator('#tc-title-ok-q2-0').click();
+          assert.equal(await panel.locator('.testcase-card .testcase-title').first().textContent(), 'Verify Example Order Renamed');
+          assert.equal(JSON.parse(await panel.locator('#tc-input-q2').inputValue())[0].test_cases[0].title, 'Verify Example Order Renamed');
+          // Markdown tidak ditulis ulang → tanpa tombol Edit title.
+          await panel.locator('#tc-input-q2').fill('**Title:** Verify Markdown Case\n\n**Test Step(s):**\n1. Send a request.\n\n**Expected Result:**\n1. API returns 200.');
+          await panel.getByRole('button', { name: 'Parse', exact: true }).click();
+          assert.equal(await panel.locator('.testcase-card').count(), 1);
+          assert.equal(await panel.locator('.testcase-card .testcase-head-btn').count(), 0);
         }
 
         assert.deepEqual(errors, []);
@@ -174,7 +211,7 @@ const GAP = 'GAP: Example email is not masked';
         await context.close();
       }
     }
-    console.log('PASS smoke testcase ganti tiket (http + file, terang + gelap): Change ticket, validasi, ganda, basi, Escape/Enter, datalist, draft, centang, Actual GAP pindah, Dry run tiket baru, HP, panel 🧪 — screenshots ' + out);
+    console.log('PASS smoke testcase ganti tiket (http + file, terang + gelap): Change ticket, validasi, ganda, basi, Escape/Enter, datalist, draft, centang, Actual GAP pindah, Dry run tiket baru, edit title, HP, panel 🧪 — screenshots ' + out);
   } finally {
     if (browser) await browser.close();
     server.kill();

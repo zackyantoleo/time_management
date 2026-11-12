@@ -443,4 +443,73 @@ const sample = [tiket('ABC-101', 3), tiket('ABC-102', 5)];
   assert.match(d.run('pindahTiketPanelTestCase')(t, hasil, 0), /klik Parse dulu/);
 }
 
-console.log('PASS testcase bundle: GAP findings, daftar/objek, alias, K3, task_id, ganda, batas 10 tiket/20 case, format lama, panel per task, rencana Push all (isi ber-prefix), prefix judul tiket, peringatan judul lama, prompt AI, judul Jira, draft, chip, ganti tiket');
+// Edit title: title case ke-k ditulis ulang di teks JSON (GAP tidak dihitung dalam k),
+// field lain & urutan tetap; markdown tidak didukung; title GAP/kosong ditolak.
+{
+  const judul = (text, gi, k, t) => run('gantiJudulJson')(text, gi, k, t);
+  const gap = kasus(9, { title: 'GAP: Example lock' });
+  const isi = [tiket('ABC-101', 1), { ...tiket('ABC-102', 0), test_cases: [kasus(1), gap, kasus(2)] }];
+  const teks = '```json\n' + JSON.stringify(isi, null, 2) + '\n```';
+  const baru = judul(teks, 1, 1, 'Verify Example Renamed');
+  const r = bundle(baru);
+  assert.deepEqual(r.groups[1].cases.map(c => c.title), ['Verify Example Case 1', 'Verify Example Renamed'], 'k melewati GAP');
+  assert.deepEqual(r.groups[1].gaps.map(c => c.title), ['GAP: Example lock']);
+  assert.deepEqual(r.groups[0].cases, bundle(teks).groups[0].cases, 'tiket lain tetap');
+  assert.deepEqual(Object.keys(JSON.parse(baru)[1].test_cases[2]), Object.keys(kasus(2)), 'urutan field tetap');
+  assert.equal(JSON.parse(baru)[1].test_cases[2].id, 'TC-002', 'field lain tetap');
+  const v1 = JSON.stringify({ format: 'catet.testcases.v1', cases: [{ title: 'Verify A', steps: ['S.'], expected: ['E.'] }, { title: 'Verify B', steps: ['S.'], expected: ['E.'] }] });
+  assert.deepEqual(parse(judul(v1, null, 1, 'Verify B2')).cases.map(c => c.title), ['Verify A', 'Verify B2'], 'format v1');
+  assert.equal(judul(teks, 1, 5, 'X'), null, 'di luar jangkauan');
+  assert.equal(judul(teks, 3, 0, 'X'), null, 'tiket tidak ada');
+  assert.equal(judul('**Title:** Verify X', null, 0, 'Y'), null, 'markdown');
+  assert.equal(judul(v1, 0, 0, 'Y'), null, 'v1 bukan daftar tiket');
+  assert.equal(judul(JSON.stringify([{ task_id: 'ABC-1', test_cases: [5] }]), 0, 0, 'Y'), null, 'case bukan objek');
+  assert.match(run('cekJudulBaru')(''), /tidak boleh kosong/);
+  assert.match(run('cekJudulBaru')('gap: x'), /temuan GAP/);
+  assert.equal(run('cekJudulBaru')('Verify X'), '');
+}
+{
+  const d = load();
+  const store = d.store;
+  const teks = JSON.stringify([tiket('ABC-101', 2), tiket('ABC-102', 1)], null, 2);
+  store.set('catet.testcaseBulkDraft.v1', JSON.stringify({ text: teks }));
+  const b = { text: teks, parsed: d.run('parseTestCaseBundle')(teks), pilihTiket: [true, true], pilih: [[true, false], [true]], dry: {}, push: {}, urutan: [], jalan: null };
+  const ubah = (i, k, v) => d.run('gantiJudulBulkTestCase')(b, i, k, v);
+  assert.match(ubah(0, 1, '   '), /tidak boleh kosong/);
+  assert.match(ubah(0, 1, 'GAP: x'), /temuan GAP/);
+  store.set('catet.testcaseBulkDraft.v1', JSON.stringify({ text: teks + ' ' }));
+  assert.match(ubah(0, 1, 'Verify New'), /klik Parse dulu/, 'teks basi tidak ditimpa');
+  store.set('catet.testcaseBulkDraft.v1', JSON.stringify({ text: teks }));
+  b.jalan = 'push';
+  assert.match(ubah(0, 1, 'Verify New'), /klik Parse lagi/);
+  b.jalan = null;
+  assert.equal(ubah(0, 1, '  Verify   New title  '), '');
+  assert.deepEqual(plain(b.parsed.groups[0].cases.map(c => c.title)), ['Verify Example Case 1', 'Verify New title'], 'dirapikan seperti parse');
+  assert.equal(JSON.parse(JSON.parse(store.get('catet.testcaseBulkDraft.v1')).text)[0].test_cases[1].title, 'Verify New title', 'draft ikut diganti');
+  assert.deepEqual(plain(b.pilih), [[true, false], [true]], 'centang tetap');
+
+  // Panel per task: JSON banyak tiket (kelompok tiket task) & v1; markdown ditolak.
+  d.run('var JIRA_RE = /\\b([A-Z][A-Z0-9]{1,9}-\\d+)\\b/g; tasks.push({ id: "t1", text: "ABC-102 Example" });');
+  const t = d.run('tasks[0]');
+  const panel = (text) => {
+    d.run('simpanDraftTestCase')('t1', text);
+    return { taskId: 't1', text, parsed: d.run('parseTestCasesUntukTiket')(text, 'ABC-102'), pilih: [true, false] };
+  };
+  const ubahPanel = (h, k, v) => d.run('gantiJudulPanelTestCase')(t, h, k, v);
+  let h = panel(JSON.stringify([tiket('ABC-101', 1), tiket('ABC-102', 2)]));
+  assert.equal(ubahPanel(h, 1, 'Verify Panel Renamed'), '');
+  let hasil = plain(d.run('testcaseHasil'));
+  assert.deepEqual(hasil.parsed.cases.map(c => c.title), ['Verify Example Case 1', 'Verify Panel Renamed']);
+  assert.deepEqual(hasil.pilih, [true, false], 'centang tetap');
+  assert.equal(JSON.parse(d.run('bacaDraftTestCase')('t1'))[0].test_cases[0].title, 'Verify Example Case 1', 'tiket lain tidak tersentuh');
+  h = panel(JSON.stringify({ format: 'catet.testcases.v1', cases: [{ title: 'Verify A', steps: ['S.'], expected: ['E.'] }] }));
+  assert.equal(ubahPanel(h, 0, 'Verify A2'), '');
+  assert.equal(plain(d.run('testcaseHasil')).parsed.cases[0].title, 'Verify A2');
+  h = panel('**Title:** Verify X\n\n**Test Step(s):**\n1. S.\n\n**Expected Result:**\n1. E.');
+  assert.match(ubahPanel(h, 0, 'Verify Y'), /tidak bisa diubah/, 'markdown tidak ditulis ulang');
+  h = panel(JSON.stringify([tiket('ABC-102', 1)]));
+  d.run('simpanDraftTestCase')('t1', h.text + ' ');
+  assert.match(ubahPanel(h, 0, 'Verify Z'), /klik Parse dulu/);
+}
+
+console.log('PASS testcase bundle: GAP findings, daftar/objek, alias, K3, task_id, ganda, batas 10 tiket/20 case, format lama, panel per task, rencana Push all (isi ber-prefix), prefix judul tiket, peringatan judul lama, prompt AI, judul Jira, draft, chip, ganti tiket, edit title');
