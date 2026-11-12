@@ -105,8 +105,15 @@ Access code dan secret Calendar perangkat tidak masuk backup atau blob state.
   - **Kelola sprint** (tombol ✎ di bar sprint): ubah nama & tanggal selesai,
     lihat daftar tugas di dalamnya, jalankan item langsung lewat **▶ Run**,
     keluarkan tugas, atau tekan **✓ Selesai sprint** untuk menutupnya — tercatat
-    di Log kerja dan tekanan skornya berhenti. Sprint yang ditutup masuk area
-    "Sprint selesai".
+    di Log kerja dan tekanan skornya berhenti.
+  - **Riwayat sprint** (lipatan **Completed sprints** di bar sprint): sprint
+    yang ditutup — manual, atau sprint otomatis Jira yang sudah tidak aktif
+    (tak ada lagi tiket terbukamu di dalamnya) — tidak langsung hilang.
+    Tiap entri menyimpan ringkasan saat ditutup: x/y selesai, daftar tiketnya
+    (yang belum beres ditandai *not done*), dan tautan PRD; buka lewat tombol
+    ▾. Riwayat disimpan **3 bulan** sejak sprint ditutup lalu terhapus
+    otomatis (tugasnya sendiri tidak ikut terhapus). Kotak cari tab Jira ikut
+    menyaring riwayat menurut nama sprint / tiket.
   - **Pilih sprint per tugas**: tombol 🏃 di baris tugas membuka menu pilih
     sprint langsung (masuk / pindah antar sprint / keluarkan) — sama juga di
     tombol 🏃 pada tiket Jira dan di chip 🏃 kolom catat cepat untuk tugas

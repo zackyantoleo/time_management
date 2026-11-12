@@ -305,7 +305,7 @@ const sample = [tiket('ABC-101', 3), tiket('ABC-102', 5)];
   assert.doesNotMatch(jira, /jiraWorklogFilter/);
   assert.equal((jira.match(/jiraFilterMode = "inbox";\n  if \(typeof resetTestCaseBulk === "function"\) resetTestCaseBulk\(\);/g) || []).length, 2);
   assert.match(jira, /"catet\.testcaseBulkDraft\.v1", "catet\.bugDrafts\.v1",\n  \]\) localStorage\.removeItem/);
-  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /const CACHE = "catet-v84";/);
+  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /const CACHE = "catet-v85";/);
 }
 
 // GAP: dipisah dari test case saat Parse (tidak memblokir tiket), tiket yang

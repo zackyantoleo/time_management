@@ -36,6 +36,9 @@ function rekonsiliasiSprintJira(feed) {
     const s = sprintById(id);
     if (!s) { sprints.list.push({ id, jiraId: jid, nama: sp.name || ("Sprint " + jid), selesai, auto: true }); ubahS = true; }
     else if (s.nama !== (sp.name || s.nama) || s.selesai !== selesai) { s.nama = sp.name || s.nama; s.selesai = selesai; ubahS = true; }
+    // Sudah masuk riwayat tapi muncul lagi di sprint aktif Jira (tiket baru
+    // di-assign, atau feed sempat bolong) → hidupkan lagi.
+    if (s && s.auto && sprintSelesai(s)) { delete s.status; delete s.selesaiPada; delete s.hasil; ubahS = true; }
   }
   // Auto-ambil: tiket ber-sprint yang belum jadi tugas papan langsung diambil
   // (pindah dari inbox). Dismissed dihormati — tiket yang sengaja dibuang /
@@ -54,6 +57,13 @@ function rekonsiliasiSprintJira(feed) {
     jira.dismissed.push(f.key);
     ubahT = true; // jira.items/dismissed tersimpan oleh saveJira(true) di syncJira
   }
+  // Snapshot isi sprint otomatis yang baru hilang dari Jira, SEBELUM tugas
+  // yang belum beres dilepas di bawah — supaya riwayatnya masih mencatat
+  // "x dari y selesai", bukan hanya yang sudah beres.
+  const snapshot = new Map();
+  for (const s of sprints.list) {
+    if (s.auto && !sprintSelesai(s) && !jiraSprints.has(s.jiraId)) snapshot.set(s.id, ringkasSprint(s.id));
+  }
   // tautkan/lepas tugas papan (hanya menyentuh yang belum bersprint / di sprint
   // auto; penetapan manual pengguna — sprintManual — tidak diutak-atik)
   for (const t of tasks) {
@@ -64,16 +74,124 @@ function rekonsiliasiSprintJira(feed) {
     const cur = t.sprintId ? sprintById(t.sprintId) : null;
     if (jid != null) {
       const id = "jira:" + jid;
-      if (t.sprintId !== id && (!t.sprintId || (cur && cur.auto))) { t.sprintId = id; ubahT = true; }
+      // !cur = sprintId menggantung (sprint-nya sudah dipangkas/dihapus).
+      if (t.sprintId !== id && (!t.sprintId || !cur || cur.auto)) { t.sprintId = id; ubahT = true; }
     } else if (cur && cur.auto) { t.sprintId = null; ubahT = true; } // tiket keluar sprint
   }
-  // buang sprint otomatis yang tak lagi aktif di Jira & tak berisi tugas
-  const n = sprints.list.length;
-  sprints.list = sprints.list.filter((s) =>
-    !s.auto || jiraSprints.has(s.jiraId) || tasks.some((t) => t.status !== "selesai" && t.sprintId === s.id));
-  if (sprints.list.length !== n) ubahS = true;
+  // Sprint otomatis yang tak lagi aktif di Jira & tak berisi tugas aktif tidak
+  // dibuang lagi: masuk riwayat (status "selesai" + snapshot isinya), lalu
+  // dipangkas sendiri setelah RIWAYAT_SPRINT_BULAN (pangkasRiwayatSprint).
+  const tutupPada = new Date().toISOString();
+  for (const s of sprints.list) {
+    if (!s.auto || sprintSelesai(s) || jiraSprints.has(s.jiraId)) continue;
+    if (tasks.some((t) => t.status !== "selesai" && t.sprintId === s.id)) continue;
+    s.status = "selesai";
+    s.selesaiPada = tutupPada;
+    s.hasil = snapshot.get(s.id) || ringkasSprint(s.id);
+    ubahS = true;
+  }
+  if (pangkasRiwayatSprint(new Date(), true)) { ubahS = true; ubahT = true; }
   if (ubahS) saveSprintsTanpaSinkron();
   if (ubahT) saveTanpaSinkron();
+}
+
+/* ---------- riwayat sprint ---------- */
+// Sprint yang sudah ditutup (manual lewat "Complete sprint" atau otomatis
+// karena hilang dari sprint aktif Jira) tetap tersimpan sebagai riwayat
+// selama RIWAYAT_SPRINT_BULAN sejak ditutup, lalu dipangkas otomatis.
+const RIWAYAT_SPRINT_BULAN = 3;
+const RIWAYAT_SPRINT_MAKS_ITEM = 100;
+
+// Tambah n bulan kalender; tanggal dijepit ke akhir bulan (30 Nov + 3 bulan
+// = 28/29 Feb, bukan meluber ke Maret).
+function tambahBulan(date, n) {
+  const d = new Date(date);
+  const tgl = d.getDate();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + n);
+  d.setDate(Math.min(tgl, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+  return d;
+}
+// Kapan sprint ditutup. Data lama tanpa stempel selesaiPada → akhir sprint.
+function waktuTutupSprint(s) {
+  const t = Date.parse((s && s.selesaiPada) || "");
+  if (Number.isFinite(t)) return new Date(t);
+  return s && /^\d{4}-\d{2}-\d{2}$/.test(s.selesai || "") ? akhirSprint(s) : null;
+}
+// Tanggal riwayat sprint ini dihapus otomatis (null = belum ditutup).
+function hapusRiwayatPada(s) {
+  if (!sprintSelesai(s)) return null;
+  const tutup = waktuTutupSprint(s);
+  return tutup ? tambahBulan(tutup, RIWAYAT_SPRINT_BULAN) : null;
+}
+// Riwayat yang masih berlaku, terbaru dulu.
+function riwayatSprintList(now) {
+  const t = (now || new Date()).getTime();
+  return sprints.list.filter((s) => {
+    if (!sprintSelesai(s)) return false;
+    const hapus = hapusRiwayatPada(s);
+    return !hapus || hapus.getTime() > t;
+  }).sort((a, b) => (waktuTutupSprint(b) || 0) - (waktuTutupSprint(a) || 0));
+}
+
+// Snapshot isi sprint saat ditutup. Riwayat tidak boleh bergantung pada
+// tugas di papan: tugas selesai diarsipkan setelah 30 hari, dan tiket yang
+// belum beres pindah ke sprint berikutnya. Satu baris per tiket Jira —
+// salinan aktif menang atas salinan selesai (sama seperti tugasSprintTampil).
+function ringkasSprint(id) {
+  const perKey = new Map();
+  for (const t of tasks) {
+    if (t.sprintId !== id) continue;
+    const keys = [...new Set(t.text.match(JIRA_RE) || [])];
+    const k = keys.length === 1 ? keys[0] : "id:" + t.id;
+    const done = t.status === "selesai";
+    const ada = perKey.get(k);
+    if (!ada) perKey.set(k, { text: t.text, done, priority: t.priority || "sedang" });
+    else if (!done && ada.done) { ada.text = t.text; ada.done = false; ada.priority = t.priority || ada.priority; }
+  }
+  const items = [...perKey.values()];
+  return {
+    total: items.length,
+    beres: items.filter((x) => x.done).length,
+    items: items.slice(0, RIWAYAT_SPRINT_MAKS_ITEM),
+  };
+}
+// Isi riwayat untuk ditampilkan: snapshot bila ada; sprint yang ditutup
+// sebelum fitur ini ada dihitung dari tugas yang masih tersisa.
+function hasilSprint(s) {
+  const h = s && s.hasil;
+  if (h && typeof h === "object" && Array.isArray(h.items) &&
+      Number.isFinite(h.total) && Number.isFinite(h.beres)) return h;
+  return ringkasSprint(s.id);
+}
+
+// Pangkas riwayat sprint yang sudah lewat RIWAYAT_SPRINT_BULAN. Deterministik
+// — tiap perangkat menghitung hal yang sama — jadi disimpan TANPA klaim dirty:
+// start-up tidak boleh mendorong state lokal yang mungkin basi ke server.
+// tanpaSimpan = pemanggil (rekonsiliasi) menyimpan sendiri.
+function pangkasRiwayatSprint(now, tanpaSimpan) {
+  const t = (now || new Date()).getTime();
+  const lama = new Set(sprints.list.filter((s) => {
+    const hapus = hapusRiwayatPada(s);
+    return hapus && hapus.getTime() <= t;
+  }).map((s) => s.id));
+  if (!lama.size) return false;
+  sprints.list = sprints.list.filter((s) => !lama.has(s.id));
+  if (lama.has(sprints.aktif)) sprints.aktif = null;
+  let ubahT = false;
+  for (const x of tasks) if (x.sprintId && lama.has(x.sprintId)) { x.sprintId = null; ubahT = true; }
+  if (!tanpaSimpan) {
+    saveSprintsTanpaSinkron();
+    if (ubahT) saveTanpaSinkron();
+  }
+  return true;
+}
+// Hapus satu entri riwayat atas permintaan pengguna (ikut sinkron).
+function hapusRiwayatSprint(s) {
+  sprints.list = sprints.list.filter((x) => x.id !== s.id);
+  if (sprints.aktif === s.id) sprints.aktif = null;
+  tasks.forEach((t) => { if (t.sprintId === s.id) t.sprintId = null; });
+  saveSprints(); save();
 }
 
 function sprintById(id) { return sprints.list.find((s) => s.id === id) || null; }
@@ -136,16 +254,17 @@ function sprintAktif() {
   if (dipilih && !sprintSelesai(dipilih)) return dipilih;
   return sprintAktifList()[0] || null;
 }
-// Tutup sprint: catat ke log kerja, lepas tekanan waktunya, simpan riwayat.
+// Tutup sprint: catat ke log kerja, lepas tekanan waktunya, simpan riwayat
+// (snapshot isinya — tetap terbaca walau tugasnya nanti diarsipkan).
 function completeSprint(s) {
-  const anggota = tasks.filter((t) => t.sprintId === s.id);
-  const beres = anggota.filter((t) => t.status === "selesai").length;
+  const hasil = ringkasSprint(s.id);
   s.status = "selesai";
   s.selesaiPada = new Date().toISOString();
+  s.hasil = hasil;
   const now = new Date();
   worklog.push({
     id: uid(), taskId: "sprint:" + s.id, date: localDateStr(now), ts: now.toISOString(),
-    text: "🏁 Sprint “" + s.nama + "” closed — " + beres + "/" + anggota.length + " tasks done",
+    text: "🏁 Sprint “" + s.nama + "” closed — " + hasil.beres + "/" + hasil.total + " tasks done",
     priority: "sprint", mins: 0,
   });
   if (sprints.aktif === s.id) sprints.aktif = (sprintAktifList()[0] || {}).id || null;
