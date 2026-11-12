@@ -220,6 +220,21 @@ Expected Results:
   assert.ok(v.cases[5].errors.some(e => /GAP/.test(e)));
 }
 
+// Case GAP dipisah ke `gaps` saat Parse (markdown dan JSON v1); tempelan
+// yang hanya berisi GAP bukan error "tidak ada test case".
+{
+  const md = parse(one + '\n---\n\n**Title:** GAP: Expired OTP error is not specified\n\n**Test Step(s):**\n1. Send an expired OTP.\n\n**Expected Result:**\n1. Returns a specific error.');
+  assert.deepEqual([md.cases.map(c => c.title), md.gaps.map(c => c.title), md.errors],
+    [['Verify Get Customer Profile Successfully'], ['GAP: Expired OTP error is not specified'], []]);
+  assert.deepEqual(md.gaps[0].steps, ['Send an expired OTP.']);
+  const hanya = parse('**Title:** GAP: Only a gap\n\n**Test Step(s):**\n1. Do X.\n\n**Expected Result:**\n1. Y.');
+  assert.deepEqual([hanya.cases.length, hanya.gaps.length, hanya.errors], [0, 1, []]);
+  const j = parse(JSON.stringify({ format: 'catet.testcases.v1', cases: [
+    { title: 'Verify A', steps: ['S.'], expected: ['E.'] }, { title: 'GAP: B', steps: ['S.'], expected: ['E.'] }] }));
+  assert.deepEqual([j.cases.map(c => c.title), j.gaps.map(c => c.title)], [['Verify A'], ['GAP: B']]);
+  assert.deepEqual(parse('').gaps, [], 'gaps selalu ada');
+}
+
 // Judul duplikat di batch: case-insensitive + spasi dinormalisasi; semua kemunculan ditandai.
 {
   const base = { preconditions: ['P.'], steps: ['Open X.'], expected: ['X opens.'], ignored: [] };
