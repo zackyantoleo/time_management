@@ -415,7 +415,7 @@ function hitungPasangan(nativeDeps) {
   if (typeof CatetDependencyMatcher !== "object") return;
   // Scope pairing hanya sprint aktif Jira yang benar-benar ada di Catet.
   // Jangan audit backlog atau tiket non-sprint — itu sumber spam, bukan insight.
-  const sprintIds = new Set((sprints.list || []).filter((s) => s.auto && s.jiraId != null)
+  const sprintIds = new Set((sprints.list || []).filter((s) => s.auto && s.jiraId != null && !sprintSelesai(s))
     .map((s) => String(s.jiraId)));
   const sprintIssues = (jira.pairingIssues || [])
     .filter((i) => i.sprintId && sprintIds.has(String(i.sprintId)));
@@ -1364,7 +1364,8 @@ function sprintRow(s, sec) {
   if (s.auto) {
     // Sprint otomatis ditutup/dihapus lewat Jira, bukan dari sini.
     ed.append(el("div", "cap-hint",
-      "Sprint ini otomatis ikut Jira — akan hilang sendiri begitu sprint-nya ditutup di Jira."));
+      "Sprint ini otomatis ikut Jira — begitu ditutup di Jira (atau tak ada lagi tiket terbukamu di dalamnya), " +
+      "pindah sendiri ke Completed sprints dan disimpan " + RIWAYAT_SPRINT_BULAN + " bulan."));
   } else {
     const aksi = el("div", "cap-group");
     const selesaiBtn = el("button", "btn-solid", "✓ Complete sprint");
@@ -1393,6 +1394,121 @@ function sprintRow(s, sec) {
   sec.append(ed);
 }
 
+/* ---------- riwayat sprint (Completed sprints) ---------- */
+let sprintRiwayatOpen = false; // lipatan "Completed sprints" diingat selama sesi
+let sprintRiwayatId = null;    // satu entri riwayat yang detailnya terbuka
+
+// Baris satu sprint di riwayat + detail read-only (isi sprint + PRD).
+function sprintRiwayatRow(s, card) {
+  const hasil = hasilSprint(s);
+  const tutup = waktuTutupSprint(s);
+  const buka = sprintRiwayatId === s.id;
+  const row = el("div", "jira-row");
+  const body = el("span", "jira-summary");
+  body.append(el("strong", null, "🏁 " + s.nama));
+  if (s.auto) {
+    const tag = el("span", "effort-badge dep-ready", "🔄 Jira");
+    tag.title = "Sprint otomatis dari Jira";
+    body.append(" ", tag);
+  }
+  row.append(body);
+  const skor = el("span", "jira-status mono", hasil.beres + "/" + hasil.total + " done");
+  skor.title = hasil.beres + " dari " + hasil.total + " tugas selesai saat sprint ditutup";
+  row.append(skor);
+  const kapan = el("span", "jira-status", tutup ? "closed " + fmtAgo(tutup.toISOString()) : "closed");
+  kapan.title = "Berakhir " + fmtDayName(s.selesai) + (tutup ? " · ditutup " + fmtStempel(tutup.toISOString()) : "");
+  row.append(kapan);
+  const lihat = el("button", "icon-btn" + (buka ? " in-sprint" : ""), buka ? "▴" : "▾");
+  lihat.title = buka ? "Tutup detail sprint" : "Lihat isi sprint";
+  lihat.setAttribute("aria-label", lihat.title + " " + s.nama);
+  lihat.setAttribute("aria-expanded", String(buka));
+  lihat.onclick = () => { sprintRiwayatId = buka ? null : s.id; render(); };
+  row.append(lihat);
+  const del = el("button", "icon-btn danger", "✕");
+  del.title = "Hapus dari riwayat"; del.setAttribute("aria-label", del.title + " " + s.nama);
+  del.onclick = () => {
+    if (!confirm("Hapus “" + s.nama + "” dari riwayat sprint?\nTugas-tugasnya tidak ikut terhapus.")) return;
+    if (sprintRiwayatId === s.id) sprintRiwayatId = null;
+    hapusRiwayatSprint(s); render();
+  };
+  row.append(del);
+  card.append(row);
+  if (!buka) return;
+
+  const ed = el("div", "task-editor sprint-history-detail");
+  const hapus = hapusRiwayatPada(s);
+  ed.append(el("div", "sprint-history-meta", "Berakhir " + fmtDayName(s.selesai) +
+    (tutup ? " · ditutup " + fmtStempel(tutup.toISOString()) : "") +
+    (hapus ? " · terhapus otomatis " + fmtDayName(localDateStr(hapus)) : "")));
+
+  const prd = sprintPrdLinks(s);
+  if (prd.length) {
+    const list = el("div", "sprint-prd-list");
+    list.setAttribute("aria-label", "PRD references");
+    for (const p of prd) {
+      const item = el("div", "sprint-prd-item");
+      const link = el("a", "sprint-prd-link");
+      link.href = p.url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.title = p.url;
+      link.append(el("span", "sprint-prd-icon", "↗"), el("span", null, p.title));
+      item.append(link);
+      list.append(item);
+    }
+    ed.append(list);
+  }
+
+  const lbl = el("div", "cap-label");
+  lbl.textContent = "Sprint items (" + hasil.total + ")";
+  ed.append(lbl);
+  if (hasil.items.length) {
+    const ul = el("ul", "sprint-tasks");
+    // Yang belum beres dulu — itu yang biasanya dicari saat menengok riwayat.
+    [...hasil.items].sort((a, b) => Number(a.done) - Number(b.done)).forEach((x) => {
+      const li = el("li");
+      const mark = el("span", "sprint-history-mark" + (x.done ? " done" : ""), x.done ? "✓" : "○");
+      mark.setAttribute("aria-hidden", "true");
+      li.append(mark);
+      const tx = el("span", "sprint-task-text");
+      tx.append(linkify(String(x.text || "")));
+      li.append(tx);
+      if (!x.done) li.append(el("span", "jira-status", "not done"));
+      ul.append(li);
+    });
+    ed.append(ul);
+    if (hasil.total > hasil.items.length) {
+      ed.append(el("div", "sprint-history-meta", "Menampilkan " + hasil.items.length + " dari " + hasil.total + " tugas."));
+    }
+  } else {
+    ed.append(el("div", "sprint-history-meta", "Tidak ada tugas yang tercatat di sprint ini."));
+  }
+  card.append(ed);
+}
+
+// Lipatan "Completed sprints": sprint yang sudah ditutup — tanpa menekan skor,
+// disimpan RIWAYAT_SPRINT_BULAN sejak ditutup lalu dipangkas otomatis.
+// Pencarian tab Jira ikut menyaring riwayat (nama sprint / isi tiket).
+function renderSprintRiwayat(sec) {
+  const semua = riwayatSprintList();
+  if (!semua.length) return;
+  const q = searchQuery.trim().toLowerCase();
+  const cocok = (s) => !q || (s.nama + "\n" + hasilSprint(s).items.map((x) => x.text).join("\n")).toLowerCase().includes(q);
+  const tampil = semua.filter(cocok);
+  if (q && !tampil.length) return;
+
+  const det = document.createElement("details");
+  det.className = "routine-manage sprint-history";
+  det.open = sprintRiwayatOpen || !!q;
+  det.addEventListener("toggle", () => { if (!q) sprintRiwayatOpen = det.open; });
+  const sum = document.createElement("summary");
+  sum.append("Completed sprints ", el("span", "count mono", q ? tampil.length + "/" + semua.length : String(semua.length)));
+  det.append(sum);
+  const card = el("div", "routine-card");
+  card.append(el("div", "sprint-history-meta sprint-history-note", "Sprint yang sudah selesai disimpan di sini " + RIWAYAT_SPRINT_BULAN +
+    " bulan sejak ditutup, lalu terhapus otomatis."));
+  for (const s of tampil) sprintRiwayatRow(s, card);
+  det.append(card);
+  sec.append(det);
+}
+
 function renderSprintBar() {
   const sec = el("section", "section s-jira");
   sec.style.marginBottom = "18px";
@@ -1407,33 +1523,7 @@ function renderSprintBar() {
     sec.append(card);
   }
 
-  // Sprint yang sudah ditutup — ringkas, tanpa menekan skor.
-  const selesai = sprints.list.filter(sprintSelesai)
-    .sort((a, b) => new Date(b.selesaiPada || 0) - new Date(a.selesaiPada || 0));
-  if (selesai.length) {
-    const det2 = document.createElement("details");
-    det2.className = "routine-manage";
-    const sum2 = document.createElement("summary");
-    sum2.append("Completed sprints ", el("span", "count mono", String(selesai.length)));
-    det2.append(sum2);
-    const card2 = el("div", "routine-card");
-    for (const s of selesai) {
-      const row = el("div", "jira-row");
-      row.append(el("span", "jira-summary", "🏁 " + s.nama));
-      row.append(el("span", "jira-status", "closed " + (s.selesaiPada ? fmtAgo(s.selesaiPada) : "")));
-      const del = el("button", "icon-btn danger", "✕");
-      del.title = "Hapus dari riwayat"; del.setAttribute("aria-label", del.title);
-      del.onclick = () => {
-        sprints.list = sprints.list.filter((x) => x.id !== s.id);
-        tasks.forEach((t) => { if (t.sprintId === s.id) t.sprintId = null; });
-        saveSprints(); save(); render();
-      };
-      row.append(del);
-      card2.append(row);
-    }
-    det2.append(card2);
-    sec.append(det2);
-  }
+  renderSprintRiwayat(sec);
 
   const det = document.createElement("details");
   det.className = "routine-manage";
