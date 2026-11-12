@@ -191,6 +191,8 @@ function parseTestCasesUntukTiket(text, key) {
   const g = b.groups.find((x) => x.key === key);
   if (!g) {
     out.errors.push("Tempelan tidak berisi " + key + ". Tiket di tempelan: " + (lain.join(", ") || "—") + ".");
+    // Kelompok yang bisa dipindah ke tiket task ini (mis. AI memberi key tiket dev).
+    out.pindah = b.groups.map((x, i) => ({ i, key: x.key })).filter((x) => b.groups[x.i].cases.length || b.groups[x.i].gaps.length);
     return out;
   }
   out.cases = g.cases;
@@ -201,6 +203,51 @@ function parseTestCasesUntukTiket(text, key) {
     (g.gaps.length ? " + " + g.gaps.length + " GAP" : "") + ")." +
     (lain.length ? " Tiket lain: " + lain.join(", ") + " — pakai Jira → Test cases." : "");
   return out;
+}
+
+// Ganti task_id item ke-i di tempelan (mis. AI memberi tiket dev, padahal test
+// case mau di-link ke tiket QA). Teks tetap satu-satunya sumber — JSON ditulis
+// ulang (pagar ``` ikut hilang) supaya draft & Parse ulang konsisten. null bila
+// teks bukan JSON tiket atau item ke-i bukan objek tiket.
+function gantiTiketBundle(text, i, key) {
+  const awal = bukaPagarTestCase(rapikanBarisTestCase(text)).trim();
+  let data;
+  try { data = JSON.parse(awal); } catch { return null; }
+  const daftar = Array.isArray(data) ? data : [data];
+  if (!objekTiketTestCase(daftar[i])) return null;
+  daftar[i].task_id = key;
+  return JSON.stringify(data, null, 2);
+}
+
+// Ganti title case ke-k (urutan daftar test case — GAP tidak dihitung) di teks
+// JSON. gi = kelompok tiket (JSON banyak tiket) atau null (catet.testcases.v1).
+// null bila teks bukan JSON yang dikenali atau case-nya tidak ditemukan.
+function gantiJudulJson(text, gi, k, title) {
+  const awal = bukaPagarTestCase(rapikanBarisTestCase(text)).trim();
+  let data;
+  try { data = JSON.parse(awal); } catch { return null; }
+  let daftar, peta, diam;
+  if (gi == null) {
+    if (!data || typeof data !== "object" || Array.isArray(data) || !Array.isArray(data.cases)) return null;
+    daftar = data.cases; peta = TC_FIELD_V1; diam = [];
+  } else {
+    const x = (Array.isArray(data) ? data : [data])[gi];
+    if (!objekTiketTestCase(x) || !Array.isArray(x.test_cases)) return null;
+    daftar = x.test_cases; peta = TC_FIELD_TIKET; diam = TC_DIAM_TIKET;
+  }
+  // Petakan k ke indeks asli persis seperti parse: case GAP dilewati.
+  const asli = daftar.map((_, j) => j).filter((j) => !gapTestCase(kasusJsonTestCase(daftar[j], "", peta, diam, [])));
+  const c = daftar[asli[k]];
+  if (!c || typeof c !== "object" || Array.isArray(c)) return null;
+  c.title = title;
+  return JSON.stringify(data, null, 2);
+}
+
+// Title baru dari isian: dirapikan seperti saat parse. "" = boleh, selain itu pesan error.
+function cekJudulBaru(title) {
+  if (!title) return "Title tidak boleh kosong.";
+  if (gapTestCase({ title })) return "Title diawali “GAP:” berarti temuan GAP, bukan test case — ubah lewat teks JSON kalau memang GAP.";
+  return "";
 }
 
 function parseTestCasesMarkdown(isi, out) {
@@ -489,6 +536,7 @@ function renderTestCasePanel(t) {
   parseBtn.onclick = () => {
     const parsed = parseTestCasesUntukTiket(ta.value, key);
     simpanDraftTestCase(t.id, ta.value);
+    testcaseUbahJudul = null;
     testcaseHasil = { taskId: t.id, text: ta.value, parsed, pilih: parsed.cases.map(() => true) };
     renderLaluFokus(parseBtn.id);
   };
@@ -496,6 +544,7 @@ function renderTestCasePanel(t) {
   clearBtn.type = "button";
   clearBtn.onclick = () => {
     if (ta.value.trim() && !confirm("Kosongkan teks dan pratinjau test case untuk " + key + "?")) return;
+    testcaseUbahJudul = null;
     simpanDraftTestCase(t.id, "");
     if (hasil) testcaseHasil = null;
     if (testcaseDry && testcaseDry.taskId === t.id) testcaseDry = null;
@@ -532,6 +581,7 @@ function pratinjauTestCase(t, hasil) {
   wrap.setAttribute("aria-live", "polite");
   if (parsed.info) wrap.append(el("p", "testcase-hint testcase-bundle-info", parsed.info));
   if (parsed.errors.length) wrap.append(daftarIsuTestCase(parsed.errors, "err"));
+  if (parsed.pindah && parsed.pindah.length) wrap.append(pindahTiketTestCase(t, hasil));
   if (!parsed.cases.length) return wrap;
 
   const dipilih = parsed.cases.filter((_, i) => pilih[i]);
@@ -551,7 +601,9 @@ function pratinjauTestCase(t, hasil) {
   if (v.errors.length) wrap.append(daftarIsuTestCase(v.errors, "err"));
 
   const ol = el("ol", "testcase-list");
-  parsed.cases.forEach((c, i) => ol.append(kartuTestCase(t, c, i, pilih, isu[i])));
+  // Title bisa diubah bila tempelannya JSON (markdown tidak ditulis ulang).
+  const simpanJudul = parsed.source === "markdown" ? null : (k, v) => gantiJudulPanelTestCase(t, hasil, k, v);
+  parsed.cases.forEach((c, i) => ol.append(kartuTestCase(t, c, i, pilih, isu[i], simpanJudul)));
   wrap.append(ol);
 
   const siap = v.ok && !parsed.errors.length;
@@ -560,6 +612,56 @@ function pratinjauTestCase(t, hasil) {
     : "Perbaiki yang bertanda Error atau hapus centang case-nya. Warning boleh diabaikan."));
   if (siap) wrap.append(dryRunTestCase(t, dipilih));
   return wrap;
+}
+
+// Tempelan tidak berisi tiket task ini (mis. AI memberi key tiket dev) →
+// tawarkan memindah kelompok lain ke tiket ini: task_id di teks diganti, Parse ulang.
+function pindahTiketTestCase(t, hasil) {
+  const key = keyTestCase(t);
+  const box = el("div", "testcase-actions");
+  for (const { i, key: asal } of hasil.parsed.pindah) {
+    const nama = asal || "ticket #" + (i + 1);
+    const btn = el("button", "btn-line", "Use " + nama + " for " + key);
+    btn.type = "button"; btn.id = "tc-pindah-" + t.id + "-" + i;
+    btn.title = "Ganti task_id " + nama + " jadi " + key + " di teks, lalu Parse ulang";
+    btn.onclick = () => {
+      const error = pindahTiketPanelTestCase(t, hasil, i);
+      if (error) { alert(error); return; }
+      renderLaluFokus("tc-parse-" + t.id);
+    };
+    box.append(btn);
+  }
+  return box;
+}
+
+// "" = berhasil (testcaseHasil diganti hasil Parse ulang), selain itu pesan error.
+function pindahTiketPanelTestCase(t, hasil, i) {
+  const key = keyTestCase(t);
+  if (bacaDraftTestCase(t.id) !== hasil.text) return "Teks berubah sejak Parse terakhir — klik Parse dulu, lalu coba lagi.";
+  const baru = gantiTiketBundle(hasil.text, i, key);
+  if (baru == null) return "Tiket ini tidak bisa dipindah — perbaiki JSON-nya dulu.";
+  const g = parseTestCaseBundle(hasil.text).groups[i];
+  if (g) pindahActualGap(g.gaps, g.key, key);
+  simpanDraftTestCase(t.id, baru);
+  const parsed = parseTestCasesUntukTiket(baru, key);
+  testcaseHasil = { taskId: t.id, text: baru, parsed, pilih: parsed.cases.map(() => true) };
+  return "";
+}
+
+// Ubah title case ke-k di panel: title di teks JSON ditulis ulang, Parse ulang;
+// centang tetap. "" = berhasil, selain itu pesan error.
+function gantiJudulPanelTestCase(t, hasil, k, nilai) {
+  const title = rapikanJudulTestCase(nilai || "");
+  const salah = cekJudulBaru(title);
+  if (salah) return salah;
+  if (bacaDraftTestCase(t.id) !== hasil.text) return "Teks berubah sejak Parse terakhir — klik Parse dulu, lalu ubah title-nya.";
+  const key = keyTestCase(t);
+  const gi = hasil.parsed.source === "bundle" ? parseTestCaseBundle(hasil.text).groups.findIndex((g) => g.key === key) : null;
+  const baru = gi === -1 ? null : gantiJudulJson(hasil.text, gi, k, title);
+  if (baru == null) return "Title case ini tidak bisa diubah — perbaiki JSON-nya dulu.";
+  simpanDraftTestCase(t.id, baru);
+  testcaseHasil = { taskId: t.id, text: baru, parsed: parseTestCasesUntukTiket(baru, key), pilih: hasil.pilih };
+  return "";
 }
 
 /* ---------- dry run (Worker, read-only) ---------- */
@@ -952,7 +1054,11 @@ function qalitySettingsForm() {
   return wrap;
 }
 
-function kartuTestCase(t, c, i, pilih, isu) {
+// Title case yang sedang diubah: { scope: t.id (panel) | "tcb<i>" (banyak tiket), i, nilai, error }.
+let testcaseUbahJudul = null;
+
+// simpanJudul(i, nilai) → "" | pesan error; null = title tidak bisa diubah di sini.
+function kartuTestCase(t, c, i, pilih, isu, simpanJudul) {
   const kelas = !pilih[i] ? " excluded" : isu.errors.length ? " has-error" : isu.warnings.length ? " has-warning" : "";
   const li = el("li", "testcase-card" + kelas);
   const head = el("label", "testcase-card-head");
@@ -963,12 +1069,56 @@ function kartuTestCase(t, c, i, pilih, isu) {
   head.append(cb, el("span", "testcase-no mono", "#" + (i + 1)),
     el("strong", "testcase-title" + (c.title ? "" : " empty"), c.title || "(tanpa judul)"));
   if (!pilih[i]) head.append(el("span", "testcase-badge", "Excluded"));
+  const u = testcaseUbahJudul;
+  const ubah = !!simpanJudul && !!u && u.scope === t.id && u.i === i;
+  // Tombol di dalam <label>: klik kontrol interaktif tidak ikut mencentang checkbox.
+  if (simpanJudul && !ubah) {
+    const btn = el("button", "btn-line testcase-head-btn", "Edit title");
+    btn.type = "button"; btn.id = "tc-edit-" + t.id + "-" + i;
+    btn.title = "Ubah title case ini (title di teks JSON ikut diganti)";
+    btn.onclick = () => { testcaseUbahJudul = { scope: t.id, i, nilai: null, error: "" }; renderLaluFokus("tc-title-" + t.id + "-" + i); };
+    head.append(btn);
+  }
   li.append(head);
+  if (ubah) li.append(formJudulTestCase(t, c, i, simpanJudul));
 
   li.append(...isiKartuTestCase(c));
   if (isu && isu.errors.length) li.append(daftarIsuTestCase(isu.errors, "err"));
   if (isu && isu.warnings.length) li.append(daftarIsuTestCase(isu.warnings, "warn"));
   return li;
+}
+
+function formJudulTestCase(t, c, i, simpanJudul) {
+  const u = testcaseUbahJudul;
+  const box = el("div", "testcase-inline-edit");
+  const row = el("div", "testcase-actions");
+  const inp = document.createElement("input");
+  inp.type = "text"; inp.id = "tc-title-" + t.id + "-" + i; inp.className = "testcase-inline-input";
+  inp.value = u.nilai != null ? u.nilai : c.title;
+  inp.maxLength = TESTCASE_TITLE_MAX;
+  inp.setAttribute("aria-label", "Title baru case #" + (i + 1));
+  const kembali = "tc-edit-" + t.id + "-" + i;
+  const ok = el("button", "btn-solid", "Save");
+  ok.type = "button"; ok.id = "tc-title-ok-" + t.id + "-" + i;
+  const terapkan = () => {
+    const error = simpanJudul(i, inp.value);
+    if (error) { testcaseUbahJudul = { ...u, nilai: inp.value, error }; renderLaluFokus(inp.id); return; }
+    testcaseUbahJudul = null;
+    renderLaluFokus(kembali);
+  };
+  ok.onclick = terapkan;
+  const batal = el("button", "btn-line", "Cancel");
+  batal.type = "button";
+  batal.onclick = () => { testcaseUbahJudul = null; renderLaluFokus(kembali); };
+  inp.onkeydown = (e) => {
+    if (e.key === "Enter") { e.preventDefault(); terapkan(); }
+    else if (e.key === "Escape") { e.preventDefault(); batal.onclick(); }
+  };
+  row.append(inp, ok, batal);
+  box.append(row);
+  if (u.error) box.append(daftarIsuTestCase([u.error], "err"));
+  box.append(el("p", "testcase-hint", "Tanpa judul tiket — prefix “<judul tiket> - ” tetap ditambahkan saat Dry run. Title di teks JSON ikut diganti; Dry run ulang setelahnya."));
+  return box;
 }
 
 // Precondition / Steps / Expected satu case (dipakai kartu test case & GAP).
@@ -1032,6 +1182,7 @@ function renderTestCaseBulk(wrap) {
     if (lama && lama.jalan) return;
     const parsed = parseTestCaseBundle(ta.value);
     simpanDraftBulkTestCase(ta.value);
+    testcaseUbahJudul = null;
     const sama = !!lama && lama.text === ta.value;
     testcaseBulk = {
       text: ta.value, parsed,
@@ -1048,6 +1199,7 @@ function renderTestCaseBulk(wrap) {
   clearBtn.onclick = () => {
     if (testcaseBulk && testcaseBulk.jalan) return;
     if (ta.value.trim() && !confirm("Kosongkan teks, pratinjau, dan hasil test case banyak tiket?")) return;
+    testcaseUbahJudul = null;
     simpanDraftBulkTestCase("");
     testcaseBulk = null;
     renderLaluFokus(ta.id);
@@ -1210,7 +1362,17 @@ function kelompokBulkTestCase(b, g, i, c) {
   head.append(cb, el("span", "jira-key", g.key || "?"),
     el("span", "testcase-group-name" + (g.taskName ? "" : " empty"), g.taskName || "(tanpa task_name)"));
   if (!aktif) head.append(el("span", "testcase-badge", "Excluded"));
+  const ubah = b.ubahTiket && b.ubahTiket.i === i;
+  // Tombol di dalam <label>: klik kontrol interaktif tidak ikut mencentang checkbox.
+  if (!ubah && (g.cases.length || g.gaps.length)) {
+    const btn = el("button", "btn-line testcase-head-btn", "Change ticket");
+    btn.type = "button"; btn.id = "tcb-ubah-" + i; btn.disabled = !!b.jalan;
+    btn.title = "Ganti tiket tujuan test case ini (mis. AI memberi key tiket dev, padahal mau ke tiket QA)";
+    btn.onclick = () => { b.ubahTiket = { i, nilai: null, error: "" }; renderLaluFokus("tcb-key-" + i); };
+    head.append(btn);
+  }
   li.append(head);
+  if (ubah) li.append(ubahTiketBulkTestCase(b, g, i));
   if (g.endpoint) li.append(el("p", "testcase-hint mono", g.endpoint));
 
   const pilih = b.pilih[i];
@@ -1228,8 +1390,9 @@ function kelompokBulkTestCase(b, g, i, c) {
   if (c.errors.length) li.append(daftarIsuTestCase(c.errors, "err"));
   if (g.cases.length) {
     const ol = el("ol", "testcase-list");
-    g.cases.forEach((x, k) => ol.append(kartuTestCase({ id: "tcb" + i }, x, k, pilih, isu[k])));
-    if (b.jalan) ol.querySelectorAll("input").forEach((n) => { n.disabled = true; });
+    const simpanJudul = (k, v) => gantiJudulBulkTestCase(b, i, k, v);
+    g.cases.forEach((x, k) => ol.append(kartuTestCase({ id: "tcb" + i }, x, k, pilih, isu[k], simpanJudul)));
+    if (b.jalan) ol.querySelectorAll("input, button").forEach((n) => { n.disabled = true; });
     li.append(ol);
   }
   // Hasil Dry run hanya tampil selama isi + centang tiket ini masih sama.
@@ -1241,6 +1404,87 @@ function kelompokBulkTestCase(b, g, i, c) {
   }
   if (g.gaps.length && TC_KEY.test(g.key)) li.append(bagianGapTestCase(g.key, g.gaps, g.endpoint, "gap-tcb" + i));
   return li;
+}
+
+// Ubah title case ke-k di kelompok ke-i: title di teks ditulis ulang + draft,
+// Parse ulang; centang tetap. "" = berhasil, selain itu pesan error.
+function gantiJudulBulkTestCase(b, i, k, nilai) {
+  if (!b.parsed || !b.parsed.groups[i] || b.jalan) return "Case tidak ditemukan — klik Parse lagi.";
+  const title = rapikanJudulTestCase(nilai || "");
+  const salah = cekJudulBaru(title);
+  if (salah) return salah;
+  if (bacaDraftBulkTestCase() !== b.text) return "Teks berubah sejak Parse terakhir — klik Parse dulu, lalu ubah title-nya.";
+  const baru = gantiJudulJson(b.text, i, k, title);
+  if (baru == null) return "Title case ini tidak bisa diubah — perbaiki JSON-nya dulu.";
+  simpanDraftBulkTestCase(baru);
+  b.text = baru;
+  b.parsed = parseTestCaseBundle(baru);
+  return "";
+}
+
+// Isian tiket baru untuk kelompok ke-i; pilihan dari task bertiket Jira yang belum selesai.
+function ubahTiketBulkTestCase(b, g, i) {
+  const box = el("div", "testcase-inline-edit");
+  const row = el("div", "testcase-actions");
+  const inp = document.createElement("input");
+  inp.type = "text"; inp.id = "tcb-key-" + i; inp.className = "testcase-inline-input key";
+  inp.value = b.ubahTiket.nilai != null ? b.ubahTiket.nilai : g.key;
+  inp.placeholder = "ABC-123"; inp.spellcheck = false; inp.autocomplete = "off";
+  inp.setAttribute("aria-label", "Tiket baru untuk " + (g.key || "tiket #" + (i + 1)));
+  const dl = document.createElement("datalist");
+  dl.id = "tcb-keys-" + i;
+  const ada = new Set();
+  for (const t of Array.isArray(tasks) ? tasks : []) {
+    const k = t.status !== "selesai" && keyTestCase(t);
+    if (!k || ada.has(k)) continue;
+    ada.add(k);
+    const o = document.createElement("option");
+    o.value = k; o.label = String(t.text || "");
+    dl.append(o);
+  }
+  inp.setAttribute("list", dl.id);
+  const ok = el("button", "btn-solid", "Apply");
+  ok.type = "button"; ok.id = "tcb-key-ok-" + i;
+  const terapkan = () => {
+    const error = gantiTiketBulkTestCase(b, i, inp.value);
+    if (error) { b.ubahTiket = { i, nilai: inp.value, error }; renderLaluFokus(inp.id); return; }
+    renderLaluFokus("tcb-ubah-" + i);
+  };
+  ok.onclick = terapkan;
+  const batal = el("button", "btn-line", "Cancel");
+  batal.type = "button";
+  batal.onclick = () => { b.ubahTiket = null; renderLaluFokus("tcb-ubah-" + i); };
+  inp.onkeydown = (e) => {
+    if (e.key === "Enter") { e.preventDefault(); terapkan(); }
+    else if (e.key === "Escape") { e.preventDefault(); batal.onclick(); }
+  };
+  row.append(inp, dl, ok, batal);
+  box.append(row);
+  if (b.ubahTiket.error) box.append(daftarIsuTestCase([b.ubahTiket.error], "err"));
+  box.append(el("p", "testcase-hint",
+    "Test case dan GAP tiket ini akan memakai tiket baru (Bug ikut epic & assignee tiket itu); task_id di teks JSON ikut diganti. Dry run ulang setelahnya."));
+  return box;
+}
+
+// Terapkan tiket baru ke kelompok ke-i: tulis ulang task_id di teks, simpan
+// draft, Parse ulang. Centang & hasil Dry run/Push tetap (Dry run per key + sig,
+// jadi tiket baru otomatis belum Dry run). "" = berhasil, selain itu pesan error.
+function gantiTiketBulkTestCase(b, i, nilai) {
+  const g = b.parsed && b.parsed.groups[i];
+  if (!g || b.jalan) return "Tiket tidak ditemukan — klik Parse lagi.";
+  const key = String(nilai || "").trim().toUpperCase();
+  if (!TC_KEY.test(key)) return "“" + String(nilai || "").trim() + "” bukan key tiket Jira (contoh: ABC-123).";
+  if (key === g.key) { b.ubahTiket = null; return ""; }
+  if (b.parsed.groups.some((x, k) => k !== i && x.key === key)) return key + " sudah ada di tempelan — gabungkan case-nya di teks JSON.";
+  if (bacaDraftBulkTestCase() !== b.text) return "Teks berubah sejak Parse terakhir — klik Parse dulu, lalu ganti tiketnya.";
+  const baru = gantiTiketBundle(b.text, i, key);
+  if (baru == null) return "Tiket ini tidak bisa diganti — perbaiki JSON-nya dulu.";
+  pindahActualGap(g.gaps, g.key, key);
+  simpanDraftBulkTestCase(baru);
+  b.text = baru;
+  b.parsed = parseTestCaseBundle(baru);
+  b.ubahTiket = null;
+  return "";
 }
 
 // K2: judul tiket asli dari Jira di samping task_name dari AI.
@@ -1414,8 +1658,16 @@ function simpanActualGap(id, text) {
     else localStorage.removeItem(BUG_DRAFT_KEY);
   } catch {}
 }
+// Ganti tiket: Actual result yang sudah diketik ikut pindah (id GAP = key + judul).
+function pindahActualGap(gaps, dari, ke) {
+  if (!dari || dari === ke) return;
+  for (const c of gaps || []) {
+    const lama = idGap(dari, c), baru = idGap(ke, c), teks = bacaActualGap(lama);
+    if (teks && !bacaActualGap(baru)) { simpanActualGap(baru, teks); simpanActualGap(lama, ""); }
+  }
+}
 // Draft dihapus setelah Bug beres; teksnya tetap tampil dari hasil push.
-const actualGap = (id) => bacaActualGap(id) || ((bugGap.get(id) || {}).push || {}).actual || "";
+const actualGap =(id) => bacaActualGap(id) || ((bugGap.get(id) || {}).push || {}).actual || "";
 
 const kirimanGap = (c, actual, endpoint) => ({ title: c.title, preconditions: c.preconditions, steps: c.steps,
   expected: c.expected, actual: String(actual || "").trim(), endpoint: endpoint || "" });
