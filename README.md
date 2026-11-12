@@ -111,7 +111,7 @@ Access code dan secret Calendar perangkat tidak masuk backup atau blob state.
     (tak ada lagi tiket terbukamu di dalamnya) — tidak langsung hilang.
     Tiap entri menyimpan ringkasan saat ditutup: x/y selesai, daftar tiketnya
     (yang belum beres ditandai *not done*), dan tautan PRD; buka lewat tombol
-    ▾. Riwayat disimpan **3 bulan** sejak sprint ditutup lalu terhapus
+    ▾. Riwayat disimpan **2 bulan** sejak sprint ditutup lalu terhapus
     otomatis (tugasnya sendiri tidak ikut terhapus). Kotak cari tab Jira ikut
     menyaring riwayat menurut nama sprint / tiket.
   - **Pilih sprint per tugas**: tombol 🏃 di baris tugas membuka menu pilih

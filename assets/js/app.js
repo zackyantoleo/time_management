@@ -166,7 +166,7 @@ function initApp() {
   initWeeklyCheckin();
   backfillWorklog();
   arsipkanTugasSelesai(); // setelah backfill — log-nya dijamin sudah tercatat
-  pangkasRiwayatSprint(); // riwayat sprint > 3 bulan sejak ditutup dibuang
+  pangkasRiwayatSprint(); // riwayat sprint > RIWAYAT_SPRINT_BULAN sejak ditutup dibuang
   // Calendar import berjalan setiap kali data kalender berhasil ditarik. Saat
   // data sudah ada sebelum refresh, import ulang tetap aman karena idempotent.
   // Collapse dulu entri dobel dari key scheme lama (UID vs fallback).

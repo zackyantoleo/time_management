@@ -1,5 +1,5 @@
-// Riwayat sprint di tab Jira: entri < 3 bulan tampil (dengan detail isi
-// sprint), entri > 3 bulan dipangkas saat start-up. Synthetic fixtures only;
+// Riwayat sprint di tab Jira: entri < 2 bulan tampil (dengan detail isi
+// sprint), entri > 2 bulan dipangkas saat start-up. Synthetic fixtures only;
 // all external requests are blocked.
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -23,7 +23,8 @@ const fixtures = {
       ]}},
     {id: 'm13', nama: 'Sprint 13', selesai: ymd(daysAgo(17)), status: 'selesai', selesaiPada: iso(daysAgo(16)),
       hasil: {total: 1, beres: 1, items: [{text: 'TEST-90 — Automation login', done: true, priority: 'sedang'}]}},
-    {id: 'old', nama: 'Sprint 7', selesai: ymd(daysAgo(130)), status: 'selesai', selesaiPada: iso(daysAgo(125)),
+    // ~70 hari: sudah lewat 2 bulan (tapi belum 3) → harus dipangkas.
+    {id: 'old', nama: 'Sprint 7', selesai: ymd(daysAgo(72)), status: 'selesai', selesaiPada: iso(daysAgo(70)),
       hasil: {total: 0, beres: 0, items: []}},
   ]},
   'catet.tasks.v1': [{id: 't-old', text: 'TEST-50 — Masih di papan', priority: 'sedang', status: 'aktif', sprintId: 'old',
@@ -63,7 +64,7 @@ const fixtures = {
         ids: JSON.parse(localStorage.getItem('catet.sprints.v1')).list.map((s) => s.id),
         task: JSON.parse(localStorage.getItem('catet.tasks.v1')).find((t) => t.id === 't-old').sprintId,
       }));
-      assert.deepEqual(stored.ids, ['live', 'jira:14', 'm13'], 'Riwayat > 3 bulan dipangkas saat start-up');
+      assert.deepEqual(stored.ids, ['live', 'jira:14', 'm13'], 'Riwayat > 2 bulan dipangkas saat start-up');
       assert.equal(stored.task, null, 'Tugas di sprint yang dipangkas dilepas, bukan dihapus');
 
       const summary = page.locator('#jiraview details.sprint-history > summary');
@@ -76,7 +77,12 @@ const fixtures = {
       const detail = page.locator('#jiraview .sprint-history-detail');
       await detail.waitFor();
       const text = await detail.innerText();
-      assert.match(text, /terhapus otomatis/);
+      const hapus = new Date(daysAgo(2)); const tgl = hapus.getDate(); hapus.setDate(1); hapus.setMonth(hapus.getMonth() + 2);
+      hapus.setDate(Math.min(tgl, new Date(hapus.getFullYear(), hapus.getMonth() + 1, 0).getDate()));
+      const BLN = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+      assert(text.includes('terhapus otomatis') && text.includes(hapus.getDate() + ' ' + BLN[hapus.getMonth()] + ' ' + hapus.getFullYear()),
+        'Tanggal hapus otomatis = 2 bulan setelah ditutup');
+      assert.match(await page.locator('#jiraview .sprint-history-note').innerText(), /2 bulan/);
       assert.match(text, /PRD Checkout v2/);
       assert.match(text, /Sprint items \(3\)/i);
       assert.match(text, /TEST-102[\s\S]*not done/, 'Item belum beres tampil lebih dulu dengan label');

@@ -1,5 +1,5 @@
 // Riwayat sprint: sprint yang ditutup (manual / hilang dari Jira) tidak
-// langsung dibuang — disimpan 3 bulan sejak ditutup, lalu dipangkas.
+// langsung dibuang — disimpan 2 bulan sejak ditutup, lalu dipangkas.
 // Synthetic fixtures only.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -79,7 +79,7 @@ const task = (id, key, status, sprintId, extra = {}) => ({id, text: key + ' — 
   assert.equal(c.tasks[0].sprintId, 'jira:9');
 }
 
-// 4. Retensi 3 bulan kalender (dijepit ke akhir bulan) + pemangkasan.
+// 4. Retensi 2 bulan kalender (dijepit ke akhir bulan) + pemangkasan.
 {
   const c = makeContext({
     tasks: [task('x', 'TEST-5', 'aktif', 'old'), task('y', 'TEST-6', 'selesai', 'recent')],
@@ -94,6 +94,8 @@ const task = (id, key, status, sprintId, extra = {}) => ({id, text: key + ' — 
   });
   assert.equal(run(c, 'localDateStr(tambahBulan(new Date(2026, 10, 30, 12), 3))'), '2027-02-28');
   assert.equal(run(c, 'localDateStr(tambahBulan(new Date(2027, 10, 30, 12), 3))'), '2028-02-29');
+  assert.equal(run(c, 'localDateStr(tambahBulan(new Date(2026, 11, 31, 12), 2))'), '2027-02-28');
+  assert.equal(run(c, 'RIWAYAT_SPRINT_BULAN'), 2);
   const now = 'new Date("2026-11-12T05:00:00Z")';
   assert.deepEqual(Array.from(run(c, `riwayatSprintList(${now})`), (s) => s.id), ['recent', 'legacy-new'],
     'Riwayat kedaluwarsa disembunyikan walau belum dipangkas; urut terbaru dulu');
@@ -105,12 +107,12 @@ const task = (id, key, status, sprintId, extra = {}) => ({id, text: key + ' — 
   assert.equal(c.tasks.find((t) => t.id === 'y').sprintId, 'recent');
   assert.equal(c.saved.dirty, 0, 'Pemangkasan deterministik — tanpa klaim dirty');
   assert.equal(run(c, `pangkasRiwayatSprint(${now})`), false, 'Idempoten');
-  // Legacy tanpa selesaiPada: dihitung dari akhir sprint (30 Sep 23.59 → 30 Des).
-  assert.equal(run(c, 'pangkasRiwayatSprint(new Date("2026-12-31T12:00:00.000Z"))'), true);
+  // Legacy tanpa selesaiPada: dihitung dari akhir sprint (30 Sep 23.59 → 30 Nov).
+  assert.equal(run(c, 'pangkasRiwayatSprint(new Date("2026-12-01T12:00:00.000Z"))'), true);
   assert.deepEqual(Array.from(run(c, 'sprints.list'), (s) => s.id), ['recent', 'live']);
-  // Sedetik sebelum tepat 3 bulan → masih ada; tepat 3 bulan → terhapus.
+  // Sedetik sebelum tepat 2 bulan → masih ada; tepat 2 bulan → terhapus.
   const batas = run(c, 'hapusRiwayatPada(sprintById("recent")).getTime()');
-  assert.equal(run(c, 'localDateStr(hapusRiwayatPada(sprintById("recent")))').slice(0, 7), '2027-01');
+  assert.equal(run(c, 'localDateStr(hapusRiwayatPada(sprintById("recent")))').slice(0, 7), '2026-12');
   assert.equal(run(c, `pangkasRiwayatSprint(new Date(${batas - 1000}))`), false);
   assert.equal(run(c, `pangkasRiwayatSprint(new Date(${batas}))`), true);
   assert.deepEqual(Array.from(run(c, 'sprints.list'), (s) => s.id), ['live']);
@@ -140,4 +142,4 @@ const task = (id, key, status, sprintId, extra = {}) => ({id, text: key + ' — 
   assert(c.saved.dirty > dirty);
 }
 
-console.log('PASS sprint history: Jira close → history w/ snapshot, reopen, 3-month retention prune, manual complete snapshot');
+console.log('PASS sprint history: Jira close → history w/ snapshot, reopen, 2-month retention prune, manual complete snapshot');

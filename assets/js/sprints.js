@@ -99,10 +99,10 @@ function rekonsiliasiSprintJira(feed) {
 // Sprint yang sudah ditutup (manual lewat "Complete sprint" atau otomatis
 // karena hilang dari sprint aktif Jira) tetap tersimpan sebagai riwayat
 // selama RIWAYAT_SPRINT_BULAN sejak ditutup, lalu dipangkas otomatis.
-const RIWAYAT_SPRINT_BULAN = 3;
+const RIWAYAT_SPRINT_BULAN = 2;
 const RIWAYAT_SPRINT_MAKS_ITEM = 100;
 
-// Tambah n bulan kalender; tanggal dijepit ke akhir bulan (30 Nov + 3 bulan
+// Tambah n bulan kalender; tanggal dijepit ke akhir bulan (31 Des + 2 bulan
 // = 28/29 Feb, bukan meluber ke Maret).
 function tambahBulan(date, n) {
   const d = new Date(date);
