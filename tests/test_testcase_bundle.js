@@ -305,7 +305,7 @@ const sample = [tiket('ABC-101', 3), tiket('ABC-102', 5)];
   assert.doesNotMatch(jira, /jiraWorklogFilter/);
   assert.equal((jira.match(/jiraFilterMode = "inbox";\n  if \(typeof resetTestCaseBulk === "function"\) resetTestCaseBulk\(\);/g) || []).length, 2);
   assert.match(jira, /"catet\.testcaseBulkDraft\.v1", "catet\.bugDrafts\.v1",\n  \]\) localStorage\.removeItem/);
-  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /const CACHE = "catet-v83";/);
+  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /const CACHE = "catet-v84";/);
 }
 
 // GAP: dipisah dari test case saat Parse (tidak memblokir tiket), tiket yang
@@ -369,4 +369,78 @@ const sample = [tiket('ABC-101', 3), tiket('ABC-102', 5)];
   assert.equal(d.run('bugGap').size, 0, 'ganti akun → state GAP dibuang');
 }
 
-console.log('PASS testcase bundle: GAP findings, daftar/objek, alias, K3, task_id, ganda, batas 10 tiket/20 case, format lama, panel per task, rencana Push all (isi ber-prefix), prefix judul tiket, peringatan judul lama, prompt AI, judul Jira, draft, chip');
+// Ganti tiket: AI memberi key tiket dev → task_id ditulis ulang di teks (pagar ikut
+// hilang), Parse ulang memakai tiket baru; centang/Dry run/Push tetap, Actual result GAP ikut pindah.
+{
+  const ganti = (text, i, key) => run('gantiTiketBundle')(text, i, key);
+  const teks = '```json\n' + JSON.stringify(sample, null, 2) + '\n```';
+  const baru = ganti(teks, 1, 'ABC-900');
+  assert.doesNotMatch(baru, /```/, 'pagar dibuang');
+  const r = bundle(baru);
+  assert.deepEqual(r.groups.map(g => g.key), ['ABC-101', 'ABC-900']);
+  assert.deepEqual(r.groups[1].cases, bundle(teks).groups[1].cases, 'isi case tidak berubah');
+  assert.equal(r.groups[1].taskName, 'Example Ticket ABC-102', 'task_name tetap');
+  assert.equal(JSON.parse(baru)[1].task_id, 'ABC-900');
+  assert.deepEqual(Object.keys(JSON.parse(baru)[1]), Object.keys(sample[1]), 'urutan field tetap');
+  assert.equal(bundle(ganti(JSON.stringify(tiket('ABC-103', 1)), 0, 'ABC-901')).groups[0].key, 'ABC-901', 'satu objek');
+  assert.equal(bundle(ganti(JSON.stringify([{ test_cases: [kasus(1)] }]), 0, 'ABC-902')).groups[0].errors.length, 0, 'task_id kosong bisa diisi');
+  assert.equal(ganti('{rusak', 0, 'ABC-1'), null);
+  assert.equal(ganti('**Title:** Verify X', 0, 'ABC-1'), null);
+  assert.equal(ganti(JSON.stringify([tiket('ABC-1', 1), 5]), 1, 'ABC-2'), null, 'item bukan objek tiket');
+  assert.equal(ganti(JSON.stringify(sample), 5, 'ABC-2'), null, 'di luar jangkauan');
+
+  // Panel per task: tiket task tidak ada di tempelan → daftar kelompok yang bisa dipindah.
+  const p = forTicket(JSON.stringify([tiket('ABC-101', 2), { task_id: 'ABC-102', test_cases: [kasus(1, { title: 'GAP: Example gap' })] }, 7]), 'ABC-555');
+  assert.match(p.errors[0], /tidak berisi ABC-555/);
+  assert.deepEqual(p.pindah, [{ i: 0, key: 'ABC-101' }, { i: 1, key: 'ABC-102' }], 'item bukan objek tidak ditawarkan');
+  assert.equal(forTicket(JSON.stringify(sample), 'ABC-101').pindah, undefined, 'tiket ada → tidak ada tawaran');
+}
+{
+  const d = load();
+  const store = d.store;
+  const gap = kasus(9, { title: 'GAP: Example lock' });
+  const teks = JSON.stringify([tiket('ABC-101', 2), tiket('ABC-102', 1, { test_cases: [kasus(1), gap] })], null, 2);
+  store.set('catet.testcaseBulkDraft.v1', JSON.stringify({ text: teks }));
+  const parsed = d.run('parseTestCaseBundle')(teks);
+  const b = { text: teks, parsed, pilihTiket: [true, false], pilih: [[true, false], [true]], dry: { 'ABC-101': { sig: 'x' } }, push: { 'ABC-101': { data: 1 } }, urutan: ['ABC-101'], jalan: null, ubahTiket: { i: 1 } };
+  const ganti = (i, v) => d.run('gantiTiketBulkTestCase')(b, i, v);
+  const idLama = d.run('idGap')('ABC-102', parsed.groups[1].gaps[0]);
+  d.run('simpanActualGap')(idLama, 'API returns 201.');
+  assert.match(ganti(1, 'bukan key'), /bukan key tiket Jira/);
+  assert.match(ganti(1, 'abc-101'), /ABC-101 sudah ada di tempelan/);
+  store.set('catet.testcaseBulkDraft.v1', JSON.stringify({ text: teks + ' ' }));
+  assert.match(ganti(1, 'ABC-777'), /klik Parse dulu/, 'teks basi tidak ditimpa');
+  assert.equal(b.text, teks);
+  store.set('catet.testcaseBulkDraft.v1', JSON.stringify({ text: teks }));
+  b.jalan = 'dry';
+  assert.match(ganti(1, 'ABC-777'), /klik Parse lagi/, 'tidak saat Dry run/Push berjalan');
+  b.jalan = null;
+  assert.equal(ganti(1, ' abc-777 '), '');
+  assert.deepEqual(plain(b.parsed.groups.map(g => g.key)), ['ABC-101', 'ABC-777']);
+  assert.equal(JSON.parse(JSON.parse(store.get('catet.testcaseBulkDraft.v1')).text)[1].task_id, 'ABC-777', 'draft ikut diganti');
+  assert.equal(b.ubahTiket, null);
+  assert.deepEqual(plain([b.pilihTiket, b.pilih, b.urutan]), [[true, false], [[true, false], [true]], ['ABC-101']], 'centang & hasil push tetap');
+  assert.equal(b.dry['ABC-101'].sig, 'x');
+  const idBaru = d.run('idGap')('ABC-777', b.parsed.groups[1].gaps[0]);
+  assert.equal(d.run('bacaActualGap')(idBaru), 'API returns 201.', 'Actual result GAP ikut pindah');
+  assert.equal(d.run('bacaActualGap')(idLama), '');
+  b.ubahTiket = { i: 1 };
+  assert.equal(ganti(1, 'ABC-777'), '', 'key sama → tutup saja');
+  assert.equal(b.ubahTiket, null);
+
+  // Panel per task: kelompok lain dipindah ke tiket task ini.
+  d.run('var JIRA_RE = /\\b([A-Z][A-Z0-9]{1,9}-\\d+)\\b/g; tasks.push({ id: "t1", text: "ABC-555 Testing example" });');
+  const t = d.run('tasks[0]');
+  const satu = JSON.stringify([tiket('ABC-102', 2)]);
+  d.run('simpanDraftTestCase')('t1', satu);
+  const hasil = { taskId: 't1', text: satu, parsed: d.run('parseTestCasesUntukTiket')(satu, 'ABC-555'), pilih: [] };
+  assert.equal(d.run('pindahTiketPanelTestCase')(t, hasil, 0), '');
+  const h = plain(d.run('testcaseHasil'));
+  assert.equal(h.parsed.cases.length, 2);
+  assert.deepEqual(h.parsed.errors, []);
+  assert.equal(JSON.parse(d.run('bacaDraftTestCase')('t1'))[0].task_id, 'ABC-555', 'draft panel ikut diganti');
+  d.run('simpanDraftTestCase')('t1', satu + ' ');
+  assert.match(d.run('pindahTiketPanelTestCase')(t, hasil, 0), /klik Parse dulu/);
+}
+
+console.log('PASS testcase bundle: GAP findings, daftar/objek, alias, K3, task_id, ganda, batas 10 tiket/20 case, format lama, panel per task, rencana Push all (isi ber-prefix), prefix judul tiket, peringatan judul lama, prompt AI, judul Jira, draft, chip, ganti tiket');
