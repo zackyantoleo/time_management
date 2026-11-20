@@ -47,7 +47,7 @@ function addTask(text, jalankan) {
 function updateSprintChip() {
   const btn = $("#sprint-capture");
   if (!sprintAktifList().length) { capSprintId = null; btn.classList.add("hidden"); return; }
-  if (capSprintId && !sprintById(capSprintId)) capSprintId = null; // sprint dihapus
+  if (capSprintId && (!sprintById(capSprintId) || sprintSelesai(sprintById(capSprintId)))) capSprintId = null; // sprint dihapus / sudah ditutup
   const s = capSprintId ? sprintById(capSprintId) : null;
   btn.classList.remove("hidden");
   btn.textContent = s ? "🏃 " + s.nama : "🏃 Sprint";

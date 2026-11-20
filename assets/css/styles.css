@@ -422,6 +422,13 @@
   .sprint-task-text { flex: 1; min-width: 0; overflow-wrap: break-word; }
   .sprint-task-text.done { text-decoration: line-through; color: var(--ink-faint); }
   .sprint-run { flex: none; padding: 3px 9px; font-size: 12px; white-space: nowrap; }
+  /* Riwayat sprint (Completed sprints): detail read-only di bawah barisnya. */
+  .sprint-history-detail { margin-top: 0; border-left: 3px solid var(--line); padding-left: 10px; }
+  .sprint-history-mark { flex: none; width: 14px; text-align: center; font-size: 12px; font-weight: 700; color: var(--ink-faint); }
+  .sprint-history-mark.done { color: var(--accent); }
+  /* Bukan .cap-hint: info retensi tetap terlihat di layar sentuh. */
+  .sprint-history-meta { font-size: 11.5px; line-height: 1.45; color: var(--ink-faint); }
+  .sprint-history-note { padding: 8px 0 4px; }
 
   /* ---- Menu popup pilih sprint ---- */
   .sprint-menu {
@@ -528,7 +535,7 @@
   }
   a.jira-key:hover { border-color: var(--p-sedang); text-decoration: underline; text-underline-offset: 2px; }
   span.jira-key { font-family: ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 600; flex: none; }
-  .task-text a, .log-text a, .focus-text a {
+  .task-text a, .log-text a, .focus-text a, .sprint-task-text a {
     color: var(--p-sedang); text-decoration: underline; text-underline-offset: 2px;
   }
   .jira-import textarea {
